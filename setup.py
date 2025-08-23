@@ -1,6 +1,16 @@
 from setuptools import setup, find_packages
-from ares import __version__
 
+# Read version directly from file to avoid importing ares
+version_file = "ares/__init__.py"
+version = None
+with open(version_file, 'r') as f:
+    for line in f:
+        if line.startswith('__version__'):
+            version = line.split('=')[1].strip().strip('"').strip("'")
+            break
+
+if version is None:
+    version = "0.1.0"  # fallback version
 
 def fetch_requirements(filename):
     requirements = []
@@ -14,7 +24,7 @@ def fetch_requirements(filename):
 
 setup(
     name="ares_pytorch",
-    version=__version__,
+    version=version,
     author="Xiao Yang, Chuang Liu, Chang Liu",
     description="ARES 2.0 - A pytorch library for adversarial robustness",
     long_description=open("README.md", "r", encoding="utf-8").read(),

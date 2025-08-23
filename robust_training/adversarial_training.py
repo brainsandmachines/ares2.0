@@ -232,7 +232,7 @@ def get_args_parser():
     return parser
 
 
-def main(args, args_text):
+def main(args):
     # distributed settings and logger
     if "WORLD_SIZE" in os.environ:
         args.world_size=int(os.environ["WORLD_SIZE"])
@@ -241,6 +241,7 @@ def main(args, args_text):
     if args.output_dir and args.rank == 0:
         os.makedirs(args.output_dir, exist_ok = True)
     _logger = setup_logger(save_dir=args.output_dir, distributed_rank=args.rank)
+    _logger.info(f"Runtime distributed={args.distributed}, world_size={args.world_size}, rank={args.rank}, local_rank={args.local_rank}, device_id={args.device_id}")
 
     # fix the seed for reproducibility
     random_seed(args.seed, args.rank)
@@ -334,6 +335,7 @@ def main(args, args_text):
         saver = CheckpointSaver(
             model=model, optimizer=optimizer, args=args, model_ema=model_ema, amp_scaler=loss_scaler,
             checkpoint_dir=output_dir, recovery_dir=output_dir, decreasing=decreasing, max_history=args.max_history)
+        args_text = yaml.safe_dump(args.__dict__, default_flow_style=False)
         with open(os.path.join(output_dir, 'args.yaml'), 'w') as f:
             f.write(args_text)
 
@@ -613,6 +615,6 @@ if __name__ == '__main__':
         opt.update(yaml.load(open(args.configs), Loader=yaml.FullLoader))
     
     args = argparse.Namespace(**opt)
-    args_text = yaml.safe_dump(args.__dict__, default_flow_style=False)
+    
 
-    main(args, args_text)
+    main(args)

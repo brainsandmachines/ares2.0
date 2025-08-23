@@ -19,9 +19,9 @@ class UniversalAttacker(nn.Module):
         cfg (mmengine.config.ConfigDict): Configs for adversarial attack.
         detector (torch.nn.Module): Detector to be attacked.
         logger (logging.Logger): Logger to record logs.
-        device (torch.device): torch.device. Default: None (auto-selects GPU 0 if available, otherwise CPU).
+        device (torch.device): torch.device. Default: torch.device(0).
     '''
-    def __init__(self, cfg, detector, logger, device=None):
+    def __init__(self, cfg, detector, logger, device=torch.device(0)):
         super().__init__()
 
         self.cfg = cfg
@@ -30,8 +30,6 @@ class UniversalAttacker(nn.Module):
         self.load_detector_weight()
         self.data_preprocessor = detector.data_preprocessor
         self.device = device
-        if self.device is None:
-            self.device = torch.device(0) if torch.cuda.is_available() else torch.device("cpu")
         self.detector_image_max_val = None
         if self.cfg.attack_mode == 'patch':
             self.init_for_patch_attack()
