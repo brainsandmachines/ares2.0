@@ -226,6 +226,7 @@ def get_args_parser():
     parser.add_argument('--attack-eps', type=float, default=4.0/255, help='attack epsilon.')
     parser.add_argument('--attack-step', type=float, default=8.0/255/3, help='attack epsilon.')
     parser.add_argument('--attack-it', type=int, default=3, help='attack iteration')
+    parser.add_argument('--attack-norm',type=str, default='linf',choices=['linf','l2'], help='norm used for adversarial training step')
     # advprop
     parser.add_argument('--advprop', default=False, help='if use advprop')
 
@@ -404,9 +405,12 @@ def train_one_epoch(
     end = time.time()
     last_idx = len(loader) - 1
     num_updates = epoch * len(loader)
-
+    
     att_step = args.attack_step * min(epoch, 5)/5
     att_eps=args.attack_eps
+    if args.attack_norm=='l2':
+        att_eps=att_eps*255
+        att_step=att_step*255
     att_it=args.attack_it
 
 

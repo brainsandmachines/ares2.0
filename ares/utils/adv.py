@@ -100,7 +100,43 @@ class LinfStep(AttackerStep):
 
         return torch.clamp(x+noise, 0, 1)
 
+# L2 threat model
+class L2Step(AttackerStep):
+    """
+    Attack step for :math:`\ell_\infty` threat model. Given :math:`x_0`
+    and :math:`\epsilon`, the constraint set is given by:
 
+    .. math:: S = \{x | \|x - x_0\|_2 \leq \epsilon\}
+    """
+    def project(self, x):
+        """
+        Project the input x back to the ℓ₂ ball around the original input.
+        """
+        diff = x - self.orig_input
+        diff = diff.renorm(p=2, dim=0, maxnorm=self.eps)
+        return torch.clamp(self.orig_input + diff, 0, 1)
+
+    def step(self, x, g):
+        """
+        Take a step in the direction of the normalized gradient with step size.
+        """
+        l = len(x.shape) - 1
+        g_norm = torch.norm(g.view(g.shape[0], -1), dim=1).view(-1, *([1]*l))
+        scaled_g = g / (g_norm + 1e-10)
+        return x + scaled_g * self.step_size
+
+    def random_perturb(self, x):
+        """
+        Generate a random perturbation within the ℓ₂ ball.
+        """
+        l = len(x.shape) - 1
+        rp = torch.randn_like(x)
+        rp_norm = rp.view(rp.shape[0], -1).norm(dim=1).view(-1, *([1]*l))
+        return torch.clamp(x + self.eps * rp / (rp_norm + 1e-10), 0, 1)
+    
+    def random_uniform(self, x):
+        return self.random_perturb(x)
+    
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 

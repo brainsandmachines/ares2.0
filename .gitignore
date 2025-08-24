@@ -2,3 +2,15 @@
 .DS_Store
 .DS_Store?
 **/.vscode
+# Ignore big data files
+datasets/*
+*.zip
+*.tar.gz
+# training artifacts
+robust_training/results/
+~/
+*.pth
+*.pth.tar
+*.pt
+*.log
+*.out
