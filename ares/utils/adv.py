@@ -172,7 +172,10 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
     prev_training = bool(model.training)
     model.eval()
     orig_input = images.detach().cuda(non_blocking=True)
-    step = LinfStep(eps=eps, orig_input=orig_input, step_size=attack_lr)
+    if args.attack_norm=='l2':
+        step = L2Step(eps=eps, orig_input=orig_input, step_size=attack_lr)
+    else:
+        step = LinfStep(eps=eps, orig_input=orig_input, step_size=attack_lr)
 
     # define loss function
     if attack_criterion == 'regular':

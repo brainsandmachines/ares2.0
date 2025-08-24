@@ -106,3 +106,4 @@ pin_mem: True
 # advtrain
 advtrain: True
 attack_criterion: mixup
+attack_norm: linf
