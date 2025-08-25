@@ -30,7 +30,7 @@ clip_mode: norm
 layer_decay: null
 
 # lr schedule
-epochs: 90
+epochs: 70
 sched: step
 sched_on_updates: True
 lrb: 0.2

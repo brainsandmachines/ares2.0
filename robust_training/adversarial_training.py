@@ -7,6 +7,7 @@ import os
 from collections import OrderedDict
 import torch
 from torch.nn.parallel import DistributedDataParallel as NativeDDP
+from torch.utils.tensorboard import SummaryWriter
 
 # timm functions
 from timm.models import resume_checkpoint, load_checkpoint, model_parameters
@@ -16,7 +17,7 @@ from timm.utils import ModelEmaV2, distribute_bn, reduce_tensor, dispatch_clip_g
 
 # robust training functions
 from ares.utils.dist import distributed_init, random_seed
-from ares.utils.logger import setup_logger
+from ares.utils.logger import setup_logger , _auto_experiment_name
 from ares.utils.model import build_model
 from ares.utils.loss import build_loss, resolve_amp, build_loss_scaler
 from ares.utils.dataset import build_dataset
@@ -229,6 +230,9 @@ def get_args_parser():
     parser.add_argument('--attack-norm',type=str, default='linf',choices=['linf','l2'], help='norm used for adversarial training step')
     # advprop
     parser.add_argument('--advprop', default=False, help='if use advprop')
+    parser.add_argument('--experiment', default='', type=str,
+                        help='Experiment name for output directory. '
+                             'If empty, auto = "<model>_eps<eps255>_<norm>".')
 
     return parser
 
@@ -239,9 +243,7 @@ def main(args):
         args.world_size=int(os.environ["WORLD_SIZE"])
     args.distributed=args.world_size>1
     distributed_init(args)
-    if args.output_dir and args.rank == 0:
-        os.makedirs(args.output_dir, exist_ok = True)
-    _logger = setup_logger(save_dir=args.output_dir, distributed_rank=args.rank)
+    _logger = setup_logger(save_dir=None, distributed_rank=args.rank)
     _logger.info(f"Runtime distributed={args.distributed}, world_size={args.world_size}, rank={args.rank}, local_rank={args.local_rank}, device_id={args.device_id}")
 
     # fix the seed for reproducibility
@@ -322,20 +324,31 @@ def main(args):
         else:
             lr_scheduler.step(start_epoch)
     _logger.info('Scheduled epochs: {}'.format(num_epochs))
+    if not args.experiment or not args.experiment.strip():
+        args.experiment = _auto_experiment_name(args)
+    args.output_dir = os.path.join(args.output_dir or ".", args.experiment)
 
-
+    if args.rank == 0:
+        _logger.info(f"Experiment: {args.experiment}")
+        _logger.info(f"Run directory: {args.output_dir}")
     # saver
     eval_metric = args.eval_metric
     saver = None
     best_metric = None
     best_epoch = None
     output_dir = None
+    writer = None
     if args.rank == 0:
         output_dir = get_outdir(args.output_dir)
+        _logger = setup_logger(save_dir=output_dir, distributed_rank=args.rank)
+        _logger.info(f"Experiment directory: {output_dir}")
         decreasing=True if eval_metric=='loss' else False
         saver = CheckpointSaver(
             model=model, optimizer=optimizer, args=args, model_ema=model_ema, amp_scaler=loss_scaler,
             checkpoint_dir=output_dir, recovery_dir=output_dir, decreasing=decreasing, max_history=args.max_history)
+        tb_dir = os.path.join(output_dir, "tb")
+        os.makedirs(tb_dir, exist_ok=True)
+        writer = SummaryWriter(log_dir=tb_dir)
         args_text = yaml.safe_dump(args.__dict__, default_flow_style=False)
         with open(os.path.join(output_dir, 'args.yaml'), 'w') as f:
             f.write(args_text)
@@ -349,7 +362,7 @@ def main(args):
         train_metrics = train_one_epoch(
                 epoch, model, loader_train, optimizer, train_loss_fn, args,
                 lr_scheduler=lr_scheduler, saver=saver, amp_autocast=amp_autocast,
-                loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn, _logger=_logger)
+                loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn, _logger=_logger, writer=writer)
 
         # distributed bn sync
         if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
@@ -357,13 +370,13 @@ def main(args):
             distribute_bn(model, args.world_size, args.dist_bn == 'reduce')
 
         # calculate evaluation metric
-        eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, _logger=_logger)
+        eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, _logger=_logger, writer=writer, epoch=epoch, tb_tag='val')
 
         # model ema update
         if model_ema is not None and not args.model_ema_force_cpu:
             if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
                 distribute_bn(model_ema, args.world_size, args.dist_bn == 'reduce')
-            ema_eval_metrics = validate(model_ema.module, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, log_suffix=' (EMA)', _logger=_logger)
+            ema_eval_metrics = validate(model_ema.module, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, log_suffix=' (EMA)', _logger=_logger, writer=writer, epoch=epoch, tb_tag='val_ema')
             eval_metrics = ema_eval_metrics
 
         # lr_scheduler update
@@ -380,14 +393,21 @@ def main(args):
         # save checkpoint, print best metric
         if saver is not None:
             best_metric, best_epoch = saver.save_checkpoint(epoch, eval_metrics[eval_metric])
-        torch.distributed.barrier()
+        if writer is not None and args.rank == 0:
+            writer.flush()    
+        if args.distributed:
+            torch.distributed.barrier()
+
+    if writer is not None and args.rank == 0:
+        writer.flush()
+        writer.close()
     if best_metric is not None:
         _logger.info('*** Best metric: {0} (epoch {1})'.format(best_metric, best_epoch))
 
 def train_one_epoch(
         epoch, model, loader, optimizer, loss_fn, args,
         lr_scheduler=None, saver=None, amp_autocast=None,
-        loss_scaler=None, model_ema=None, mixup_fn=None, _logger=None):
+        loss_scaler=None, model_ema=None, mixup_fn=None, _logger=None, writer=None):
     # mixup setting
     if args.mixup_off_epoch and epoch >= args.mixup_off_epoch:
         if mixup_fn is not None:
@@ -481,7 +501,17 @@ def train_one_epoch(
             if args.distributed:
                 reduced_loss = reduce_tensor(loss.data, args.world_size)
                 losses_m.update(reduced_loss.item(), input.size(0))
-
+            if writer is not None and (not args.distributed or args.rank == 0):
+                global_step = num_updates  # already maintained above
+                # scalars you already have handy
+                writer.add_scalar('train/loss', losses_m.val, global_step)
+                writer.add_scalar('train/loss_avg', losses_m.avg, global_step)
+                writer.add_scalar('train/lr', lr, global_step)
+                writer.add_scalar('train/time_per_batch', batch_time_m.val, global_step)
+                writer.add_scalar('train/data_time', data_time_m.val, global_step)
+                writer.add_scalar('train/throughput_imgs_per_s',
+                                  input.size(0) * args.world_size / batch_time_m.val,
+                                  global_step)
             _logger.info(
             'Train: [{}/{}] [{:>4d}/{} ({:>3.0f}%)]  '
             'Loss: {loss.val:#.4g} ({loss.avg:#.3g})  '
@@ -516,7 +546,7 @@ def train_one_epoch(
 
     return OrderedDict([('loss', losses_m.avg)])
 
-def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _logger=None):
+def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _logger=None, writer=None, epoch=None, tb_tag='val'):
     batch_time_m = AverageMeter()
     losses_m = AverageMeter()
     top1_m = AverageMeter()
@@ -564,7 +594,13 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
 
         # adv eval process
         if args.advtrain:
-            adv_input=adv_generator(args, input, target, model, 4/255, 10, 1/255, random_start=True, use_best=False, attack_criterion='regular')
+            att_step = args.attack_step * min(epoch, 5)/5
+            att_eps=args.attack_eps
+            if args.attack_norm=='l2':
+                att_eps=att_eps*255
+                att_step=att_step*255
+    
+            adv_input=adv_generator(args, input, target, model, att_eps, 8, att_step, random_start=True, use_best=False, attack_criterion='regular')
             with torch.no_grad():
                 with amp_autocast():
                     adv_output = model(adv_input)
@@ -608,7 +644,16 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
                     adv_loss=adv_losses_m, adv_top1=adv_top1_m, adv_top5=adv_top5_m))
 
     metrics = OrderedDict([('loss', losses_m.avg), ('top1', top1_m.avg), ('top5', top5_m.avg), ('advloss', adv_losses_m.avg), ('advtop1', adv_top1_m.avg), ('advtop5', adv_top5_m.avg)])
-
+    if writer is not None and (not args.distributed or args.rank == 0):
+        step = int(epoch) if epoch is not None else 0
+        writer.add_scalar(f'{tb_tag}/loss', losses_m.avg, step)
+        writer.add_scalar(f'{tb_tag}/top1', top1_m.avg, step)
+        writer.add_scalar(f'{tb_tag}/top5', top5_m.avg, step)
+        # If adversarial eval was run, log those too
+        if args.advtrain:
+            writer.add_scalar(f'{tb_tag}_adv/loss', adv_losses_m.avg, step)
+            writer.add_scalar(f'{tb_tag}_adv/top1', adv_top1_m.avg, step)
+            writer.add_scalar(f'{tb_tag}_adv/top5', adv_top5_m.avg, step)
     return metrics
 
 if __name__ == '__main__':
@@ -619,6 +664,5 @@ if __name__ == '__main__':
         opt.update(yaml.load(open(args.configs), Loader=yaml.FullLoader))
     
     args = argparse.Namespace(**opt)
-    
 
     main(args)

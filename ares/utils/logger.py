@@ -59,3 +59,16 @@ class PrintFormatter:
         pass
 
 
+def _auto_experiment_name(args):
+    """Builds <model>_eps<eps-in-255>_<norm>, e.g. resnet50_eps4_linf"""
+    try:
+        eps255 = args.attack_eps * 255.0
+        if abs(eps255 - round(eps255)) < 1e-6:
+            eps_tag = f"eps{int(round(eps255))}"
+        else:
+            eps_tag = f"eps{eps255:.2f}"
+    except Exception:
+        eps_tag = f"eps{args.attack_eps}"
+    norm_tag = getattr(args, 'attack_norm', 'linf')
+    model_tag = getattr(args, 'model', 'model')
+    return f"{model_tag}_{eps_tag}_{norm_tag}"
