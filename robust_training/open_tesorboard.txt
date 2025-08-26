@@ -1,0 +1,21 @@
+------cluster-------
+1. on the cluster terminal, copy this command:  # change path according to expiriment name
+    tensorboard \
+  --logdir=/home/ashtomer/projects/ares/robust_training/results/resnet50_eps4_linf/tb \ 
+  --port=6006 \
+  --bind_all
+  
+
+2. see where the tensorboard is located:
+example output: TensorBoard 2.20.0 at http://slurm-login-03.auth.ad.bgu.ac.il:6006/
+
+3. keep the terminal running
+
+----------working staition in lab------
+
+4. on a working station terminal (botero), copy this command:
+    ssh -N -L 6006:localhost:6006 ashtomer@slurm-login-03.auth.ad.bgu.ac.il # based on example output change accordingly
+
+5. open on firefox:
+    http://localhost:6006
+

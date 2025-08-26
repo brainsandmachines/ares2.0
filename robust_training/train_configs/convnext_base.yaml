@@ -1,9 +1,9 @@
 # distributed setting
-distributed: False
+distributed: True
 
 # amp parameters
 apex_amp: False
-native_amp: False
+native_amp: True
 
 # model parameters
 model: convnext_base
@@ -30,10 +30,10 @@ clip_mode: norm
 layer_decay: null
 
 # lr schedule
-epochs: 300
+epochs: 100
 sched: cosine
 sched_on_updates: True
-lrb: 5.0e-4
+lrb: 5.0e-3
 lr: null
 lr_noise: null
 lr_noise_pct: 0.67
@@ -53,9 +53,9 @@ patience_epochs: 0
 decay_rate: 0.1
 
 # dataset parameters
-batch_size: 64
-train_dir: ''
-eval_dir: ''
+batch_size: 128
+train_dir: '~/datasets/imagenet/train'
+eval_dir: '~/datasets/imagenet/val'
 input_size: 224
 crop_pct: 0.875
 interpolation: bicubic
@@ -65,7 +65,7 @@ std: [0.229, 0.224, 0.225]
 # augmentation
 no_aug: False
 color_jitter: 0.4
-aa: rand-m9-mstd0.5-inc1
+aa: null
 aug_repeats: 0
 aug_splits: 0
 jsd_loss: False
@@ -98,10 +98,12 @@ seed: 0
 log_interval: 50
 recovery_interval: 0
 num_workers: 6
-output_dir: ''
+output_dir: './results'
+save_log: save_log.txt
 eval_metric: top1
 pin_mem: True
 
 # advtrain
 advtrain: True
 attack_criterion: mixup
+attack_norm: linf

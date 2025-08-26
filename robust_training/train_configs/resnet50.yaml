@@ -30,8 +30,8 @@ clip_mode: norm
 layer_decay: null
 
 # lr schedule
-epochs: 70
-sched: step
+epochs: 100
+sched: cosine
 sched_on_updates: True
 lrb: 0.2
 lr: null
@@ -53,7 +53,7 @@ patience_epochs: 0
 decay_rate: 0.1
 
 # dataset parameters
-batch_size: 256
+batch_size: 128
 train_dir: '~/datasets/imagenet/train'
 eval_dir: '~/datasets/imagenet/val'
 input_size: 224
@@ -97,7 +97,7 @@ model_ema_decay: 0.9998
 seed: 0
 log_interval: 50
 recovery_interval: 0
-num_workers: 8
+num_workers: 6
 output_dir: './results'
 save_log: save_log.txt
 eval_metric: top1
