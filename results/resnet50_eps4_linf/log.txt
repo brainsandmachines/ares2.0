@@ -1,0 +1,11 @@
+[2025-09-04 15:30:35 ARES 2.0] INFO: Experiment directory: ./results/resnet50_eps4_linf
+[2025-09-04 15:30:35 ARES 2.0] INFO: Start training for 100 epochs
+[2025-09-04 15:31:52 ARES 2.0] INFO: Experiment directory: ./results/resnet50_eps4_linf
+[2025-09-04 15:31:52 ARES 2.0] INFO: Start training for 100 epochs
+[2025-09-04 15:31:59 ARES 2.0] INFO: Train: [0/100] [   0/10009 (  0%)]  Loss: 6.719 (6.72)  Time: 7.236s,   17.69/s  (7.236s,   17.69/s)  LR: 1.000e-04  Data: 0.656 (0.656)
+[2025-09-04 15:38:12 ARES 2.0] INFO: Experiment directory: ./results/resnet50_eps4_linf
+[2025-09-04 15:38:12 ARES 2.0] INFO: Start training for 100 epochs
+[2025-09-04 15:38:18 ARES 2.0] INFO: Train: [0/100] [   0/10009 (  0%)]  Loss: 6.719 (6.72)  Time: 6.310s,   20.29/s  (6.310s,   20.29/s)  LR: 1.000e-04  Data: 0.606 (0.606)
+[2025-09-04 15:38:36 ARES 2.0] INFO: Experiment directory: ./results/resnet50_eps4_linf
+[2025-09-04 15:38:36 ARES 2.0] INFO: Start training for 100 epochs
+[2025-09-04 15:38:43 ARES 2.0] INFO: Train: [0/100] [   0/10009 (  0%)]  Loss: 6.719 (6.72)  Time: 6.317s,   20.26/s  (6.317s,   20.26/s)  LR: 1.000e-04  Data: 0.640 (0.640)

@@ -40,6 +40,25 @@ def distributed_init(args):
         if torch.cuda.is_available():
             torch.cuda.set_device(args.device_id)
         
+        # Initialize process group for various scenarios:
+        # 1. Non-distributed scenarios (e.g., regular python script)
+        # 2. torchrun with single process (where distributed=False but env vars are set)
+        if not torch.distributed.is_initialized():
+            if 'LOCAL_RANK' in os.environ:
+                # torchrun environment - use env:// method
+                torch.distributed.init_process_group(
+                    backend='nccl' if torch.cuda.is_available() else 'gloo',
+                    init_method='env://'
+                )
+            else:
+                # Pure single process - use tcp:// method
+                torch.distributed.init_process_group(
+                    backend='nccl' if torch.cuda.is_available() else 'gloo',
+                    init_method='tcp://localhost:12355',
+                    world_size=1,
+                    rank=0
+                )
+        
 
 def setup_for_distributed(is_master):
     """

@@ -147,7 +147,7 @@ def main(args):
     # start training
     _logger.info(f"Start training for {args.epochs} epochs")
     for epoch in range(start_epoch, args.epochs):
-        if hasattr(loader_train, 'sampler'):
+        if hasattr(loader_train, 'sampler') and hasattr(loader_train.sampler, 'set_epoch'):
             loader_train.sampler.set_epoch(epoch)
         # one epoch training
         train_metrics = train_one_epoch(
