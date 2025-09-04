@@ -121,7 +121,7 @@ def main(args):
 
     if args.rank == 0:
         _logger.info(f"Experiment: {args.experiment}")
-        _logger.info(f"Run directory: {args.output_dir}")
+        _logger.info(f"Results directory: {args.output_dir}")
     # saver
     eval_metric = args.eval_metric
     saver = None

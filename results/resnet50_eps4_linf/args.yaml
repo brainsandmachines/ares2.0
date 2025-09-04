@@ -10,7 +10,7 @@ attack_norm: linf
 attack_step: 0.01045751633986928
 aug_repeats: 0
 aug_splits: 0
-batch_size: 128
+batch_size: 64
 bce_loss: false
 bce_target_thresh: null
 bn_eps: null
@@ -37,7 +37,7 @@ drop_connect: null
 drop_path: 0.0
 epoch_repeats: 0
 epochs: 100
-eval_dir: /mnt/data/datasets/imagenet/val
+eval_dir: ~/datasets/imagenet/val
 eval_metric: top1
 experiment: resnet50_eps4_linf
 gp: null
@@ -48,7 +48,7 @@ jsd_loss: false
 layer_decay: null
 local_rank: 0
 log_interval: 50
-lr: 0.05
+lr: 0.025
 lr_cycle_decay: 0.5
 lr_cycle_limit: 1
 lr_cycle_mul: 1.0
@@ -109,7 +109,7 @@ std:
 - 0.224
 - 0.225
 sync_bn: false
-train_dir: /mnt/data/datasets/imagenet/train
+train_dir: ~/datasets/imagenet/train
 train_interpolation: bicubic
 vflip: 0.0
 warmup_epochs: 5
