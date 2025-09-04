@@ -43,13 +43,14 @@ CONFIGS=(
   "./train_configs/resnet50.yaml"
   "./train_configs/convnext_base.yaml"
   "./train_configs/vit_base_patch16_224.yaml"
+  "./train_configs/swin_base_patch4_window7_224.yaml"
 )
 
 RUN_IDX=0
 for CFG in "${CONFIGS[@]}"; do
   RUN_IDX=$((RUN_IDX+1))
   echo ""
-  echo "================ RUN ${RUN_IDX}/3 :: ${CFG} ================"
+  echo "================ RUN ${RUN_IDX}/4 :: ${CFG} ================"
   start_ts=$(date +"%Y-%m-%d %H:%M:%S")
   echo "Start time: ${start_ts}"
 
