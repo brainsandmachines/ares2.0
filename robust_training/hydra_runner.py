@@ -26,7 +26,7 @@ def _merge_groups(cfg) -> Dict:
         if not isinstance(v, dict) and not hasattr(v, '_get_node'):  # primitive
             merged[k] = v
     # Merge known groups if present
-    for group in ('training', 'model', 'dataset', 'optimizer', 'attacks', 'dist'):
+    for group in ('training', 'model', 'dataset', 'optimizer', 'attacks', 'dist','loss'):
         if group in cfg:
             group_dict = OmegaConf.to_container(cfg[group], resolve=True)
             if group_dict:

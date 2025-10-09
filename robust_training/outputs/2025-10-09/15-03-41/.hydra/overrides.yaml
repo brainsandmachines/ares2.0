@@ -1,0 +1,3 @@
+- dataset.train_dir=/mnt/data/datasets/imagenet/train
+- dataset.eval_dir=/mnt/data/datasets/imagenet/val
+- +dataset.scale=[0.08,1.0]

@@ -1,0 +1,2 @@
+- dataset.train_dir=/mnt/data/datasets/imagenet/train
+- dataset.eval_dir=/mnt/data/datasets/imagenet/val

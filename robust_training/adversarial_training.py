@@ -39,9 +39,9 @@ def main(args):
     # normalize attack eps/step for linf (values historically stored as 0-255)
     if getattr(args, 'attack_norm', None) == 'linf':
         if getattr(args, 'attack_eps', None) is not None:
-            args.attack_eps = args.attack_eps / 255.0
+            args.attack_eps = float(args.attack_eps) / 255.0
         if getattr(args, 'attack_step', None) is not None:
-            args.attack_step = args.attack_step / 255.0
+            args.attack_step = float(args.attack_step) / 255.0
     _logger = setup_logger(save_dir=None, distributed_rank=args.rank)
     _logger.info(f"Runtime distributed={args.distributed}, world_size={args.world_size}, rank={args.rank}, local_rank={args.local_rank}, device_id={args.device_id}")
 
@@ -123,8 +123,8 @@ def main(args):
         else:
             lr_scheduler.step(start_epoch)
     _logger.info('Scheduled epochs: {}'.format(num_epochs))
-    if not args.experiment or not args.experiment.strip():
-        args.experiment = _auto_experiment_name(args)
+    
+    args.experiment = _auto_experiment_name(args)
     args.output_dir = os.path.join(args.output_dir or ".", args.experiment)
 
     if args.rank == 0:

@@ -1,0 +1,5 @@
+- dataset.train_dir=/mnt/data/datasets/imagenet/train
+- dataset.eval_dir=/mnt/data/datasets/imagenet/val
+- +dataset.scale=[0.08,1.0]
+- +dataset.ratio=[0.75,1.3333]
+- +dataset.hflip=True
