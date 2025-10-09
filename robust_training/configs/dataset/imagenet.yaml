@@ -1,0 +1,5 @@
+# Dataset settings for ImageNet
+train_dir: '/sise/4-year-ise-proj/bml_group/tomerash/datasets/imagenet/train'
+eval_dir: '/sise/4-year-ise-proj/bml_group/tomerash/datasets/imagenet/val'
+mean: [0.485, 0.456, 0.406]
+std: [0.229, 0.224, 0.225]

@@ -1,0 +1,14 @@
+# Model-specific settings
+model: convnext_small
+num_classes: 1000
+resume: ''
+gp: null
+channels_last: False
+
+# Batch norm parameters
+bn_momentum: null
+bn_eps: null
+sync_bn: False
+dist_bn: reduce
+split_bn: False
+

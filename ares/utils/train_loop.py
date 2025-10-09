@@ -17,10 +17,14 @@ def train_one_epoch(
         epoch, model, loader, optimizer, loss_fn, args,
         lr_scheduler=None, saver=None, amp_autocast=None,
         loss_scaler=None, model_ema=None, mixup_fn=None, _logger=None, writer=None):
+    
     # mixup setting
+    print(f"[DEBUG] Epoch: {epoch}, mixup_off_epoch: {getattr(args, 'mixup_off_epoch', None)}, mixup_fn: {type(mixup_fn)}")
     if args.mixup_off_epoch and epoch >= args.mixup_off_epoch:
-        if mixup_fn is not None:
-            mixup_fn.mixup_enabled = False
+        print("[DEBUG] Disabling mixup!")
+    if mixup_fn is not None:
+        mixup_fn.mixup_enabled = False
+        print(f"[DEBUG] mixup_fn.mixup_enabled set to {mixup_fn.mixup_enabled}")
 
     # statistical variables
     second_order = hasattr(optimizer, 'is_second_order') and optimizer.is_second_order

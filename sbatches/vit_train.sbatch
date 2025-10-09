@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
-#SBATCH --job-name=ares_imagenet_pilot
+#SBATCH --job-name=vit_base_training
 #SBATCH --output=/home/ashtomer/logs/%x-%j.out
-#SBATCH --time=2-00:00:00
+#SBATCH --time=6-00:00:00
 #SBATCH --partition=rtx6000
 #SBATCH --qos=golan-neuro
-#SBATCH --gpus=2                 # change to 1 if you want single-GPU
+#SBATCH --nodes=1
+#SBATCH --gpus-per-node=1              # change to 1 if you want single-GPU
 #SBATCH --constraint=rtx_6000
 #SBATCH --mem=48G
-otherwise
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
 
@@ -41,9 +41,9 @@ PY
 echo "Using nproc_per_node=${NPROC}"
 
 # ===== Run training with torchrun =====
-torchrun --nproc_per_node=2 \
+torchrun --nproc_per_node=${NPROC} \
    adversarial_training.py \
-  --configs ./train_configs/resnet50.yaml \
+  --configs ./train_configs/vit_base_patch16_224.yaml \
 
 
 echo "=== Done ==="

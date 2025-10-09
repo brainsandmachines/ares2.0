@@ -6,7 +6,7 @@ def get_args_parser():
 
     #* distributed setting
     parser.add_argument('--distributed', default=True)
-    parser.add_argument('--local-rank', default=-1, type=int)
+    parser.add_argument('--local-rank','--local_rank',default=-1, type=int)
     parser.add_argument('--device-id', type=int, default=0)
     parser.add_argument('--rank', default=-1, type=int, help='rank')
     parser.add_argument('--world-size', default=1, type=int, help='number of distributed processes')
@@ -199,8 +199,8 @@ def get_args_parser():
     # advtrain
     parser.add_argument('--advtrain', default=False, help='if use advtrain')
     parser.add_argument('--attack-criterion', type=str, default='regular', choices=['regular', 'smooth', 'mixup'], help='default args for: adversarial training')
-    parser.add_argument('--attack-eps', type=float, default=4.0/255, help='attack epsilon.')
-    parser.add_argument('--attack-step', type=float, default=8.0/255/3, help='attack epsilon.')
+    parser.add_argument('--attack-eps', type=float, default=2.0, help='attack epsilon.')
+    parser.add_argument('--attack-step', type=float, default=8.0/3, help='attack epsilon.')
     parser.add_argument('--attack-it', type=int, default=3, help='attack iteration')
     parser.add_argument('--attack-norm',type=str, default='linf',choices=['linf','l2'], help='norm used for adversarial training step')
     # advprop

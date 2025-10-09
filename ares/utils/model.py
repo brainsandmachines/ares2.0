@@ -100,7 +100,6 @@ def build_model(args, _logger, num_aug_splits):
     model_kwargs=dict({
         'num_classes': args.num_classes,
         'drop_rate': args.drop,
-        'drop_connect_rate': args.drop_connect,  # DEPRECATED, use drop_path
         'drop_path_rate': args.drop_path,
         'drop_block_rate': args.drop_block,
         'global_pool': args.gp,

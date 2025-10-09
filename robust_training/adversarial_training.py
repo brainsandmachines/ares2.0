@@ -1,6 +1,8 @@
 import warnings
 warnings.filterwarnings("ignore")
 import argparse
+from omegaconf import DictConfig, OmegaConf
+import hydra
 import time
 import yaml
 import os
@@ -30,10 +32,16 @@ from ares.utils.validate import validate
 
 def main(args):
     # distributed settings and logger
-    if "WORLD_SIZE" in os.environ:
-        args.world_size=int(os.environ["WORLD_SIZE"])
-    args.distributed=args.world_size>1
+    # if "WORLD_SIZE" in os.environ:
+    #     args.world_size=int(os.environ["WORLD_SIZE"])
+    # args.distributed=args.world_size>1
     distributed_init(args)
+    # normalize attack eps/step for linf (values historically stored as 0-255)
+    if getattr(args, 'attack_norm', None) == 'linf':
+        if getattr(args, 'attack_eps', None) is not None:
+            args.attack_eps = args.attack_eps / 255.0
+        if getattr(args, 'attack_step', None) is not None:
+            args.attack_step = args.attack_step / 255.0
     _logger = setup_logger(save_dir=None, distributed_rank=args.rank)
     _logger.info(f"Runtime distributed={args.distributed}, world_size={args.world_size}, rank={args.rank}, local_rank={args.local_rank}, device_id={args.device_id}")
 
@@ -197,7 +205,46 @@ def main(args):
 
 
 
+def _cfg_to_namespace(cfg):
+    """Convert a DictConfig (Hydra/OmegaConf) or dict to argparse.Namespace expected by main().
+
+    The original code expected a flat Namespace. Our Hydra configs are grouped (training, model,
+    dataset, optimizer, attacks). Merge known groups into a single flat dict and return Namespace.
+    """
+    if isinstance(cfg, argparse.Namespace):
+        return cfg
+    if isinstance(cfg, DictConfig) or isinstance(cfg, dict):
+        cfg_dict = OmegaConf.to_container(cfg, resolve=True)
+        merged = {}
+        # take top-level scalars
+        for k, v in cfg_dict.items():
+            if not isinstance(v, dict):
+                merged[k] = v
+        # merge known groups
+        for group in ('training', 'model', 'dataset', 'optimizer', 'attacks'):
+            if group in cfg_dict and cfg_dict[group] is not None:
+                grp = cfg_dict[group]
+                if isinstance(grp, dict):
+                    merged.update(grp)
+        return argparse.Namespace(**merged)
+    # fallback
+    return argparse.Namespace(**dict(cfg))
+
+
+@hydra.main(config_path="configs", config_name="config", version_base="1.3")
+def hydra_main(cfg: DictConfig):
+    """Hydra entrypoint: composes configs and calls existing main()."""
+    args = _cfg_to_namespace(cfg)
+    if getattr(args, 'attack_norm', None) == 'linf':
+        if getattr(args, 'attack_eps', None) is not None:
+            args.attack_eps = args.attack_eps / 255.0
+        if getattr(args, 'attack_step', None) is not None:
+            args.attack_step = args.attack_step / 255.0
+    main(args)
+
+
 if __name__ == '__main__':
+    # keep the original argparse CLI for backward compatibility
     parser = argparse.ArgumentParser('Robust training script', parents=[get_args_parser()])
     args = parser.parse_args()
     opt = vars(args)
@@ -205,5 +252,4 @@ if __name__ == '__main__':
         opt.update(yaml.load(open(args.configs), Loader=yaml.FullLoader))
     
     args = argparse.Namespace(**opt)
-
     main(args)

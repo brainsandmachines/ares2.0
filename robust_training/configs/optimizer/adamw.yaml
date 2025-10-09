@@ -1,0 +1,9 @@
+# Optimizer defaults: adamw
+opt: adamw
+opt_eps: 1.0e-8
+opt_betas: null
+momentum: 0.9
+weight_decay: 0.05
+clip_grad: null
+clip_mode: norm
+layer_decay: null

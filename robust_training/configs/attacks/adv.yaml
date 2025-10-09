@@ -1,0 +1,5 @@
+# Adversarial / attack related defaults
+advtrain: True
+attack_criterion: mixup
+attack_norm: linf
+advprop: False
