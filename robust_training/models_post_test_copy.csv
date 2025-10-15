@@ -1,0 +1,18 @@
+model_id,norm,constraint_val,adv_train,init_id,current_epoch,status,last_progress_ts,last_time_selected
+norm=l2|c=1|adv=1|init=1,l2,1,1,1.0,0,waiting,,
+norm=l2|c=1|adv=1|init=2,l2,1,1,2.0,0,waiting,,
+norm=l2|c=2|adv=1|init=1,l2,2,1,1.0,0,waiting,,
+norm=l2|c=2|adv=1|init=2,l2,2,1,2.0,0,waiting,,
+norm=l2|c=4|adv=1|init=1,l2,4,1,1.0,0,waiting,,
+norm=l2|c=4|adv=1|init=2,l2,4,1,2.0,0,waiting,,
+norm=l2|c=8|adv=1|init=1,l2,8,1,1.0,0,waiting,,
+norm=l2|c=8|adv=1|init=2,l2,8,1,2.0,0,waiting,,
+norm=linf|c=1|adv=1|init=1,linf,1,1,1.0,16,training,2025-10-15 09:31:30,2025-10-15 13:27:24
+norm=linf|c=1|adv=1|init=2,linf,1,1,2.0,16,waiting,2025-10-15 10:02:11,
+norm=linf|c=2|adv=1|init=1,linf,2,1,1.0,29,waiting,2025-10-13 17:58:45,2025-10-15 13:27:24
+norm=linf|c=2|adv=1|init=2,linf,2,1,2.0,5,waiting,2025-10-14 07:20:48,
+norm=linf|c=4|adv=1|init=1,linf,4,1,1.0,111,waiting,2025-10-15 02:20:44,2025-10-15 13:17:23
+norm=linf|c=4|adv=1|init=2,linf,4,1,2.0,15,waiting,2025-10-15 11:59:06,
+norm=linf|c=8|adv=1|init=1,linf,8,1,1.0,14,waiting,2025-10-15 11:18:22,
+norm=linf|c=8|adv=1|init=2,linf,8,1,2.0,0,waiting,,
+c=0|adv=0,,0,0,,0,waiting,,

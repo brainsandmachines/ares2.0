@@ -29,12 +29,13 @@ from ares.utils.defaults import get_args_parser
 from ares.utils.train_loop import train_one_epoch
 from ares.utils.validate import validate
 
+from adv_scheduler import TaskScheduler
 
 def main(args):
     # distributed settings and logger
     # if "WORLD_SIZE" in os.environ:
     #     args.world_size=int(os.environ["WORLD_SIZE"])
-    # args.distributed=args.world_size>1
+    args.distributed=float(args.world_size)>1
     distributed_init(args)
     # normalize attack eps/step for linf (values historically stored as 0-255)
     if getattr(args, 'attack_norm', None) == 'linf':
@@ -89,18 +90,12 @@ def main(args):
         if args.resume:
             load_checkpoint(model_ema.module, args.resume, use_ema=True)
 
-    # setup distributed training
+    # # setup distributed training
     if args.distributed:
-        if args.amp_version == 'apex':
-            # Apex DDP preferred unless native amp is activated
-            from apex.parallel import DistributedDataParallel as ApexDDP
-            _logger.info("Using NVIDIA APEX DistributedDataParallel.")
-            model = ApexDDP(model, delay_allreduce=True)
-        else:
-            _logger.info("Using native Torch DistributedDataParallel.")
-            model = NativeDDP(model, device_ids=[args.device_id])
+        _logger.info("Using native Torch DistributedDataParallel.")
+        model = NativeDDP(model, device_ids=[args.device_id])
         # NOTE: EMA model does not need to be wrapped by DDP
-
+    
     # create the train and eval dataloaders
     loader_train, loader_eval, mixup_fn = build_dataset(args, num_aug_splits)
 
@@ -124,11 +119,12 @@ def main(args):
             lr_scheduler.step(start_epoch)
     _logger.info('Scheduled epochs: {}'.format(num_epochs))
     
-    args.experiment = _auto_experiment_name(args)
-    args.output_dir = os.path.join(args.output_dir or ".", args.experiment)
+    sch = TaskScheduler(db_path="adv_scheduler.db")
+
+    args.output_dir = os.path.join(args.output_dir or ".", args.experiment_name)
 
     if args.rank == 0:
-        _logger.info(f"Experiment: {args.experiment}")
+        _logger.info(f"Experiment: {args.experiment_name}")
         _logger.info(f"Results directory: {args.output_dir}")
     # saver
     eval_metric = args.eval_metric
@@ -154,6 +150,7 @@ def main(args):
 
     # start training
     _logger.info(f"Start training for {args.epochs} epochs")
+    
     for epoch in range(start_epoch, args.epochs):
         if hasattr(loader_train, 'sampler') and hasattr(loader_train.sampler, 'set_epoch'):
             loader_train.sampler.set_epoch(epoch)
@@ -161,7 +158,8 @@ def main(args):
         train_metrics = train_one_epoch(
                 epoch, model, loader_train, optimizer, train_loss_fn, args,
                 lr_scheduler=lr_scheduler, saver=saver, amp_autocast=amp_autocast,
-                loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn, _logger=_logger, writer=writer)
+                loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn, _logger=_logger, writer=writer,
+                sch=sch, model_id=args.model_id)
 
         # distributed bn sync
         if args.distributed and args.dist_bn in ('broadcast', 'reduce'):

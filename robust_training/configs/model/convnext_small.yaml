@@ -13,3 +13,7 @@ sync_bn: False
 dist_bn: reduce
 split_bn: False
 
+experiment_num: 1
+experiment_name: ''
+model_id: ''
+

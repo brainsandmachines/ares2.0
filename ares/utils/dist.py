@@ -43,6 +43,7 @@ def distributed_init(args):
         # Initialize process group for various scenarios:
         # 1. Non-distributed scenarios (e.g., regular python script)
         # 2. torchrun with single process (where distributed=False but env vars are set)
+        import random, os
         if not torch.distributed.is_initialized():
             if 'LOCAL_RANK' in os.environ:
                 # torchrun environment - use env:// method
@@ -51,10 +52,12 @@ def distributed_init(args):
                     init_method='env://'
                 )
             else:
-                # Pure single process - use tcp:// method
+                # Single process fallback - randomize port to avoid EADDRINUSE
+                
+                port = int(os.environ.get("MASTER_PORT", 12000 + random.randint(0, 2000)))
                 torch.distributed.init_process_group(
                     backend='nccl' if torch.cuda.is_available() else 'gloo',
-                    init_method='tcp://localhost:12355',
+                    init_method=f'tcp://localhost:{port}',
                     world_size=1,
                     rank=0
                 )

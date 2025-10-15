@@ -16,10 +16,9 @@ from ares.utils.metrics import AverageMeter
 def train_one_epoch(
         epoch, model, loader, optimizer, loss_fn, args,
         lr_scheduler=None, saver=None, amp_autocast=None,
-        loss_scaler=None, model_ema=None, mixup_fn=None, _logger=None, writer=None):
+        loss_scaler=None, model_ema=None, mixup_fn=None, _logger=None, writer=None, sch=None, model_id=None):
     
     # mixup setting
-    print(f"[DEBUG] Epoch: {epoch}, mixup_off_epoch: {getattr(args, 'mixup_off_epoch', None)}, mixup_fn: {type(mixup_fn)}")
     if args.mixup_off_epoch and epoch >= args.mixup_off_epoch:
         print("[DEBUG] Disabling mixup!")
     if mixup_fn is not None:
@@ -34,7 +33,8 @@ def train_one_epoch(
     num_epochs = args.epochs + args.cooldown_epochs
 
     model.train()
-
+    
+    epoch_wall_start = time.time()
     end = time.time()
     last_idx = len(loader) - 1
     num_updates = epoch * len(loader)
@@ -156,6 +156,10 @@ def train_one_epoch(
 
     if hasattr(optimizer, 'sync_lookahead'):
         optimizer.sync_lookahead()
-
+        
+    # -------- DB update: end-of-epoch --------
+    if sch is not None and model_id is not None:
+        sch.update_progress_epoch_end(model_id=model_id)
+        
     return OrderedDict([('loss', losses_m.avg)])
 
