@@ -9,12 +9,14 @@
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
 #SBATCH --output=outs/advtrain/convnextsmall/_%A_%a.out
-#SBATCH --error=outs/advtrain/convnextsmall/_%A_%a.err
+#SBATCH --array=1-30%8
 
 
 
 # ---- Env once ----
 module load anaconda
+source activate ares
+conda deactivate
 conda activate ares
 
 # ---- Go to repo root (so relative paths work) ----

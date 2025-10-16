@@ -187,11 +187,22 @@ def main(args):
                 epoch, train_metrics, eval_metrics, os.path.join(output_dir, 'summary.csv'),
                 write_header=best_metric is None)
 
-        # save checkpoint, print best metric
         if saver is not None:
+            save_path = os.path.join(saver.output_dir, f"checkpoint-{epoch}.pth.tar")
+            # If a checkpoint with this name already exists, remove it to avoid FileExistsError
+            if os.path.exists(save_path):
+                if args.rank == 0:
+                    print(f"[Warning] Removing existing checkpoint: {save_path}")
+                    os.remove(save_path)
+                # Ensure all ranks see the same file state before continuing
+                if args.distributed:
+                    torch.distributed.barrier()
+
             best_metric, best_epoch = saver.save_checkpoint(epoch, eval_metrics[eval_metric])
+
         if writer is not None and args.rank == 0:
-            writer.flush()    
+            writer.flush()
+
         if args.distributed:
             torch.distributed.barrier()
 

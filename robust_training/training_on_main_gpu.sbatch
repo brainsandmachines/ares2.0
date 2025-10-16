@@ -3,18 +3,18 @@
 #SBATCH --time=7-00:00:00
 #SBATCH --partition=main                 # main queue
 #SBATCH --gpus=1                         # request 1 GPU
-#SBATCH --constraint=rtx_4090            # GPUs with >24GB VRAM
+#SBATCH --constraint=rtx_6000            # GPUs with >24GB VRAM
 #SBATCH --mem=48G                        # memory (optional override)
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
 #SBATCH --output=outs/advtrain/convnextsmall_%A_%a.out
-#SBATCH --error=outs/advtrain/convnextsmall_%A_%a.err
-#SBATCH --array=1-10%8
+#SBATCH --array=1-300%8
 
 
 # ---- Env once ----
-source ~/.bashrc
 module load anaconda
+source activate ares
+conda deactivate
 conda activate ares
 
 # ---- Go to repo root (so relative paths work) ----
@@ -47,7 +47,7 @@ from adv_scheduler import TaskScheduler
 sch = TaskScheduler("adv_scheduler.db")
 sch.requeue_stale_trainings(threshold_hours=10, max_epoch=200)
 
-model = sch.claim_next_waiting_model(max_epoch=200)
+model = sch.claim_next_waiting_model(cooldown_minutes=10)
 
 if not model:
     print("NONE")
