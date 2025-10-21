@@ -126,13 +126,8 @@ class L2Step(AttackerStep):
         return x + scaled_g * self.step_size
 
     def random_perturb(self, x):
-        """
-        Generate a random perturbation within the ℓ₂ ball.
-        """
-        l = len(x.shape) - 1
-        rp = torch.randn_like(x)
-        rp_norm = rp.view(rp.shape[0], -1).norm(dim=1).view(-1, *([1]*l))
-        return torch.clamp(x + self.eps * rp / (rp_norm + 1e-10), 0, 1)
+        new_x = x + (torch.rand_like(x) - 0.5).renorm(p=2, dim=1, maxnorm=self.eps)
+        return torch.clamp(new_x, 0, 1)
     
     def random_uniform(self, x):
         return self.random_perturb(x)

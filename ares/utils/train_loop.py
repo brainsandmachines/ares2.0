@@ -82,7 +82,16 @@ def train_one_epoch(
             else:
                 output = model(input)
                 loss = loss_fn(output, target)
-
+        # === STOP TRAINING IF LOSS IS NaN or Inf ===
+        if not torch.isfinite(loss):
+            _logger.error(
+                f"[NaN DETECTED] Loss became non-finite at epoch {epoch}, "
+                f"batch {batch_idx}. Loss value: {loss.item()}"
+            )
+            raise RuntimeError(
+                f"Non-finite loss detected at epoch {epoch}, batch {batch_idx}. "
+                f"Training stopped."
+            )
         if not args.distributed:
             losses_m.update(loss.item(), input.size(0))
 
