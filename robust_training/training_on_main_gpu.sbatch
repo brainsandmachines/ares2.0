@@ -11,6 +11,7 @@
 #SBATCH --array=1-300%8
 
 
+nvidia-smi
 # ---- Env once ----
 module load anaconda
 source activate ares
@@ -40,12 +41,12 @@ echo "[INFO] Using batch size = ${BATCH_SIZE}"
 # ---- Pick next model from scheduler ----
 echo "[INFO] Selecting model from scheduler..."
 
-MODEL_INFO=$(python - <<'PY' | tail -n 1
+MODEL_INFO=$(timeout 120s python - <<'PY' | tail -n 1
 import json, os
 from adv_scheduler import TaskScheduler
 
 sch = TaskScheduler("adv_scheduler.db")
-sch.requeue_stale_trainings(threshold_hours=10, max_epoch=200)
+sch.requeue_stale_trainings(threshold_hours=8, max_epoch=200)
 
 model = sch.claim_next_waiting_model(cooldown_minutes=10)
 
@@ -70,6 +71,13 @@ else:
     }))
 PY
 )
+
+echo "[INFO] finished selecting model from scheduler..."
+
+if [ -z "$MODEL_INFO" ]; then
+  echo "[ERROR] Scheduler query timed out or returned nothing. Exiting safely."
+  exit 1
+fi
 
 if [ "$MODEL_INFO" = "NONE" ]; then
   echo "[INFO] No waiting models found. Exiting."

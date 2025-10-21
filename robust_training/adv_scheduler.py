@@ -234,67 +234,82 @@ class TaskScheduler():
             print(f"[INFO] Requeued {affected} stale training jobs (> {threshold_hours}h inactive).")
         return affected
 
-    def claim_next_waiting_model(self, cooldown_minutes=10):
+    def claim_next_waiting_model(self, cooldown_minutes=10,retries=5):
         """
         Atomically claim the next available waiting model for training.
         Ensures only one process can claim a model at a time.
         Returns a dict with model info, or None if no model is available.
         """
-        conn = sqlite3.connect(self.db_path, timeout=30)  # 30s to wait if DB is busy
-        c = conn.cursor()
+        cooldown_secs = int(cooldown_minutes * 60)
+        for attempt in range(retries):
+            try:
+                conn = sqlite3.connect(self.db_path, timeout=30,isolation_level=None)  # 30s to wait if DB is busy
+                conn.execute("PRAGMA journal_mode=WAL;")
+                c = conn.cursor()
 
-        try:
-            # Lock the DB immediately for this transaction
-            c.execute("BEGIN IMMEDIATE")
+                # Lock the DB immediately for this transaction
+                c.execute("BEGIN IMMEDIATE;")
             
-            cooldown_secs = int(cooldown_minutes * 60)
+                # Select the next waiting model
+                c.execute("""
+                    SELECT model_id, norm, constraint_val, adv_train, init_id, current_epoch
+                    FROM models
+                    WHERE status = 'waiting'
+                    AND (
+            last_time_selected IS NULL
+            OR (strftime('%s','now') - last_time_selected) > ?
+        )
+                    ORDER BY current_epoch DESC
+                    LIMIT 1
+                """, (cooldown_secs,))
+                row = c.fetchone()
 
-            # Select the next waiting model
-            c.execute("""
-                SELECT model_id, norm, constraint_val, adv_train, init_id, current_epoch
-                FROM models
-                WHERE status = 'waiting'
-                AND (
-          last_time_selected IS NULL
-          OR (strftime('%s','now') - last_time_selected) > ?
-      )
-                ORDER BY current_epoch DESC
-                LIMIT 1
-            """, (cooldown_secs,))
-            row = c.fetchone()
+                if not row:
+                    conn.rollback()
+                    conn.close()
+                    return None  # no waiting models
 
-            if not row:
-                conn.rollback()
+                # Extract info
+                model_id, norm, constraint_val, adv_train, init_id, epoch = row
+
+                # Mark it as "training"
+                now = int(time.time())
+                c.execute("""
+                    UPDATE models
+                    SET status = 'training',
+                        last_time_selected = ?
+                    WHERE model_id = ?
+                """, (now, model_id))
+                conn.commit()
+                
+                # Cleanup WAL to avoid file growth
+                conn.execute("PRAGMA wal_checkpoint(FULL);")
                 conn.close()
-                return None  # no waiting models
 
-            # Extract info
-            model_id, norm, constraint_val, adv_train, init_id, epoch = row
+                # Return info as dict
+                return {
+                    "model_id": model_id,
+                    "norm": norm,
+                    "constraint_val": constraint_val,
+                    "adv_train": adv_train,
+                    "init_id": init_id,
+                    "current_epoch": epoch,
+                }
 
-            # Mark it as "training"
-            now = int(time.time())
-            c.execute("""
-                UPDATE models
-                SET status = 'training',
-                    last_time_selected = ?
-                WHERE model_id = ?
-            """, (now, model_id))
-            conn.commit()
-
-            # Return info as dict
-            return {
-                "model_id": model_id,
-                "norm": norm,
-                "constraint_val": constraint_val,
-                "adv_train": adv_train,
-                "init_id": init_id,
-                "current_epoch": epoch,
-            }
-
-        except sqlite3.OperationalError as e:
-            print(f"[ERROR] SQLite busy or locked: {e}")
-            conn.rollback()
-            return None
-        finally:
-            conn.close()
+            except sqlite3.OperationalError as e:
+                if "database is locked" in str(e).lower():
+                    print(f"[WARN] Database is locked. Retry {attempt+1}/{retries} in 2s...")
+                    time.sleep(2)
+                    continue  # exponential backoff
+                else:   
+                    print(f"[ERROR] SQLite busy or locked: {e}")
+                    break
+                
+            finally:
+                try:
+                    conn.close()
+                except:
+                    pass
+        print(f"[ERROR] Failed to claim model after {retries} retries.")
+        return None
 

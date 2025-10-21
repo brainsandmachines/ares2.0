@@ -3,8 +3,10 @@ import time
 import tempfile
 import os
 import pytest
+import multiprocessing
+import threading
 
-from adv_scheduler import TaskScheduler  # replace with actual class name
+from adv_scheduler import TaskScheduler  
 
 
 @pytest.fixture
@@ -122,3 +124,106 @@ def test_claim_next_waiting_model_sets_training_and_updates_last_time_selected(d
     assert claimed is not None
     assert status == "training"
     assert isinstance(last_time_selected, int)
+    
+# ---- Concurrency / locking tests ----
+
+def _claim_in_subprocess(db_path, return_dict, key):
+    """Helper: run claim_next_waiting_model() in a subprocess."""
+    from adv_scheduler import TaskScheduler
+    sch = TaskScheduler(db_path)
+    start = time.time()
+    try:
+        result = sch.claim_next_waiting_model(cooldown_minutes=0)
+        return_dict[key] = {
+            "result": result,
+            "duration": time.time() - start,
+        }
+    except Exception as e:
+        return_dict[key] = {
+            "result": None,
+            "duration": time.time() - start,
+            "error": str(e),
+        }
+
+
+def test_concurrent_multi_claims_no_lock_or_duplicate(db_scheduler):
+    """
+    Ensure multiple processes can concurrently claim models without lockups
+    and each gets a unique model.
+    """
+    # Insert 5 waiting models
+    for i in range(5):
+        insert_model(db_scheduler, status="waiting", norm="l2", constraint_val=i + 1)
+
+    manager = multiprocessing.Manager()
+    return_dict = manager.dict()
+    procs = []
+
+    # Launch 5 parallel claimers
+    for i in range(5):
+        p = multiprocessing.Process(
+            target=_claim_in_subprocess,
+            args=(db_scheduler.db_path, return_dict, f"p{i+1}")
+        )
+        procs.append(p)
+        p.start()
+
+    # Join with timeout — fail if any process hangs
+    for p in procs:
+        p.join(timeout=15)
+        assert not p.is_alive(), "One of the processes hung (possible DB lock)."
+
+    results = list(return_dict.values())
+
+    # Ensure all succeeded
+    successes = [r["result"] for r in results if r and r["result"]]
+    assert len(successes) == 5, f"Expected 5 models claimed, got {len(successes)}"
+
+    # All model_ids must be unique
+    model_ids = [r["model_id"] for r in successes]
+    assert len(set(model_ids)) == 5, f"Duplicate model IDs claimed: {model_ids}"
+
+    # Each claim should be fast (<10s)
+    for r in results:
+        assert r["duration"] < 10, f"Claim took too long: {r['duration']:.2f}s"
+
+    # Verify DB consistency
+    conn = sqlite3.connect(db_scheduler.db_path)
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM models WHERE status='training'")
+    (training_count,) = c.fetchone()
+    conn.close()
+
+    assert training_count == 5
+    print(f"\n[PASS] {training_count} models claimed concurrently with no DB locks.")
+
+def test_requeue_and_claim_do_not_deadlock(db_scheduler):
+    """Ensure requeue_stale_trainings and claim_next_waiting_model can run concurrently without freezing."""
+
+    # Insert one training and one waiting model
+    m1 = insert_model(db_scheduler, status="training", current_epoch=5,
+                      last_progress_ts=int(time.time()) - 11 * 3600)
+    m2 = insert_model(db_scheduler, status="waiting", current_epoch=0)
+
+    def run_requeue():
+        db_scheduler.requeue_stale_trainings(threshold_hours=10, max_epoch=200)
+
+    def run_claim(result_holder):
+        model = db_scheduler.claim_next_waiting_model()
+        result_holder["claimed"] = model
+
+    result = {}
+
+    t1 = threading.Thread(target=run_requeue)
+    t2 = threading.Thread(target=run_claim, args=(result,))
+
+    t1.start()
+    time.sleep(0.1)  # slight overlap
+    t2.start()
+
+    t1.join(timeout=10)
+    t2.join(timeout=10)
+
+    assert not t1.is_alive(), "requeue_stale_trainings got stuck!"
+    assert not t2.is_alive(), "claim_next_waiting_model got stuck!"
+    assert result["claimed"] is not None, "claim_next_waiting_model failed to get a model"

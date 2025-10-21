@@ -1,0 +1,2 @@
+- dataset.train_dir=/storage/test/bml_group/tomerash/datasets/imagenet/train
+- dataset.eval_dir=/storage/test/bml_group/tomerash/datasets/imagenet/val

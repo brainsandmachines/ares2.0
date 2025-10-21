@@ -188,7 +188,7 @@ def main(args):
                 write_header=best_metric is None)
 
         if saver is not None:
-            save_path = os.path.join(saver.output_dir, f"checkpoint-{epoch}.pth.tar")
+            save_path = os.path.join(saver.checkpoint_dir, f"checkpoint-{epoch}.pth.tar")
             # If a checkpoint with this name already exists, remove it to avoid FileExistsError
             if os.path.exists(save_path):
                 if args.rank == 0:
