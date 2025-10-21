@@ -21,22 +21,53 @@ conda activate ares
 # ---- Go to repo root (so relative paths work) ----
 cd /home/ashtomer/projects/ares/robust_training
 
+cleanup() {
+  if [ -f /tmp/current_model.txt ]; then
+    MODEL_ID=$(cat /tmp/current_model.txt)
+    echo "[INFO] Cleaning up... resetting model $MODEL_ID to waiting."
+    python - <<PY
+from adv_scheduler import TaskScheduler
+sch = TaskScheduler("adv_scheduler.db")
+sch._execute_sqlite("UPDATE models SET status = 'waiting' WHERE model_id = ?", ("$MODEL_ID",))
+PY
+echo "[INFO] Model $MODEL_ID reset to waiting at $(date)" >> outs/cleanup_events.log
+  fi
+}
+trap cleanup TERM INT EXIT
+
+
 # ---- GPU mem → batch size ----
 echo "[INFO] Checking GPU memory..."
-GPU_MEM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n 1 || echo 0)
-echo "[INFO] Detected GPU memory: ${GPU_MEM} MB"
 
-if [ "$GPU_MEM" -ge 95000 ]; then
+# Query total and free memory (remove commas)
+read GPU_TOTAL GPU_FREE <<< $(nvidia-smi --query-gpu=memory.total,memory.free --format=csv,noheader,nounits | head -n 1 | tr -d ',' || echo "0 0")
+
+echo "[INFO] Detected GPU total: ${GPU_TOTAL} MB, free: ${GPU_FREE} MB"
+
+# Decide batch size based on total capacity
+if [ "$GPU_TOTAL" -ge 95000 ]; then
   BATCH_SIZE=512
-elif [ "$GPU_MEM" -ge 47000 ]; then
+elif [ "$GPU_TOTAL" -ge 47000 ]; then
   BATCH_SIZE=256
-elif [ "$GPU_MEM" -ge 23000 ]; then
+elif [ "$GPU_TOTAL" -ge 23000 ]; then
   BATCH_SIZE=128
 else
-  echo "[ERROR] GPU memory too small (< 24 GB)"
+  echo "[ERROR] GPU total memory too small (< 24 GB)"
   exit 1
 fi
+
+# Require at least 90% free
+REQUIRED_FREE=$(( GPU_TOTAL * 9 / 10 ))
+if [ "$GPU_FREE" -lt "$REQUIRED_FREE" ]; then
+  echo "[ERROR] Not enough free GPU memory!"
+  echo "[INFO] Required: ${REQUIRED_FREE} MB (90% of ${GPU_TOTAL}), Available: ${GPU_FREE} MB"
+  echo "[HINT] Another job might still be using the GPU. Try again later."
+  exit 1
+fi
+
+echo "[INFO] Sufficient free GPU memory detected."
 echo "[INFO] Using batch size = ${BATCH_SIZE}"
+
 
 # ---- Pick next model from scheduler ----
 echo "[INFO] Selecting model from scheduler..."
@@ -46,7 +77,6 @@ import json, os
 from adv_scheduler import TaskScheduler
 
 sch = TaskScheduler("adv_scheduler.db")
-sch.requeue_stale_trainings(threshold_hours=8, max_epoch=200)
 
 model = sch.claim_next_waiting_model(cooldown_minutes=10)
 
@@ -86,6 +116,7 @@ fi
 
 # ---- Parse JSON → shell vars ----
 MODEL_ID=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['model_id'])")
+echo "$MODEL_ID" > /tmp/current_model.txt
 SAFE_NAME=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['safe_name'])")
 NORM=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['norm'])")
 CONS=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['constraint_val'])")
@@ -132,3 +163,6 @@ else
     training.epochs="$EPOCHS" \
     hydra.run.dir="results/convnext_small/${SAFE_NAME}"
 fi
+
+rm -f /tmp/current_model.txt
+echo "[INFO] Training job completed."

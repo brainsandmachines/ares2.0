@@ -1,6 +1,6 @@
 ------cluster-------
 1. on the cluster terminal, copy this command:  # change path according to expiriment name
-    tensorboard   --logdir=/home/ashtomer/projects/ares/robust_training/results/convnext_small_eps4_linf/tb   --port=6006  --bind_all
+    tensorboard   --logdir=/home/ashtomer/projects/ares/robust_training/results/convnext_small/convnext_small_eps-4_linf_seed-1/tb   --port=6006  --bind_all
   
 
 2. see where the tensorboard is located:

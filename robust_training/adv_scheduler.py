@@ -234,46 +234,42 @@ class TaskScheduler():
             print(f"[INFO] Requeued {affected} stale training jobs (> {threshold_hours}h inactive).")
         return affected
 
-    def claim_next_waiting_model(self, cooldown_minutes=10,retries=5):
+    def claim_next_waiting_model(self, cooldown_minutes=10, retries=5):
         """
-        Atomically claim the next available waiting model for training.
-        Ensures only one process can claim a model at a time.
-        Returns a dict with model info, or None if no model is available.
+        Claim the next available waiting model for training.
+        Retries a few times if the database is temporarily locked.
+        No WAL, no timeout, no manual BEGIN statements.
         """
         cooldown_secs = int(cooldown_minutes * 60)
+
         for attempt in range(retries):
             try:
-                conn = sqlite3.connect(self.db_path, timeout=30,isolation_level=None)  # 30s to wait if DB is busy
-                conn.execute("PRAGMA journal_mode=WAL;")
+                conn = sqlite3.connect(self.db_path)
                 c = conn.cursor()
 
-                # Lock the DB immediately for this transaction
-                c.execute("BEGIN IMMEDIATE;")
-            
-                # Select the next waiting model
+                # Find the next waiting model
                 c.execute("""
                     SELECT model_id, norm, constraint_val, adv_train, init_id, current_epoch
                     FROM models
                     WHERE status = 'waiting'
                     AND (
-            last_time_selected IS NULL
-            OR (strftime('%s','now') - last_time_selected) > ?
-        )
+                        last_time_selected IS NULL
+                        OR (strftime('%s','now') - last_time_selected) > ?
+                    )
                     ORDER BY current_epoch DESC
                     LIMIT 1
                 """, (cooldown_secs,))
                 row = c.fetchone()
 
                 if not row:
-                    conn.rollback()
                     conn.close()
-                    return None  # no waiting models
+                    return None  # no waiting models available
 
                 # Extract info
                 model_id, norm, constraint_val, adv_train, init_id, epoch = row
+                now = int(time.time())
 
                 # Mark it as "training"
-                now = int(time.time())
                 c.execute("""
                     UPDATE models
                     SET status = 'training',
@@ -281,9 +277,6 @@ class TaskScheduler():
                     WHERE model_id = ?
                 """, (now, model_id))
                 conn.commit()
-                
-                # Cleanup WAL to avoid file growth
-                conn.execute("PRAGMA wal_checkpoint(FULL);")
                 conn.close()
 
                 # Return info as dict
@@ -300,16 +293,16 @@ class TaskScheduler():
                 if "database is locked" in str(e).lower():
                     print(f"[WARN] Database is locked. Retry {attempt+1}/{retries} in 2s...")
                     time.sleep(2)
-                    continue  # exponential backoff
-                else:   
-                    print(f"[ERROR] SQLite busy or locked: {e}")
+                    continue  # try again
+                else:
+                    print(f"[ERROR] SQLite operational error: {e}")
                     break
-                
+
             finally:
                 try:
                     conn.close()
                 except:
                     pass
+
         print(f"[ERROR] Failed to claim model after {retries} retries.")
         return None
-
