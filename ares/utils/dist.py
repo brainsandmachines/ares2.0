@@ -43,7 +43,6 @@ def distributed_init(args):
         # Initialize process group for various scenarios:
         # 1. Non-distributed scenarios (e.g., regular python script)
         # 2. torchrun with single process (where distributed=False but env vars are set)
-        import random, os
         if not torch.distributed.is_initialized():
             if 'LOCAL_RANK' in os.environ:
                 # torchrun environment - use env:// method

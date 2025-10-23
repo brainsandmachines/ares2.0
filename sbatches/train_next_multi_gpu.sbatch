@@ -1,14 +1,17 @@
 #!/bin/bash
 #SBATCH --job-name=convnext_small_training
-#SBATCH --time=7-00:00:00
-#SBATCH --partition=main                 # main queue
-#SBATCH --gpus=1                          # request 1 GPU
-#SBATCH --constraint=rtx_pro_6000            # GPUs with >24GB VRAM
-#SBATCH --mem=48G                        # memory (optional override)
+#SBATCH --time=14-00:00:00
+#SBATCH --partition=rtx6000
+#SBATCH --qos=golan-neuro
+#SBATCH --gpus=2
+#SBATCH --constraint=rtx_6000
+#SBATCH --mem=48G
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
-#SBATCH --output=outs/advtrain/convnextsmall_%A_%a.out
-#SBATCH --array=1-300%3
+#SBATCH --output=outs/advtrain/convnextsmall/_%A_%a.out
+####SBATCH --array=1-100%5
+
+
 
 nvidia-smi
 # ---- Env once ----
@@ -20,36 +23,19 @@ conda activate ares
 # ---- Go to repo root (so relative paths work) ----
 cd /home/ashtomer/projects/ares/robust_training
 
-set -Eeuo pipefail
-# -E ensures ERR traps are inherited by functions
-# -e exits on errors
-# -u errors on undefined vars
-# -o pipefail propagates errors in pipelines
-
-TMP_MODEL_FILE="/tmp/current_model_${SLURM_JOB_ID}.txt"
-
 cleanup() {
-  status=$?
-  echo "[CLEANUP TEST] Cleanup called with exit code $status" >> outs/cleanup_test.log
-  echo "[INFO] Running cleanup (exit code $status)"
-  
-  if [ -f "$TMP_MODEL_FILE" ]; then
-    MODEL_ID=$(cat "$TMP_MODEL_FILE")
+  if [ -f /tmp/current_model.txt ]; then
+    MODEL_ID=$(cat /tmp/current_model.txt)
     echo "[INFO] Cleaning up... resetting model $MODEL_ID to waiting."
     python - <<PY
 from adv_scheduler import TaskScheduler
 sch = TaskScheduler("adv_scheduler.db")
 sch._execute_sqlite("UPDATE models SET status = 'waiting' WHERE model_id = ?", ("$MODEL_ID",))
 PY
-    echo "[INFO] Model $MODEL_ID reset to waiting at $(date)" >> outs/cleanup_events.log
+echo "[INFO] Model $MODEL_ID reset to waiting at $(date)" >> outs/cleanup_events.log
   fi
 }
-
-# Trap both normal and error exits
-trap cleanup EXIT
-
-# Optionally: also trap specific signals
-trap cleanup INT TERM
+trap cleanup TERM INT EXIT
 
 
 # ---- GPU mem → batch size ----
@@ -74,15 +60,14 @@ elif [ "$GPU_TOTAL" -ge 47000 ]; then
 elif [ "$GPU_TOTAL" -ge 23000 ]; then
   BATCH_PER_GPU=128
 else
-  echo "[ERROR] GPU total memory too small (< 24 GB)"
-  exit 1
+  BATCH_PER_GPU=32
 fi
 
-# Require at least 80% free on all GPUs
-REQUIRED_FREE=$(( GPU_TOTAL * 8 / 10 ))
+# Require at least 90% free on all GPUs
+REQUIRED_FREE=$(( GPU_TOTAL * 9 / 10 ))
 if [ "$GPU_FREE" -lt "$REQUIRED_FREE" ]; then
   echo "[ERROR] Not enough free GPU memory!"
-  echo "[INFO] Required: ${REQUIRED_FREE} MB (80% of ${GPU_TOTAL}), Available: ${GPU_FREE} MB"
+  echo "[INFO] Required: ${REQUIRED_FREE} MB (90% of ${GPU_TOTAL}), Available: ${GPU_FREE} MB"
   echo "[HINT] Another job might still be using one of the GPUs. Try again later."
   exit 1
 fi
@@ -106,7 +91,7 @@ from adv_scheduler import TaskScheduler
 
 sch = TaskScheduler("adv_scheduler.db")
 
-model = sch.claim_next_waiting_model(cooldown_minutes=0.1)
+model = sch.claim_next_waiting_model(cooldown_minutes=10)
 
 if not model:
     print("NONE")
@@ -144,6 +129,7 @@ fi
 
 # ---- Parse JSON → shell vars ----
 MODEL_ID=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['model_id'])")
+echo "$MODEL_ID" > /tmp/current_model.txt
 SAFE_NAME=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['safe_name'])")
 NORM=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['norm'])")
 CONS=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['constraint_val'])")
@@ -151,8 +137,6 @@ ADV_BOOL=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.st
 INIT=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['init_id'])")
 CHECKPOINT=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['checkpoint_path'])")
 EPOCHS=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['epochs'])")
-
-echo "$MODEL_ID" > "$TMP_MODEL_FILE"
 
 echo "[INFO] Selected model:"
 echo "  ID:          $MODEL_ID"
@@ -164,9 +148,6 @@ echo "  Checkpoint:  $CHECKPOINT"
 echo "  Remaining epochs: $EPOCHS"
 
 export HYDRA_FULL_ERROR=1
-
-export MASTER_ADDR=$(hostname)
-export MASTER_PORT=$((10000 + SLURM_ARRAY_TASK_ID * 10))
 
 # ---- Run Hydra training ----
 if [ -f "$CHECKPOINT" ]; then
@@ -196,5 +177,6 @@ else
     hydra.run.dir="results/convnext_small/${SAFE_NAME}"
 fi
 
-rm -f "$TMP_MODEL_FILE"
+rm -f /tmp/current_model.txt
+trap cleanup EXIT
 echo "[INFO] Training job completed."

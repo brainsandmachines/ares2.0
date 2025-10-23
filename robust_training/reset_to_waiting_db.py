@@ -1,19 +1,11 @@
-# from adv_scheduler import TaskScheduler
 
-# sch = TaskScheduler("adv_scheduler.db")
+from adv_scheduler import TaskScheduler
 
-# # List of model IDs you want to reset
-# models_to_reset = [
-#     "norm=linf|c=4|adv=1|init=2",
-#     "norm=l2|c=1|adv=1|init=2",
-#     "c=0|adv=0"
-# ]
+# Connect to your scheduler database
+sch = TaskScheduler("adv_scheduler.db")
 
-# for mid in models_to_reset:
-#     sch._execute_sqlite(
-#         "UPDATE models SET status = 'waiting' WHERE model_id = ?",
-#         (mid,)
-#     )
-#     print(f"[INFO] Reset {mid} to waiting")
+# Update all models in the table
+sch._execute_sqlite("UPDATE models SET status = 'waiting'")
 
-# print("[DONE] Selected models have been reset.")
+
+print("[DONE] Selected models have been reset.")

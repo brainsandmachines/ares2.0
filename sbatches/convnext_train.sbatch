@@ -3,7 +3,7 @@
 #SBATCH --time=14-00:00:00
 #SBATCH --partition=rtx6000
 #SBATCH --qos=golan-neuro
-#SBATCH --gpus=1
+#SBATCH --gpus=2
 #SBATCH --constraint=rtx_6000
 #SBATCH --mem=48G
 #SBATCH --mail-type=END,FAIL
