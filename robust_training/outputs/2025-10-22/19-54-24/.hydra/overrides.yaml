@@ -1,0 +1,6 @@
+- dataset.train_dir=/home/ashtomer/datasets/imagenet_sample/train
+- dataset.eval_dir=/home/ashtomer/datasets/imagenet_sample/val
+- training.batch_size=256
+- training.epochs=300
+- attacks.advtrain=true
+- model.experiment_name=test_adv_train

@@ -3,3 +3,5 @@ init_method: env://
 world_size: ${oc.env:WORLD_SIZE,1}
 rank: ${oc.env:RANK,0}
 local_rank: ${oc.env:LOCAL_RANK,0}
+dist_backend: nccl
+dist_url: env://

@@ -1,11 +1,19 @@
-import sqlite3
+# from adv_scheduler import TaskScheduler
 
-db_path = "adv_scheduler.db"
-conn = sqlite3.connect(db_path)
-c = conn.cursor()
+# sch = TaskScheduler("adv_scheduler.db")
 
-c.execute("UPDATE models SET status = 'waiting';")
-conn.commit()
-conn.close()
+# # List of model IDs you want to reset
+# models_to_reset = [
+#     "norm=linf|c=4|adv=1|init=2",
+#     "norm=l2|c=1|adv=1|init=2",
+#     "c=0|adv=0"
+# ]
 
-print("✅ All models reset to waiting.")
+# for mid in models_to_reset:
+#     sch._execute_sqlite(
+#         "UPDATE models SET status = 'waiting' WHERE model_id = ?",
+#         (mid,)
+#     )
+#     print(f"[INFO] Reset {mid} to waiting")
+
+# print("[DONE] Selected models have been reset.")

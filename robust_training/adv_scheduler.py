@@ -6,9 +6,10 @@ import json, os, time, math
 import pandas as pd
 
 class TaskScheduler():
-    def __init__(self, db_path='adv_scheduler.db', max_job_time_in_seconds=12*3600):
+    def __init__(self, db_path='adv_scheduler.db', max_job_time_in_seconds=12*3600,max_epochs=250):
         self.db_path = db_path
         self.max_job_time_in_seconds = max_job_time_in_seconds
+        self.max_epochs = max_epochs
 
         is_new = not os.path.isfile(self.db_path)
         conn = sqlite3.connect(self.db_path)
@@ -184,8 +185,9 @@ class TaskScheduler():
             VALUES (?, ?, ?, ?)
         """, (model_id, int(epoch), float(duration_sec), now))
 
-    def update_progress_epoch_end(self, model_id, max_epoch=200):
+    def update_progress_epoch_end(self, model_id):
         now = int(time.time())
+        max_epoch = self.max_epochs
 
         # Increment epoch count and update timestamp
         self._execute_sqlite("""
@@ -209,12 +211,13 @@ class TaskScheduler():
             )
 
     
-    def requeue_stale_trainings(self, threshold_hours=10, max_epoch=200):
+    def requeue_stale_trainings(self, threshold_hours=10):
         """
         Requeue models stuck in 'training' for longer than threshold_hours
         (and still under max_epoch). Sets them back to 'waiting'.
         """
         now = int(time.time())
+        max_epoch = self.max_epochs
         cutoff = now - int(threshold_hours * 3600)
 
         conn = sqlite3.connect(self.db_path)
@@ -234,7 +237,7 @@ class TaskScheduler():
             print(f"[INFO] Requeued {affected} stale training jobs (> {threshold_hours}h inactive).")
         return affected
 
-    def claim_next_waiting_model(self, cooldown_minutes=10, retries=5):
+    def claim_next_waiting_model(self, cooldown_minutes=2, retries=5):
         """
         Claim the next available waiting model for training.
         Retries a few times if the database is temporarily locked.
@@ -268,6 +271,10 @@ class TaskScheduler():
                 # Extract info
                 model_id, norm, constraint_val, adv_train, init_id, epoch = row
                 now = int(time.time())
+                
+                if epoch >= self.max_epochs:
+                    self.update_status(model_id, 'finished')
+                    continue  # try again
 
                 # Mark it as "training"
                 c.execute("""
@@ -286,7 +293,7 @@ class TaskScheduler():
                     "constraint_val": constraint_val,
                     "adv_train": adv_train,
                     "init_id": init_id,
-                    "current_epoch": epoch,
+                    "epochs": self.max_epochs-epoch,
                 }
 
             except sqlite3.OperationalError as e:

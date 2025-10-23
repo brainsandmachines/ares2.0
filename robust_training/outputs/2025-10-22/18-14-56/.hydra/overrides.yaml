@@ -1,0 +1,6 @@
+- dataset.train_dir=/storage/test/bml_group/tomerash/datasets/imagenet_sample/train
+- dataset.eval_dir=/storage/test/bml_group/tomerash/datasets/imagenet_sample/val
+- training.batch_size=128
+- training.epochs=200
+- attacks.advtrain=true
+- model.experiment_name=test_adv_train_loop

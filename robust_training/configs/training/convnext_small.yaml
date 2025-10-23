@@ -1,5 +1,5 @@
 # Training / schedule / augmentation / misc settings split from convnext_small.yaml
-distributed: False
+distributed: True
 
 # amp parameters
 apex_amp: False
