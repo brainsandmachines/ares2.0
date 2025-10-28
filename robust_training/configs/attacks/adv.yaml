@@ -6,3 +6,9 @@ advprop: False
 attack_eps: 2.0
 attack_step: 3.0
 attack_it: 3
+
+
+# GradNorm related defaults
+gradnorm: False
+lambda_ce: 0.8
+lambda_gn: 1.2

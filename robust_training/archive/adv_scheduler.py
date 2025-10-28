@@ -84,7 +84,7 @@ class TaskScheduler():
             conn.close()
         return success
 
-    def get_model_id(self, norm, constraint_val, adv_train, init_id=None):
+    def get_model_id(self, norm, constraint_val, adv_train, grad_norm, init_id=None):
         """
         Return the model_id string if it exists in the database.
         Otherwise, return None.
@@ -115,11 +115,12 @@ class TaskScheduler():
 
     # ---------------- model registry ----------------
     @staticmethod
-    def _make_model_id(norm, constraint_val, adv_train, init_id):
+    def _make_model_id(norm, constraint_val, adv_train,grad_norm, init_id):
         parts = []
         if norm is not None: parts.append(f"norm={norm}")
         parts.append(f"c={constraint_val}")
         parts.append(f"adv={int(bool(adv_train))}")
+        parts.append(f"gradnorm={int(bool(grad_norm))}")
         if init_id is not None: parts.append(f"init={init_id}")
         return "|".join(parts)
 
@@ -152,7 +153,7 @@ class TaskScheduler():
     def list_models_df(self):
         conn = sqlite3.connect(self.db_path)
         df = pd.read_sql_query("""
-            SELECT model_id, norm, constraint_val, adv_train, init_id,
+            SELECT model_id, norm, constraint_val, adv_train, grad_norm, init_id,
                current_epoch, status,
                last_progress_ts, last_time_selected
             FROM models
@@ -244,11 +245,26 @@ class TaskScheduler():
         No WAL, no timeout, no manual BEGIN statements.
         """
         cooldown_secs = int(cooldown_minutes * 60)
+        slurm_array_jobid = os.environ.get("SLURM_ARRAY_JOB_ID")
+        slurm_jobid       = os.environ.get("SLURM_JOB_ID")  # fallback for non-array jobs
+        slurm_array_task  = os.environ.get("SLURM_ARRAY_TASK_ID")
+        job_identifier = None
+        base_id = slurm_array_jobid or slurm_jobid
+        if base_id:
+            job_identifier = f"{base_id}_{slurm_array_task}" if slurm_array_task else base_id
 
         for attempt in range(retries):
             try:
                 conn = sqlite3.connect(self.db_path)
                 c = conn.cursor()
+                
+                # Ensure JOBID column exists (auto add if missing)
+                c.execute("PRAGMA table_info(models)")
+                cols = [r[1] for r in c.fetchall()]
+                if "JOBID" not in cols:
+                    c.execute("ALTER TABLE models ADD COLUMN JOBID TEXT")
+                    conn.commit()
+
 
                 # Find the next waiting model
                 c.execute("""
@@ -276,13 +292,14 @@ class TaskScheduler():
                     self.update_status(model_id, 'finished')
                     continue  # try again
 
-                # Mark it as "training"
+                # Mark it as "training" and record the Slurm JOBID
                 c.execute("""
                     UPDATE models
                     SET status = 'training',
-                        last_time_selected = ?
+                        last_time_selected = ?,
+                        JOBID = ?
                     WHERE model_id = ?
-                """, (now, model_id))
+                """, (now, job_identifier, model_id))
                 conn.commit()
                 conn.close()
 
@@ -294,6 +311,7 @@ class TaskScheduler():
                     "adv_train": adv_train,
                     "init_id": init_id,
                     "epochs": self.max_epochs-epoch,
+                    "JOBID": job_identifier,
                 }
 
             except sqlite3.OperationalError as e:

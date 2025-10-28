@@ -1,11 +1,9 @@
-
-from adv_scheduler import TaskScheduler
+from model_scheduler import Model_scheduler
 
 # Connect to your scheduler database
-sch = TaskScheduler("adv_scheduler.db")
+sch = Model_scheduler("model_scheduler.db")
 
-# Update all models in the table
+# Reset all models to 'waiting'
 sch._execute_sqlite("UPDATE models SET status = 'waiting'")
 
-
-print("[DONE] Selected models have been reset.")
+print("[DONE] Reset all models to 'waiting'.")

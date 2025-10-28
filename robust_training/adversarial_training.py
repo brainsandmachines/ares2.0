@@ -29,7 +29,7 @@ from ares.utils.defaults import get_args_parser
 from ares.utils.train_loop import train_one_epoch
 from ares.utils.validate import validate
 
-from adv_scheduler import TaskScheduler
+from model_scheduler import Model_scheduler
 
 def main(args):
     # distributed settings and logger
@@ -119,7 +119,7 @@ def main(args):
             lr_scheduler.step(start_epoch)
     _logger.info('Scheduled epochs: {}'.format(num_epochs))
     
-    sch = TaskScheduler(db_path="adv_scheduler.db")
+    sch = Model_scheduler(db_path="model_scheduler.db")
 
     args.output_dir = os.path.join(args.output_dir or ".", args.experiment_name)
 
