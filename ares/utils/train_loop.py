@@ -40,12 +40,8 @@ def train_one_epoch(
     num_updates = epoch * len(loader)
     
     att_step = args.attack_step * min(epoch, 5)/5
-    att_eps=args.attack_eps
-    if args.attack_norm=='l2':
-        att_eps=att_eps*255
-        att_step=att_step*255
-    att_it=args.attack_it
-
+    att_eps = args.attack_eps
+    att_it = args.attack_it
 
     for batch_idx, (input, target) in enumerate(loader):
         last_batch = batch_idx == last_idx

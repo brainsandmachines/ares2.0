@@ -191,7 +191,7 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
     if random_start:
         images = step.random_perturb(images)
     else:
-        images = step.random_uniform(images)
+        images = orig_input.clone().detach()
     
     for _ in range(attack_steps):
         images = images.clone().detach().requires_grad_(True)
