@@ -141,9 +141,21 @@ def main(args):
         saver = CheckpointSaver(
             model=model, optimizer=optimizer, args=args, model_ema=model_ema, amp_scaler=loss_scaler,
             checkpoint_dir=output_dir, recovery_dir=output_dir, decreasing=decreasing, max_history=args.max_history)
-        tb_dir = os.path.join(output_dir, "tb")
+        TB_BASE = "/home/ashtomer/projects/ares/robust_training/tensorboard_logs"
+        if "adv=0" in args.model_id:
+            group_name = "baseline"
+        else:
+            group_name = args.attack_norm
+        tb_dir = os.path.join(TB_BASE, group_name, args.experiment_name)
         os.makedirs(tb_dir, exist_ok=True)
         writer = SummaryWriter(log_dir=tb_dir)
+        
+        # Add metadata for clarity
+        writer.add_text("config/model_id", args.model_id)
+        writer.add_text("config/attack_norm", str(args.attack_norm))
+        writer.add_text("config/constraint", str(args.attack_eps))
+        writer.add_text("config/seed", str(args.model.experiment_num))
+        
         args_text = yaml.safe_dump(args.__dict__, default_flow_style=False)
         with open(os.path.join(output_dir, 'args.yaml'), 'w') as f:
             f.write(args_text)

@@ -109,7 +109,7 @@ else:
         "adv_train": bool(model["adv_train"]),
         "init_id": model["init_id"],
         "safe_name": safe_name,
-        "checkpoint_path": os.path.join(path, "model_best.pth.tar"),
+        "checkpoint_path": os.path.join(path, "last.pth.tar"),
         "epochs": model["epochs"],
         "grad_norm": model["grad_norm"],
     }))

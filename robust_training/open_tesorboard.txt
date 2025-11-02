@@ -1,18 +1,56 @@
-------cluster-------
-1. on the cluster terminal, copy this command:  # change path according to expiriment name
-    tensorboard   --logdir=/home/ashtomer/projects/ares/robust_training/results/convnext_small/convnext_small_eps-4_linf_seed-1/tb   --port=6006  --bind_all
-  
+------ On the Cluster terminal ------
+1️⃣ Start TensorBoard
+Run this command (⚠️ change the path according to your experiment!):
+tensorboard --logdir=/home/ashtomer/projects/ares/robust_training/tensorboard_logs/l2/convnext_small_eps-4_linf_seed-1 --port=6006 --bind_all
 
-2. see where the tensorboard is located:
-example output: TensorBoard 2.20.0 at http://slurm-login-03.auth.ad.bgu.ac.il:6006/
 
-3. keep the terminal running
+🧩 Example structure:
 
-----------working staition in lab------
+Baseline runs → /tensorboard_logs/baseline/c=0|adv=0|gradnorm=0
 
-4. on a working station terminal (botero), copy this command:
-    ssh -N -L 6006:localhost:6006 ashtomer@slurm-login-03.auth.ad.bgu.ac.il # based on example output change accordingly
+Linf runs → /tensorboard_logs/linf/convnext_small_eps-4_linf_seed-1
 
-5. open on firefox:
-    http://localhost:6006
+L2 runs → /tensorboard_logs/l2/convnext_small_eps-4_l2_seed-1
 
+2️⃣ Check the output
+You’ll see something like:
+
+TensorBoard 2.20.0 at http://slurm-login-03.auth.ad.bgu.ac.il:6006/
+
+
+Keep this terminal running.
+That URL tells you which login node and port to use in the next step.
+
+------ On your Workstation (e.g., botero) ------
+
+3️⃣ Forward the port via SSH
+Open a terminal on your local machine and run (adjust the host if needed):
+
+ssh -N -L 6006:localhost:6006 ashtomer@slurm-login-03.auth.ad.bgu.ac.il
+
+
+-N → no command, just forwarding
+
+-L → local port 6006 connects to remote port 6006
+
+Replace slurm-login-03 if your TensorBoard output says a different node.
+
+4️⃣ Open TensorBoard in your browser
+
+Go to:
+
+http://localhost:6006
+
+
+You’ll see all your experiment logs (grouped by l2, linf, or baseline).
+
+✅ Notes
+
+You can launch TensorBoard from the main TB base to see all experiments:
+
+tensorboard --logdir=/home/ashtomer/projects/ares/robust_training/tensorboard_logs --port=6006 --bind_all
+
+
+This is often the easiest way to compare multiple runs at once.
+
+If port 6006 is busy, use another (e.g., 6007) and update both commands.

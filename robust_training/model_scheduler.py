@@ -3,9 +3,9 @@ import os, time
 import pandas as pd
 
 class Model_scheduler():
-    def __init__(self, db_path='model_scheduler.db',max_epochs=250):
+    def __init__(self, db_path='model_scheduler.db',num_epochs=250):
         self.db_path = db_path
-        self.max_epochs = max_epochs
+        self.num_epochs = num_epochs
             
         is_new = not os.path.isfile(self.db_path)
         conn = sqlite3.connect(self.db_path)
@@ -174,30 +174,29 @@ class Model_scheduler():
             )
         return self._execute_sqlite("UPDATE models SET status = ? WHERE model_id = ?", (status, model_id))
 
-    def update_progress_epoch_end(self, model_id):
+    def update_progress_epoch_end(self, model_id, epoch):
         now = int(time.time())
-        max_epoch = self.max_epochs
+        num_epochs = self.num_epochs
 
         # Increment epoch count and update timestamp
         self._execute_sqlite("""
             UPDATE models
-            SET current_epoch = current_epoch + 1,
+            SET current_epoch = ?,
                 last_progress_ts = ?
             WHERE model_id = ?
-        """, (now, model_id))
+        """, (epoch,now, model_id))
 
-        # Check if training finished
-        current_epoch = self._sqlite_fetchone(
-            "SELECT current_epoch FROM models WHERE model_id = ?", (model_id,)
-        )
-        if current_epoch is not None and current_epoch >= max_epoch:
+         # Update status based on epoch
+        if epoch >= num_epochs:
             self._execute_sqlite(
-                "UPDATE models SET status = 'finished' WHERE model_id = ?", (model_id,)
-            )
+            "UPDATE models SET status = 'finished' WHERE model_id = ?",
+            (model_id,)
+        )
         else:
             self._execute_sqlite(
-                "UPDATE models SET status = 'training' WHERE model_id = ?", (model_id,)
-            )
+            "UPDATE models SET status = 'training' WHERE model_id = ?",
+            (model_id,)
+        )
 
     
     def requeue_stale_trainings(self, threshold_hours=10):
@@ -206,7 +205,7 @@ class Model_scheduler():
         (and still under max_epoch). Sets them back to 'waiting'.
         """
         now = int(time.time())
-        max_epoch = self.max_epochs
+        num_epochs = self.num_epochs
         cutoff = now - int(threshold_hours * 3600)
 
         conn = sqlite3.connect(self.db_path)
@@ -217,7 +216,7 @@ class Model_scheduler():
             WHERE status = 'training'
             AND current_epoch < ?
             AND (last_progress_ts IS NULL OR last_progress_ts < ?)
-        """, (max_epoch, cutoff))
+        """, (num_epochs, cutoff))
         affected = c.rowcount
         conn.commit()
         conn.close()
@@ -269,7 +268,7 @@ class Model_scheduler():
 
                 model_id, norm, constraint_val, adv_train, grad_norm, init_id, epoch = row
 
-                if epoch >= self.max_epochs:
+                if epoch >= self.num_epochs:
                     c.execute("UPDATE models SET status='finished' WHERE model_id=?", (model_id,))
                     conn.commit()
                     conn.close()
@@ -295,14 +294,14 @@ class Model_scheduler():
                 conn.commit()
                 conn.close()
 
-                print(f"[DEBUG] Claimed model: {model_id}, norm: {norm}, constraint_val: {constraint_val}, adv_train: {adv_train}, grad_norm: {grad_norm}, init_id: {init_id}, epochs_left: {self.max_epochs - epoch}")
+                print(f"[DEBUG] Claimed model: {model_id}, norm: {norm}, constraint_val: {constraint_val}, adv_train: {adv_train}, grad_norm: {grad_norm}, init_id: {init_id}, epochs_left: {self.num_epochs - epoch}")
                 return {
                     "model_id": model_id,
                     "norm": norm,
                     "constraint_val": constraint_val,
                     "adv_train": adv_train,
                     "init_id": init_id,
-                    "epochs": self.max_epochs - epoch,
+                    "epochs": self.num_epochs,
                     "JOBID": job_identifier,
                     "grad_norm": grad_norm
                 }
