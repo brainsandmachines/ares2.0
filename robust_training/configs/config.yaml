@@ -3,7 +3,7 @@ defaults:
   - lr_scheduler: cosine
   - model: convnext_small
   - dataset: imagenet
-  - optimizer: sgd
+  - optimizer: adamw
   - attacks: adv
   - dist: default
   - training: convnext_small
