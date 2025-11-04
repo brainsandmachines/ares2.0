@@ -1,0 +1,9 @@
+- attacks.attack_norm=l2
+- attacks.attack_eps=0
+- attacks.advtrain=false
+- attacks.gradnorm=0
+- model.resume=/home/ashtomer/projects/ares/robust_training/results/convnext_small/convnext_small_eps-0_None_seed-None/checkpoint-34.pth.tar
+- model.experiment_name=convnext_small_eps-0_None_seed-None
+- model.model_id='c=0|adv=0|gradnorm=0'
+- training.batch_size=256
+- training.epochs=250

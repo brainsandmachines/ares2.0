@@ -7,7 +7,7 @@ from robust_training.model_scheduler import Model_scheduler
 # === CONFIG ===
 DB_PATH = "/home/ashtomer/projects/ares/robust_training/model_scheduler.db"
 RESULTS_ROOT = "/home/ashtomer/projects/ares/robust_training/results/convnext_small"
-CHECKPOINT_NAME = "model_best.pth.tar"
+CHECKPOINT_NAME = "last.pth.tar"
 
 # === Initialize scheduler ===
 sch = Model_scheduler(DB_PATH)

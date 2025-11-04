@@ -1,0 +1,10 @@
+# Optimizer defaults: sgd
+opt: sgd
+opt_eps: null
+opt_betas: null
+momentum: 0.9
+weight_decay: 5e-4
+filter_bias_and_bn: true
+clip_grad: null
+clip_mode: norm
+layer_decay: null

@@ -1,0 +1,21 @@
+# Learning rate scheduler defaults: tanh
+sched: tanh
+sched_on_updates: True          # same as cosine
+lrb: 5.0e-5
+lr: null                        # auto-inferred by optimizer scaling
+lr_noise: null
+lr_noise_pct: 0.67
+lr_noise_std: 1.0
+lr_cycle_mul: 1.0               # one cycle
+lr_cycle_decay: 0.5             # optional decay of cycle amplitude
+lr_cycle_limit: 1
+lr_k_decay: 1.0
+warmup_lr: 1.0e-6
+min_lr: 1.0e-5
+epoch_repeats: 0
+start_epoch: null
+decay_epochs: 30                # decay step parameter (not very critical for tanh)
+warmup_epochs: 10
+cooldown_epochs: 0
+patience_epochs: 0
+decay_rate: 0.1

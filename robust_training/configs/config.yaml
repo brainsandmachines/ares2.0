@@ -1,11 +1,25 @@
 # Main Hydra config. It composes the specific group configs below.
 defaults:
-  - training: convnext_small
+  - lr_scheduler: cosine
   - model: convnext_small
   - dataset: imagenet
-  - optimizer: adamw
+  - optimizer: sgd
   - attacks: adv
   - dist: default
+  - training: convnext_small
 
-# You can override any field on the CLI, for example:
-# python run.py training.epochs=200 optimizer.weight_decay=0.1
+
+# Training / schedule / augmentation / misc settings split from convnext_small.yaml
+# amp parameters
+apex_amp: False
+native_amp: True
+
+# misc
+seed: 0
+log_interval: 50
+recovery_interval: 0
+num_workers: 6
+output_dir: './results/convnext_small'
+save_log: save_log.txt
+eval_metric: top1
+pin_mem: True

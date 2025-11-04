@@ -1,59 +1,6 @@
-# Training / schedule / augmentation / misc settings split from convnext_small.yaml
-distributed: True
-
-# amp parameters
-apex_amp: False
-native_amp: True
-
-epochs: 100
-sched: cosine
-sched_on_updates: True
-lrb: 5.0e-4
-lr: null
-lr_noise: null
-lr_noise_pct: 0.67
-lr_noise_std: 1.0
-lr_cycle_mul: 1.0
-lr_cycle_decay: 0.5
-lr_cycle_limit: 1
-lr_k_decay: 1.0
-warmup_lr: 1.0e-6
-min_lr: 1.0e-5
-epoch_repeats: 0
-start_epoch: null
-decay_epochs: 30
-warmup_epochs: 5
-cooldown_epochs: 0
-patience_epochs: 0
-decay_rate: 0.1
-
-# dataset & augmentation related (kept here for easy overrides)
+# Training defaults: convnext_small
+epochs: 250
 batch_size: 256
-input_size: 224
-crop_pct: 0.875
-interpolation: bicubic
-train_interpolation: bicubic
-
-# augmentation
-no_aug: False
-color_jitter: 0.4
-aa: rand-m9-mstd0.5-inc1
-aug_repeats: 0
-aug_splits: 0
-jsd_loss: False
-reprob: 0.25
-remode: pixel
-recount: 1
-resplit: False
-mixup: 0.8
-cutmix: 1.0
-cutmix_minmax: null
-mixup_prob: 1.0
-mixup_switch_prob: 0.5
-mixup_mode: batch
-mixup_off_epoch: 0
-smoothing: 0.1
-bce_loss: False
 
 # drop connection
 drop: 0.0
@@ -64,13 +11,3 @@ drop_block: null
 model_ema: True
 model_ema_force_cpu: False
 model_ema_decay: 0.9998
-
-# misc
-seed: 0
-log_interval: 50
-recovery_interval: 0
-num_workers: 6
-output_dir: './results/convnext_small'
-save_log: save_log.txt
-eval_metric: top1
-pin_mem: True

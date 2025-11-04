@@ -5,3 +5,5 @@ rank: ${oc.env:RANK,0}
 local_rank: ${oc.env:LOCAL_RANK,0}
 dist_backend: nccl
 dist_url: env://
+
+distributed: True

@@ -126,8 +126,13 @@ class L2Step(AttackerStep):
         return x + scaled_g * self.step_size
 
     def random_perturb(self, x):
-        new_x = x + (torch.rand_like(x) - 0.5).renorm(p=2, dim=1, maxnorm=self.eps)
-        return torch.clamp(new_x, 0, 1)
+        # Flatten spatial + channel dims per sample
+        diff = torch.rand_like(x) - 0.5
+        diff = diff.view(diff.size(0), -1)
+        diff = diff / (diff.norm(p=2, dim=1, keepdim=True) + 1e-10)
+        diff = diff.view_as(x)
+        # scale by eps and clamp
+        return torch.clamp(x + diff * self.eps, 0, 1)
     
     def random_uniform(self, x):
         return self.random_perturb(x)

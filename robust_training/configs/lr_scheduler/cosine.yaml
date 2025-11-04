@@ -1,0 +1,22 @@
+# Learning rate scheduler defaults: cosine
+
+sched: cosine
+sched_on_updates: True
+lrb: 1.0e-3
+lr: null
+lr_noise: null
+lr_noise_pct: 0.67
+lr_noise_std: 1.0
+lr_cycle_mul: 1.0
+lr_cycle_decay: 0.5
+lr_cycle_limit: 1
+lr_k_decay: 1.0
+warmup_lr: 1.0e-6
+min_lr: 1.0e-5
+epoch_repeats: 0
+start_epoch: null
+decay_epochs: 30
+warmup_epochs: 10
+cooldown_epochs: 0
+patience_epochs: 0
+decay_rate: 0.1

@@ -8,7 +8,7 @@
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
 #SBATCH --output=outs/advtrain/convnextsmall/%A/%a.out
-#SBATCH --array=1-100%8
+#SBATCH --array=1-200%8
 
 nvidia-smi
 # ---- Env once ----
@@ -32,7 +32,6 @@ cleanup() {
     MODEL_ID=$(cat "$TMP_MODEL_FILE")
     echo "[INFO] Resetting model $MODEL_ID → waiting..."
 
-    # 🔄 Use Model_scheduler instead of adv_scheduler
     python - <<PY
 from model_scheduler import Model_scheduler
 sch = Model_scheduler("model_scheduler.db")
@@ -111,6 +110,7 @@ else:
         "safe_name": safe_name,
         "checkpoint_path": os.path.join(path, "last.pth.tar"),
         "epochs": model["epochs"],
+        "epochs_left": model["epochs_left"],
         "grad_norm": model["grad_norm"],
     }))
 PY
@@ -136,6 +136,7 @@ ADV_BOOL=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.st
 INIT=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['init_id'])")
 CHECKPOINT=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['checkpoint_path'])")
 EPOCHS=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['epochs'])")
+EPOCHS_LEFT=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['epochs_left'])")
 GRAD_NORM=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['grad_norm'])")
 
 echo "$MODEL_ID" > "$TMP_MODEL_FILE"
@@ -147,7 +148,8 @@ echo "  Constraint:  $CONS"
 echo "  AdvTrain:    $ADV_BOOL"
 echo "  InitID:      $INIT"
 echo "  Checkpoint:  $CHECKPOINT"
-echo "  Epochs left: $EPOCHS"
+echo "  total epochs: $EPOCHS"
+echo "  epochs left: $EPOCHS_LEFT"
 echo "  GradNorm:    $GRAD_NORM"
 # =========================================================
 

@@ -34,7 +34,6 @@ def train_one_epoch(
 
     model.train()
     
-    epoch_wall_start = time.time()
     end = time.time()
     last_idx = len(loader) - 1
     num_updates = epoch * len(loader)
@@ -44,6 +43,9 @@ def train_one_epoch(
     att_it = args.attack_it
 
     for batch_idx, (input, target) in enumerate(loader):
+        # debugging NaN/Inf in input
+        if not torch.isfinite(input).all():
+            raise ValueError("Input contains NaN or Inf values")
         last_batch = batch_idx == last_idx
 
         # processing input and target
@@ -65,22 +67,22 @@ def train_one_epoch(
             input_advprop = adv_generator(args, input, target, model, 1/255, 1, 1/255, random_start=True, attack_criterion=args.attack_criterion, use_best=False)
             
         # forward
-        with torch.autograd.detect_anomaly():
-            with amp_autocast():
-                if args.advprop:
-                    outputs = model(input_advprop)
-                    adv_loss = loss_fn(outputs, target)
-                    model.apply(lambda m: setattr(m, 'bn_mode', 'clean'))
-                    outputs = model(input)
-                    loss = loss_fn(outputs, target) + adv_loss
-                elif args.advtrain:
-                    output = model(input_advtrain)
-                    loss = loss_fn(output, target)
-                else:
-                    output = model(input)
-                    loss = loss_fn(output, target)
-            # === STOP TRAINING IF LOSS IS NaN or Inf ===
-            assert torch.isfinite(loss), f"Loss became non-finite at epoch {epoch}, batch {batch_idx}. Loss value: {loss.item()}"
+        with amp_autocast():
+            if args.advprop:
+                outputs = model(input_advprop)
+                adv_loss = loss_fn(outputs, target)
+                model.apply(lambda m: setattr(m, 'bn_mode', 'clean'))
+                outputs = model(input)
+                loss = loss_fn(outputs, target) + adv_loss
+            elif args.advtrain:
+                output = model(input_advtrain)
+                loss = loss_fn(output, target)
+            else:
+                output = model(input)
+                loss = loss_fn(output, target)
+        # debugging NaN/Inf in loss
+        assert torch.isfinite(loss).all(), "Loss is NaN or Inf"
+                
         if not args.distributed:
             losses_m.update(loss.item(), input.size(0))
 
@@ -156,9 +158,7 @@ def train_one_epoch(
     if hasattr(optimizer, 'sync_lookahead'):
         optimizer.sync_lookahead()
         
-    # -------- DB update: end-of-epoch --------
-    if sch is not None and model_id is not None and args.rank == 0:
-        sch.update_progress_epoch_end(model_id=model_id, epoch=epoch+1)
+    
         
     return OrderedDict([('loss', losses_m.avg)])
 

@@ -117,7 +117,6 @@ def main(args):
             lr_scheduler.step_update(start_epoch * updates_per_epoch)
         else:
             lr_scheduler.step(start_epoch)
-    _logger.info('Scheduled epochs: {}'.format(num_epochs))
     
     sch = Model_scheduler(db_path="model_scheduler.db")
 
@@ -154,20 +153,21 @@ def main(args):
         writer.add_text("config/model_id", args.model_id)
         writer.add_text("config/attack_norm", str(args.attack_norm))
         writer.add_text("config/constraint", str(args.attack_eps))
-        writer.add_text("config/seed", str(args.model.experiment_num))
+        writer.add_text("config/seed", str(args.experiment_num))
         
         args_text = yaml.safe_dump(args.__dict__, default_flow_style=False)
         with open(os.path.join(output_dir, 'args.yaml'), 'w') as f:
             f.write(args_text)
 
     # start training
-    _logger.info(f"Start training for {args.epochs} epochs")
+    _logger.info(f"Start training for {args.epochs-start_epoch} epochs")
     
     for epoch in range(start_epoch, args.epochs):
         if hasattr(loader_train, 'sampler') and hasattr(loader_train.sampler, 'set_epoch'):
             loader_train.sampler.set_epoch(epoch)
         # one epoch training
-        train_metrics = train_one_epoch(
+        with torch.autograd.detect_anomaly():
+            train_metrics = train_one_epoch(
                 epoch, model, loader_train, optimizer, train_loss_fn, args,
                 lr_scheduler=lr_scheduler, saver=saver, amp_autocast=amp_autocast,
                 loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn, _logger=_logger, writer=writer,
@@ -211,6 +211,10 @@ def main(args):
                     torch.distributed.barrier()
 
             best_metric, best_epoch = saver.save_checkpoint(epoch, eval_metrics[eval_metric])
+            
+        # -------- DB update: end-of-epoch --------
+        if sch is not None and args.model_id is not None and args.rank == 0:
+            sch.update_progress_epoch_end(model_id=args.model_id, epoch=epoch+1)
 
         if writer is not None and args.rank == 0:
             writer.flush()

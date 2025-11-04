@@ -302,6 +302,7 @@ class Model_scheduler():
                     "adv_train": adv_train,
                     "init_id": init_id,
                     "epochs": self.num_epochs,
+                    "epochs_left": self.num_epochs - epoch,
                     "JOBID": job_identifier,
                     "grad_norm": grad_norm
                 }
