@@ -1,11 +1,7 @@
-training:
-  distributed: true
-  apex_amp: false
-  native_amp: true
-  epochs: 250
+lr_scheduler:
   sched: cosine
   sched_on_updates: true
-  lrb: 5.0e-05
+  lrb: 0.001
   lr: null
   lr_noise: null
   lr_noise_pct: 0.67
@@ -23,48 +19,10 @@ training:
   cooldown_epochs: 0
   patience_epochs: 0
   decay_rate: 0.1
-  batch_size: 256
-  input_size: 224
-  crop_pct: 0.875
-  interpolation: bicubic
-  train_interpolation: bicubic
-  no_aug: false
-  color_jitter: 0.4
-  aa: rand-m9-mstd0.5-inc1
-  aug_repeats: 0
-  aug_splits: 0
-  jsd_loss: false
-  reprob: 0.25
-  remode: pixel
-  recount: 1
-  resplit: false
-  mixup: 0.8
-  cutmix: 1.0
-  cutmix_minmax: null
-  mixup_prob: 1.0
-  mixup_switch_prob: 0.5
-  mixup_mode: batch
-  mixup_off_epoch: 0
-  smoothing: 0.1
-  bce_loss: false
-  drop: 0.0
-  drop_path: 0.0
-  drop_block: null
-  model_ema: true
-  model_ema_force_cpu: false
-  model_ema_decay: 0.9998
-  seed: 0
-  log_interval: 50
-  recovery_interval: 0
-  num_workers: 6
-  output_dir: ./results/convnext_small
-  save_log: save_log.txt
-  eval_metric: top1
-  pin_mem: true
 model:
   model: convnext_small
   num_classes: 1000
-  resume: /home/ashtomer/projects/ares/robust_training/results/convnext_small/convnext_small_eps-0_None_seed-None/checkpoint-34.pth.tar
+  resume: /home/ashtomer/projects/ares/robust_training/results/convnext_small/convnext_small_eps-0_None_seed-None/last.pth.tar
   gp: null
   channels_last: false
   max_history: 10
@@ -95,14 +53,35 @@ dataset:
   - 1.3333
   hflip: true
   vflip: false
-  reprob: 0.0
+  no_aug: false
   color_jitter: 0
+  aa: null
+  aug_repeats: 0
+  aug_splits: 0
+  jsd_loss: false
+  reprob: 0
+  remode: pixel
+  recount: 1
+  resplit: false
+  input_size: 224
+  crop_pct: 0.875
+  interpolation: bicubic
+  train_interpolation: bicubic
+  mixup: 0.8
+  cutmix: 1.0
+  cutmix_minmax: null
+  mixup_prob: 1.0
+  mixup_switch_prob: 0.5
+  mixup_mode: batch
+  mixup_off_epoch: 200
+  smoothing: 0.1
 optimizer:
-  opt: adamw
-  opt_eps: 1.0e-08
+  opt: sgd
+  opt_eps: null
   opt_betas: null
   momentum: 0.9
-  weight_decay: 0.05
+  weight_decay: 0.0005
+  filter_bias_and_bn: true
   clip_grad: null
   clip_mode: norm
   layer_decay: null
@@ -114,6 +93,7 @@ attacks:
   attack_eps: 0
   attack_step: 3.0
   attack_it: 3
+  bce_loss: false
   gradnorm: 0
   lambda_ce: 0.8
   lambda_gn: 1.2
@@ -125,3 +105,23 @@ dist:
   local_rank: ${oc.env:LOCAL_RANK,0}
   dist_backend: nccl
   dist_url: env://
+  distributed: true
+training:
+  epochs: 250
+  batch_size: 256
+  drop: 0.0
+  drop_path: 0.0
+  drop_block: null
+  model_ema: true
+  model_ema_force_cpu: false
+  model_ema_decay: 0.9998
+apex_amp: false
+native_amp: true
+seed: 0
+log_interval: 50
+recovery_interval: 0
+num_workers: 6
+output_dir: ./results/convnext_small
+save_log: save_log.txt
+eval_metric: top1
+pin_mem: true
