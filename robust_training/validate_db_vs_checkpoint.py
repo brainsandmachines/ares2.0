@@ -21,6 +21,8 @@ conn.close()
 
 # === Scan all model result folders ===
 for model_dir in sorted(os.listdir(RESULTS_ROOT)):
+    if not model_dir.startswith("convnext_small"):
+        continue
     ckpt_path = os.path.join(RESULTS_ROOT, model_dir, CHECKPOINT_NAME)
     if not os.path.isfile(ckpt_path):
         print(f"[MISSING] {model_dir} → no {CHECKPOINT_NAME}")

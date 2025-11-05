@@ -2,7 +2,7 @@
 
 sched: cosine
 sched_on_updates: True
-lrb: 1.0e-3
+lrb: 1.0e-4
 lr: null
 lr_noise: null
 lr_noise_pct: 0.67

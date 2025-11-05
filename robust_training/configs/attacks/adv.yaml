@@ -4,7 +4,7 @@ attack_criterion: mixup
 attack_norm: linf
 advprop: False
 attack_eps: 2.0
-attack_step: 3.0
+attack_step: 1.0
 attack_it: 3
 bce_loss: False
 

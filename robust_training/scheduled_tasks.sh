@@ -1,6 +1,7 @@
 #!/bin/bash
 # Get current hour
 CURRENT_HOUR=$(date +%H)
+printf "Current hour: %02d\n" "$CURRENT_HOUR"
 
 # Source the system Anaconda setup
 source /storage/modules/packages/anaconda/etc/profile.d/conda.sh
