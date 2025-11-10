@@ -159,7 +159,7 @@ if [ -f "$CHECKPOINT" ]; then
     model.model_id="'$MODEL_ID'" \
     training.batch_size="$BATCH_SIZE" \
     training.epochs="$EPOCHS" \
-    hydra.run.dir="results/convnext_small/${SAFE_NAME}"
+    hydra.run.dir="results/models/convnext_small/${SAFE_NAME}"
 else
   echo "[INFO] Starting new training..."
   torchrun --nproc_per_node=$NUM_GPUS --master-port=$MASTER_PORT -m robust_training.hydra_advtrain \
@@ -172,7 +172,7 @@ else
     model.model_id="'$MODEL_ID'" \
     training.batch_size="$BATCH_SIZE" \
     training.epochs="$EPOCHS" \
-    hydra.run.dir="results/convnext_small/${SAFE_NAME}"
+    hydra.run.dir="results/models/convnext_small/${SAFE_NAME}"
 fi
 
 rm -f "$TMP_MODEL_FILE"
