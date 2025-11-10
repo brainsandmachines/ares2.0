@@ -113,11 +113,12 @@ hydra:
     - hydra.run.dir=results/convnext_small/convnext_small_eps-0_None_seed-None
     - hydra.mode=RUN
     task:
-    - attacks.attack_norm=l2
+    - attacks.attack_norm=None
     - attacks.attack_eps=0
     - attacks.advtrain=false
     - attacks.gradnorm=0
-    - model.resume=/home/ashtomer/projects/ares/robust_training/results/convnext_small/convnext_small_eps-0_None_seed-None/last.pth.tar
+    - model.experiment_num=None
+    - model.resume=/home/ashtomer/projects/ares/results/models/convnext_small/convnext_small_eps-0_None_seed-None/last.pth.tar
     - model.experiment_name=convnext_small_eps-0_None_seed-None
     - model.model_id='c=0|adv=0|gradnorm=0'
     - training.batch_size=256
@@ -125,7 +126,7 @@ hydra:
   job:
     name: hydra_advtrain
     chdir: null
-    override_dirname: attacks.advtrain=false,attacks.attack_eps=0,attacks.attack_norm=l2,attacks.gradnorm=0,model.experiment_name=convnext_small_eps-0_None_seed-None,model.model_id='c=0|adv=0|gradnorm=0',model.resume=/home/ashtomer/projects/ares/robust_training/results/convnext_small/convnext_small_eps-0_None_seed-None/last.pth.tar,training.batch_size=256,training.epochs=250
+    override_dirname: attacks.advtrain=false,attacks.attack_eps=0,attacks.attack_norm=None,attacks.gradnorm=0,model.experiment_name=convnext_small_eps-0_None_seed-None,model.experiment_num=None,model.model_id='c=0|adv=0|gradnorm=0',model.resume=/home/ashtomer/projects/ares/results/models/convnext_small/convnext_small_eps-0_None_seed-None/last.pth.tar,training.batch_size=256,training.epochs=250
     id: ???
     num: ???
     config_name: config
@@ -155,7 +156,7 @@ hydra:
       training: convnext_small
       dist: default
       attacks: adv
-      optimizer: sgd
+      optimizer: adamw
       dataset: imagenet
       model: convnext_small
       lr_scheduler: cosine

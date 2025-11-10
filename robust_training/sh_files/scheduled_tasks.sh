@@ -9,7 +9,7 @@ printf "Current hour: %02d\n" "$CURRENT_HOUR"
 source /storage/modules/packages/anaconda/etc/profile.d/conda.sh
 
 # Activate your environment
-conda activate ares
+conda activate tomer_advtrain
 
 # Debug: show which Python is active
 echo "Using Python: $(which python)"

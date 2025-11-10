@@ -1,0 +1,10 @@
+- attacks.attack_norm=linf
+- attacks.attack_eps=1
+- attacks.advtrain=true
+- attacks.gradnorm=0
+- model.experiment_num=1
+- model.resume=/home/ashtomer/projects/ares/results/models/convnext_small/convnext_small_eps-1_linf_seed-1/last.pth.tar
+- model.experiment_name=convnext_small_eps-1_linf_seed-1
+- model.model_id='norm=linf|c=1|adv=1|gradnorm=0|init=1'
+- training.batch_size=256
+- training.epochs=250

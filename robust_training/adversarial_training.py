@@ -29,12 +29,12 @@ from ares.utils.defaults import get_args_parser
 from ares.utils.train_loop import train_one_epoch
 from ares.utils.validate import validate
 
-from model_scheduler import Model_scheduler
+from .model_scheduler import Model_scheduler
 
 def main(args):
     # distributed settings and logger
-    # if "WORLD_SIZE" in os.environ:
-    #     args.world_size=int(os.environ["WORLD_SIZE"])
+    if "WORLD_SIZE" in os.environ:
+        args.world_size=int(os.environ["WORLD_SIZE"])
     args.distributed=float(args.world_size)>1
     distributed_init(args)
     # normalize attack eps/step for linf (values historically stored as 0-255)
@@ -140,7 +140,7 @@ def main(args):
         saver = CheckpointSaver(
             model=model, optimizer=optimizer, args=args, model_ema=model_ema, amp_scaler=loss_scaler,
             checkpoint_dir=output_dir, recovery_dir=output_dir, decreasing=decreasing, max_history=args.max_history)
-        TB_BASE = "/home/ashtomer/projects/ares/robust_training/tensorboard_logs"
+        TB_BASE = "/home/ashtomer/projects/ares/results/tensorboard_logs"
         if "adv=0" in args.model_id:
             group_name = "baseline"
         else:

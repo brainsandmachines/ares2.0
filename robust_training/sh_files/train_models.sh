@@ -2,11 +2,10 @@
 nvidia-smi
 # ---- Env once ----
 module load anaconda
-source activate ares
-conda deactivate
-conda activate ares
+source activate tomer_advtrain
+# ------------------
 
-cd /home/ashtomer/projects/ares/robust_training
+cd /home/ashtomer/projects/ares
 set -Eeuo pipefail
 : "${SLURM_ARRAY_TASK_ID:=0}"
 
@@ -22,15 +21,15 @@ cleanup() {
     echo "[INFO] Resetting model $MODEL_ID → waiting..."
 
     python - <<PY
-from model_scheduler import Model_scheduler
-sch = Model_scheduler("model_scheduler.db")
+from robust_training.model_scheduler import Model_scheduler
+sch = Model_scheduler("robust_training/model_scheduler.db")
 sch._execute_sqlite(
     "UPDATE models SET status='waiting' WHERE model_id=?",
     ("$MODEL_ID",)
 )
 PY
 
-    echo "[INFO] Model $MODEL_ID reset to waiting at $(date)" >> outs/cleanup_events.log
+    echo "[INFO] Model $MODEL_ID reset to waiting at $(date)" >> robust_training/outs/cleanup_events.log
   fi
 }
 
@@ -76,9 +75,9 @@ echo "[INFO] Selecting model from scheduler..."
 
 MODEL_INFO=$(timeout 120s python - <<'PY' | tail -n 1
 import json, os
-from model_scheduler import Model_scheduler
+from robust_training.model_scheduler import Model_scheduler
 
-sch = Model_scheduler("model_scheduler.db")
+sch = Model_scheduler("robust_training/model_scheduler.db")
 model = sch.claim_next_waiting_model(cooldown_minutes=2)
 
 if not model:
@@ -88,7 +87,7 @@ else:
     constraint_val = model["constraint_val"]
     eps_str = str(int(constraint_val)) if float(constraint_val).is_integer() else str(constraint_val)
     safe_name = f"{arch_name}_eps-{eps_str}_{model['norm']}_seed-{model['init_id']}"
-    path = f"/home/ashtomer/projects/ares/robust_training/results/{arch_name}/{safe_name}"
+    path = f"/home/ashtomer/projects/ares/results/models/{arch_name}/{safe_name}"
 
     print(json.dumps({
         "model_id": model["model_id"],
@@ -149,7 +148,7 @@ export MASTER_PORT=$((10000 + RANDOM % 50000))
 # ===================== TRAINING RUN =====================
 if [ -f "$CHECKPOINT" ]; then
   echo "[INFO] Resuming training..."
-  torchrun --nproc_per_node=$NUM_GPUS --master-port=$MASTER_PORT hydra_advtrain.py \
+  torchrun --nproc_per_node=$NUM_GPUS --master-port=$MASTER_PORT -m robust_training.hydra_advtrain \
     attacks.attack_norm="$NORM" \
     attacks.attack_eps="$CONS" \
     attacks.advtrain="$ADV_BOOL" \
@@ -163,7 +162,7 @@ if [ -f "$CHECKPOINT" ]; then
     hydra.run.dir="results/convnext_small/${SAFE_NAME}"
 else
   echo "[INFO] Starting new training..."
-  torchrun --nproc_per_node=$NUM_GPUS --master-port=$MASTER_PORT hydra_advtrain.py \
+  torchrun --nproc_per_node=$NUM_GPUS --master-port=$MASTER_PORT -m robust_training.hydra_advtrain \
     attacks.attack_norm="$NORM" \
     attacks.attack_eps="$CONS" \
     attacks.advtrain="$ADV_BOOL" \

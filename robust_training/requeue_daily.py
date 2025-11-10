@@ -1,5 +1,6 @@
-#!/home/ashtomer/.conda/envs/ares/bin/python
-import sys
+#!/home/ashtomer/.conda/envs/tomer_advtrain/bin/python
+import sys, os
+sys.path.append("/home/ashtomer/projects/ares")
 import time
 from robust_training.model_scheduler import Model_scheduler
 
