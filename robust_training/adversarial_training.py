@@ -98,6 +98,9 @@ def main(args):
     
     # create the train and eval dataloaders
     loader_train, loader_eval, mixup_fn = build_dataset(args, num_aug_splits)
+    
+    images, targets = next(iter(loader_train))
+    print(f"Training data min: {images.min()}, max: {images.max()}, mean: {images.mean()}, std: {images.std()}")
 
     # setup loss function
     train_loss_fn, validate_loss_fn = build_loss(args, mixup_fn, num_aug_splits)

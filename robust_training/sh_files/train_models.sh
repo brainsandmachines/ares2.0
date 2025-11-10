@@ -49,6 +49,8 @@ echo "[INFO] Smallest GPU total: ${GPU_TOTAL} MB, free: ${GPU_FREE} MB"
 
 if [ "$GPU_TOTAL" -ge 95000 ]; then
   BATCH_PER_GPU=512
+  source activate tomer_advtrain_pro
+  echo "[INFO] Activated environment: $CONDA_DEFAULT_ENV"
 elif [ "$GPU_TOTAL" -ge 47000 ]; then
   BATCH_PER_GPU=256
 elif [ "$GPU_TOTAL" -ge 23000 ]; then
