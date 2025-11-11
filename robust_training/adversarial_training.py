@@ -121,9 +121,11 @@ def main(args):
         else:
             lr_scheduler.step(start_epoch)
     
-    sch = Model_scheduler(db_path="model_scheduler.db")
+    sch = Model_scheduler(db_path="/home/ashtomer/projects/ares/robust_training/model_scheduler.db")
+    
+    if not args.output_dir:
+        args.output_dir = args.experiment_name
 
-    args.output_dir = os.path.join(args.output_dir or ".", args.experiment_name)
 
     if args.rank == 0:
         _logger.info(f"Experiment: {args.experiment_name}")
@@ -146,6 +148,8 @@ def main(args):
         TB_BASE = "/home/ashtomer/projects/ares/results/tensorboard_logs"
         if "adv=0" in args.model_id:
             group_name = "baseline"
+        elif "gradnorm=1" in args.model_id:
+            group_name = "gradnorm"
         else:
             group_name = args.attack_norm
         tb_dir = os.path.join(TB_BASE, group_name, args.experiment_name)

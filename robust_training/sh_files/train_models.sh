@@ -89,7 +89,12 @@ else:
     constraint_val = model["constraint_val"]
     eps_str = str(int(constraint_val)) if float(constraint_val).is_integer() else str(constraint_val)
     safe_name = f"{arch_name}_eps-{eps_str}_{model['norm']}_seed-{model['init_id']}"
-    path = f"/home/ashtomer/projects/ares/results/models/{arch_name}/{safe_name}"
+    if model["grad_norm"]:
+        path = f"/home/ashtomer/projects/ares/results/models/{arch_name}/gradnorm/{safe_name}"
+    elif model["adv_train"]:
+        path = f"/home/ashtomer/projects/ares/results/models/{arch_name}/madry/{safe_name}"
+    else:
+        path = f"/home/ashtomer/projects/ares/results/models/{arch_name}/{safe_name}"
 
     print(json.dumps({
         "model_id": model["model_id"],
@@ -98,6 +103,7 @@ else:
         "adv_train": bool(model["adv_train"]),
         "init_id": model["init_id"],
         "safe_name": safe_name,
+        "output_dir": path,
         "checkpoint_path": os.path.join(path, "last.pth.tar"),
         "epochs": model["epochs"],
         "epochs_left": model["epochs_left"],
@@ -125,6 +131,7 @@ CONS=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin)
 ADV_BOOL=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print('true' if d['adv_train'] else 'false')")
 INIT=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['init_id'])")
 CHECKPOINT=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['checkpoint_path'])")
+OUTPUT_DIR=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['output_dir'])")
 EPOCHS=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['epochs'])")
 EPOCHS_LEFT=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['epochs_left'])")
 GRAD_NORM=$(echo "$MODEL_INFO" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['grad_norm'])")
@@ -138,6 +145,7 @@ echo "  Constraint:  $CONS"
 echo "  AdvTrain:    $ADV_BOOL"
 echo "  InitID:      $INIT"
 echo "  Checkpoint:  $CHECKPOINT"
+echo "  Output Dir:  $OUTPUT_DIR"
 echo "  total epochs: $EPOCHS"
 echo "  epochs left: $EPOCHS_LEFT"
 echo "  GradNorm:    $GRAD_NORM"
@@ -161,7 +169,8 @@ if [ -f "$CHECKPOINT" ]; then
     model.model_id="'$MODEL_ID'" \
     training.batch_size="$BATCH_SIZE" \
     training.epochs="$EPOCHS" \
-    hydra.run.dir="results/models/convnext_small/${SAFE_NAME}"
+    hydra.run.dir="$OUTPUT_DIR" \
+    output_dir="$OUTPUT_DIR"
 else
   echo "[INFO] Starting new training..."
   torchrun --nproc_per_node=$NUM_GPUS --master-port=$MASTER_PORT -m robust_training.hydra_advtrain \
@@ -174,7 +183,8 @@ else
     model.model_id="'$MODEL_ID'" \
     training.batch_size="$BATCH_SIZE" \
     training.epochs="$EPOCHS" \
-    hydra.run.dir="results/models/convnext_small/${SAFE_NAME}"
+    hydra.run.dir="$OUTPUT_DIR" \
+    output_dir="$OUTPUT_DIR"
 fi
 
 rm -f "$TMP_MODEL_FILE"

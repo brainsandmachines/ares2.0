@@ -1,12 +1,13 @@
 import os
 import sqlite3
 import torch
+import argparse
 
-from robust_training.model_scheduler import Model_scheduler
+from model_scheduler import Model_scheduler
 
 # === CONFIG ===
 DB_PATH = "/home/ashtomer/projects/ares/robust_training/model_scheduler.db"
-RESULTS_ROOT = "/home/ashtomer/projects/ares/robust_training/results/convnext_small"
+RESULTS_ROOT = "/home/ashtomer/projects/ares/results/models/convnext_small"
 CHECKPOINT_NAME = "last.pth.tar"
 
 # === Initialize scheduler ===
@@ -19,16 +20,27 @@ rows = c.execute("SELECT model_id, current_epoch FROM models").fetchall()
 db_epochs = {model_id: current_epoch for model_id, current_epoch in rows}
 conn.close()
 
-# === Scan all model result folders ===
-for model_dir in sorted(os.listdir(RESULTS_ROOT)):
-    if not model_dir.startswith("convnext_small"):
-        continue
-    ckpt_path = os.path.join(RESULTS_ROOT, model_dir, CHECKPOINT_NAME)
+# === Recursively find all convnext_small folders ===
+convnext_dirs = []
+for root, dirs, files in os.walk(RESULTS_ROOT):
+    for d in dirs:
+        if d.startswith("convnext_small"):
+            convnext_dirs.append(os.path.join(root, d))
+
+print(f"Found {len(convnext_dirs)} convnext_small folders.\n")
+
+
+# === Validate epochs ===
+for model_path in sorted(convnext_dirs):
+    model_dir = os.path.basename(model_path)
+    ckpt_path = os.path.join(model_path, CHECKPOINT_NAME)
+
     if not os.path.isfile(ckpt_path):
         print(f"[MISSING] {model_dir} → no {CHECKPOINT_NAME}")
         continue
-
+    
     try:
+        torch.serialization.add_safe_globals([argparse.Namespace])
         ckpt = torch.load(ckpt_path, map_location="cpu")
         # timm CheckpointSaver stores the epoch index (0-based)
         ckpt_epoch = ckpt.get("epoch", ckpt.get("start_epoch", None))
@@ -48,6 +60,8 @@ for model_dir in sorted(os.listdir(RESULTS_ROOT)):
     adv = 0 if eps == "0" else 1
     if adv == 0 and eps == "0":  # baseline model (no init)
         model_id = f"c=0|adv=0|gradnorm=0"
+    elif "gradnorm" in model_path:
+        model_id = f"norm=linf|c={eps}|adv=0|gradnorm=1|init=1"
     else:
         model_id = f"norm={norm}|c={eps}|adv={adv}|gradnorm=0|init={seed}"
 

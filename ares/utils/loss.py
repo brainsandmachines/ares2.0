@@ -108,7 +108,6 @@ def build_loss(args, mixup_fn, num_aug_splits):
     elif args.gradnorm:
         train_loss_fn = GradNorm_Loss(
             eps=args.attack_eps,
-            lambda_ce=getattr(args, "lambda_ce", 1.0),
             lambda_gn=getattr(args, "lambda_gn", 1.0),
         )
     else:
@@ -124,13 +123,12 @@ class GradNorm_Loss(nn.Module):
     """
     Double Backpropagation Loss (GradNorm-style).
     Implements:
-        L = λ_CE * CE(fθ(x), y) + λ_GN * (ε / σ) * ||∇ₓ CE(fθ(x), y)||₁
+        L = CE(fθ(x), y) + λ_GN * (ε / σ) * ||∇ₓ CE(fθ(x), y)||₁
     """
 
-    def __init__(self, eps=4./255., std=0.225, lambda_ce=0.8, lambda_gn=1.2):
+    def __init__(self, eps=4./255., std=0.225, lambda_gn=1.0):
         super().__init__()
         self.eps = eps / std              # ε / σ scaling
-        self.lambda_ce = lambda_ce
         self.lambda_gn = lambda_gn
         self.cross_entropy = nn.CrossEntropyLoss()
 
@@ -149,6 +147,6 @@ class GradNorm_Loss(nn.Module):
         grad_norm = grad.abs().sum(dim=(1, 2, 3)).sum()
 
         # Total loss
-        loss = (self.lambda_ce * loss_ce
+        loss = (loss_ce
                 + self.lambda_gn * self.eps * grad_norm)
         return loss

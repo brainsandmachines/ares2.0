@@ -58,7 +58,7 @@ class Model_scheduler():
         Return the model_id string if it exists in the database.
         Otherwise, create a new entry and return the model_id.
         """
-        model_id = self._make_model_id(norm, constraint_val, adv_train, init_id)
+        model_id = self._make_model_id(norm, constraint_val, adv_train, init_id=init_id, grad_norm=grad_norm)
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
 
@@ -197,6 +197,8 @@ class Model_scheduler():
             "UPDATE models SET status = 'training' WHERE model_id = ?",
             (model_id,)
         )
+        self.conn.commit()
+        print(f"[DB COMMIT] model_id={model_id}, epoch={epoch}, status={'finished' if epoch >= num_epochs else 'training'} committed.")
 
     
     def requeue_stale_trainings(self, threshold_hours=10):
@@ -256,7 +258,7 @@ class Model_scheduler():
                     FROM models
                     WHERE status = 'waiting'
                     AND (last_time_selected IS NULL OR (strftime('%s','now') - last_time_selected) > ?)
-                    ORDER BY current_epoch DESC
+                    ORDER BY grad_norm DESC, current_epoch DESC
                     LIMIT 1
                 """, (cooldown_secs,))
                 row = c.fetchone()
