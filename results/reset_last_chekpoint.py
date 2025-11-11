@@ -50,8 +50,7 @@ def update_checkpoints(path: str, num: int):
     shutil.copy2(src, dst)
     print(f"Copied {latest_checkpoint} → last.pth.tar")
 
-update_checkpoints("/home/ashtomer/projects/ares/results/models/convnext_small/madry/convnext_small_eps-2_linf_seed-1", 9)
+update_checkpoints("/home/ashtomer/projects/ares/results/models/convnext_small/convnext_small_eps-0_None_seed-None", 3)
 
-update_checkpoints("/home/ashtomer/projects/ares/results/models/convnext_small/madry/convnext_small_eps-4_linf_seed-1", 12)
     
     

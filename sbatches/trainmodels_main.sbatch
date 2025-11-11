@@ -7,10 +7,10 @@
 #SBATCH --mem=96G                        # memory (optional override)
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
-#SBATCH --output=/home/ashtomer/projects/ares/robust_training/outs/advtrain/main/convnextsmall/%A/%a.out
+#SBATCH --output=/home/ashtomer/projects/ares/outs/advtrain/main/convnextsmall/%A/%a.out
 #SBATCH --array=1-200%8
 
 
-cd /home/ashtomer/projects/ares/robust_training/sh_files || exit 1
+cd /home/ashtomer/projects/ares/sh_files || exit 1
 
-bash /home/ashtomer/projects/ares/robust_training/sh_files/train_models.sh
+bash /home/ashtomer/projects/ares/sh_files/train_models.sh

@@ -6,7 +6,7 @@ import argparse
 from model_scheduler import Model_scheduler
 
 # === CONFIG ===
-DB_PATH = "/home/ashtomer/projects/ares/robust_training/model_scheduler.db"
+DB_PATH = "/home/ashtomer/projects/ares/job_manager/model_scheduler.db"
 RESULTS_ROOT = "/home/ashtomer/projects/ares/results/models/convnext_small"
 CHECKPOINT_NAME = "last.pth.tar"
 
@@ -61,7 +61,7 @@ for model_path in sorted(convnext_dirs):
     if adv == 0 and eps == "0":  # baseline model (no init)
         model_id = f"c=0|adv=0|gradnorm=0"
     elif "gradnorm" in model_path:
-        model_id = f"norm=linf|c={eps}|adv=0|gradnorm=1|init=1"
+        model_id = f"norm=linf|c={eps}|adv=0|gradnorm=1|init={seed}"
     else:
         model_id = f"norm={norm}|c={eps}|adv={adv}|gradnorm=0|init={seed}"
 

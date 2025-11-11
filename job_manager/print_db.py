@@ -4,7 +4,7 @@
 import sqlite3
 import os
 
-DB_PATH = "/home/ashtomer/projects/ares/robust_training/model_scheduler.db"
+DB_PATH = "/home/ashtomer/projects/ares/job_manager/model_scheduler.db"
 
 print("[INFO] Reading model table...\n")
 
@@ -19,7 +19,12 @@ c = conn.cursor()
 c.execute("""
     SELECT model_id, current_epoch, status, job_id
     FROM models
-    ORDER BY model_id;
+    ORDER BY
+        CASE
+            WHEN model_id LIKE '%gradnorm=1%' THEN 0
+            ELSE 1
+        END,
+        model_id;
 """)
 rows = c.fetchall()
 

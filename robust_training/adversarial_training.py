@@ -29,7 +29,7 @@ from ares.utils.defaults import get_args_parser
 from ares.utils.train_loop import train_one_epoch
 from ares.utils.validate import validate
 
-from .model_scheduler import Model_scheduler
+from job_manager.model_scheduler import Model_scheduler
 
 def main(args):
     # distributed settings and logger
@@ -121,7 +121,7 @@ def main(args):
         else:
             lr_scheduler.step(start_epoch)
     
-    sch = Model_scheduler(db_path="/home/ashtomer/projects/ares/robust_training/model_scheduler.db")
+    sch = Model_scheduler(db_path="/home/ashtomer/projects/ares/job_manager/model_scheduler.db")
     
     if not args.output_dir:
         args.output_dir = args.experiment_name
@@ -146,7 +146,7 @@ def main(args):
             model=model, optimizer=optimizer, args=args, model_ema=model_ema, amp_scaler=loss_scaler,
             checkpoint_dir=output_dir, recovery_dir=output_dir, decreasing=decreasing, max_history=args.max_history)
         TB_BASE = "/home/ashtomer/projects/ares/results/tensorboard_logs"
-        if "adv=0" in args.model_id:
+        if "c=0" in args.model_id:
             group_name = "baseline"
         elif "gradnorm=1" in args.model_id:
             group_name = "gradnorm"

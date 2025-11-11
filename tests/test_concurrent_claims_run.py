@@ -4,7 +4,7 @@ import time
 import shutil
 import tempfile
 import os
-from model_scheduler import Model_scheduler
+from ..job_manager.model_scheduler import Model_scheduler
 
 
 def insert_model(scheduler, status="waiting", norm="l2", constraint_val=1):

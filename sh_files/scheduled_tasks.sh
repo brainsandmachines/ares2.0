@@ -16,10 +16,10 @@ echo "Using Python: $(which python)"
 echo "Python version: $(python --version)"
 
 # Run scripts
-python /home/ashtomer/projects/ares/robust_training/requeue_daily.py
+python /home/ashtomer/projects/ares/job_manager/requeue_daily.py
 
 # Submit sbatch only at midnight
 if [ "$CURRENT_HOUR" -eq 0 ] || [ "$CURRENT_HOUR" -eq 12 ]; then
-    sbatch /home/ashtomer/projects/ares/robust_training/sbatches/trainmodels_main.sbatch
-    python /home/ashtomer/projects/ares/robust_training/validate_db_vs_checkpoint.py
+    sbatch /home/ashtomer/projects/ares/sbatches/trainmodels_main.sbatch
+    python /home/ashtomer/projects/ares/job_manager/validate_db_vs_checkpoint.py
 fi

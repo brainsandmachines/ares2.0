@@ -21,8 +21,8 @@ cleanup() {
     echo "[INFO] Resetting model $MODEL_ID → waiting..."
 
     python - <<PY
-from robust_training.model_scheduler import Model_scheduler
-sch = Model_scheduler("robust_training/model_scheduler.db")
+from job_manager.model_scheduler import Model_scheduler
+sch = Model_scheduler("job_manager/model_scheduler.db")
 sch._execute_sqlite(
     "UPDATE models SET status='waiting' WHERE model_id=?",
     ("$MODEL_ID",)
@@ -77,9 +77,9 @@ echo "[INFO] Selecting model from scheduler..."
 
 MODEL_INFO=$(timeout 120s python - <<'PY' | tail -n 1
 import json, os
-from robust_training.model_scheduler import Model_scheduler
+from job_manager.model_scheduler import Model_scheduler
 
-sch = Model_scheduler("robust_training/model_scheduler.db")
+sch = Model_scheduler("job_manager/model_scheduler.db")
 model = sch.claim_next_waiting_model(cooldown_minutes=2)
 
 if not model:
