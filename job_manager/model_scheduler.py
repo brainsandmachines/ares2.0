@@ -197,8 +197,6 @@ class Model_scheduler():
             "UPDATE models SET status = 'training' WHERE model_id = ?",
             (model_id,)
         )
-        self.conn.commit()
-        print(f"[DB COMMIT] model_id={model_id}, epoch={epoch}, status={'finished' if epoch >= num_epochs else 'training'} committed.")
 
     
     def requeue_stale_trainings(self, threshold_hours=10):

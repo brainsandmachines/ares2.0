@@ -6,7 +6,7 @@ import pytest
 import multiprocessing
 import threading
 
-from model_scheduler import Model_scheduler 
+from ..job_manager.model_scheduler import Model_scheduler 
 
 
 @pytest.fixture
@@ -144,7 +144,6 @@ def test_claim_next_waiting_model_sets_training_and_updates_last_time_selected(d
 
 def _claim_in_subprocess(db_path, return_dict, key):
     """Helper: run claim_next_waiting_model() in a subprocess."""
-    from model_scheduler import Model_scheduler
     sch = Model_scheduler(db_path)
     try:
         result = sch.claim_next_waiting_model()
