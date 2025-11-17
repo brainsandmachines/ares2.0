@@ -1,7 +1,8 @@
 ------ On the Cluster terminal ------
 1️⃣ Start TensorBoard
 Run this command (⚠️ change the path according to your experiment!):
-tensorboard --logdir=/home/ashtomer/projects/ares/robust_training/tensorboard_logs/l2/convnext_small_eps-4_linf_seed-1 --port=6006 --bind_all
+ulimit -n 65535
+tensorboard --logdir=/home/ashtomer/projects/ares/results/tensorboard_logs/l2/convnext_small_eps-4_linf_seed-1 --port=6006 --bind_all
 
 
 🧩 Example structure:
