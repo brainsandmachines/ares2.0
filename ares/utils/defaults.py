@@ -29,7 +29,9 @@ def get_args_parser():
                         help='Global pool type, one of (fast, avg, max, avgmax, avgmaxc). Model default if None. (opt)')
     parser.add_argument('--channels-last', action='store_true', default=False,
                         help='Use channels_last memory layout (opt)')
-
+    
+    parser.add_argument('--model_id', type=str,default='unknown_model',   help='Identifier for the model configuration.')
+    parser.add_argument('--experiment_name', type=str, default='test_experiment', help='Name for the experiment.')
     #* Batch norm parameters
     parser.add_argument('--bn-momentum', type=float, default=None, help='BatchNorm momentum override (if not None)')
     parser.add_argument('--bn-eps', type=float, default=None, help='BatchNorm epsilon override (if not None)')

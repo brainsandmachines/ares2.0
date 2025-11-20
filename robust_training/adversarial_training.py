@@ -9,7 +9,7 @@ import os
 from collections import OrderedDict
 import torch
 from torch.nn.parallel import DistributedDataParallel as NativeDDP
-from torch.utils.tensorboard import SummaryWriter
+import wandb
 
 # timm functions
 from timm.models import resume_checkpoint, load_checkpoint, model_parameters
@@ -37,13 +37,15 @@ def main(args):
         args.world_size=int(os.environ["WORLD_SIZE"])
     args.distributed=float(args.world_size)>1
     distributed_init(args)
+    if args.output_dir and args.rank == 0:
+        os.makedirs(args.output_dir, exist_ok = True)
     # normalize attack eps/step for linf (values historically stored as 0-255)
     if getattr(args, 'attack_norm', None) == 'linf':
         if getattr(args, 'attack_eps', None) is not None:
             args.attack_eps = float(args.attack_eps) / 255.0
         if getattr(args, 'attack_step', None) is not None:
             args.attack_step = float(args.attack_step) / 255.0
-    _logger = setup_logger(save_dir=None, distributed_rank=args.rank)
+    _logger = setup_logger(save_dir=args.output_dir, distributed_rank=args.rank)
     _logger.info(f"Runtime distributed={args.distributed}, world_size={args.world_size}, rank={args.rank}, local_rank={args.local_rank}, device_id={args.device_id}")
 
     # fix the seed for reproducibility
@@ -68,13 +70,14 @@ def main(args):
     if args.lr is None:
         args.lr=args.lrb * args.batch_size * args.world_size / 512
     optimizer = create_optimizer_v2(model, **optimizer_kwargs(cfg=args))
+    print(optimizer.__class__.__name__)
 
     # build loss scaler
     amp_autocast, loss_scaler = build_loss_scaler(args, _logger)
 
     # resume from a checkpoint
     resume_epoch = None
-    if args.resume:
+    if args.resume and os.path.exists(args.resume):
         resume_epoch = resume_checkpoint(
             model, args.resume,
             optimizer=optimizer,
@@ -87,7 +90,7 @@ def main(args):
         # Important to create EMA model after cuda(), DP wrapper, and AMP but before SyncBN and DDP wrapper
         model_ema = ModelEmaV2(
             model, decay=args.model_ema_decay, device='cpu' if args.model_ema_force_cpu else None)
-        if args.resume:
+        if args.resume and os.path.exists(args.resume):
             load_checkpoint(model_ema.module, args.resume, use_ema=True)
 
     # # setup distributed training
@@ -101,9 +104,15 @@ def main(args):
     
     images, targets = next(iter(loader_train))
     print(f"Training data min: {images.min()}, max: {images.max()}, mean: {images.mean()}, std: {images.std()}")
+    print(f"Targets sample: {targets[:10]}")
+    images, targets = next(iter(loader_eval))
+    print(f"Evaluation data min: {images.min()}, max: {images.max()}, mean: {images.mean()}, std: {images.std()}")
+    print(f"Evaluation targets sample: {targets[:10]}")
+    print(f"mixup_fn active: {mixup_fn is not None}")
 
     # setup loss function
     train_loss_fn, validate_loss_fn = build_loss(args, mixup_fn, num_aug_splits)
+    print(f"Using training loss: {train_loss_fn}, validation loss: {validate_loss_fn}")
 
     # setup learning rate schedule and starting epoch
     updates_per_epoch = len(loader_train)
@@ -112,6 +121,8 @@ def main(args):
         **scheduler_kwargs(args),
         updates_per_epoch=updates_per_epoch,
     )
+    print(f"Using learning rate scheduler: {lr_scheduler}")
+    
     start_epoch = 0
     if resume_epoch is not None:
         start_epoch = resume_epoch
@@ -128,7 +139,8 @@ def main(args):
 
 
     if args.rank == 0:
-        _logger.info(f"Experiment: {args.experiment_name}")
+        if hasattr(args, 'experiment_name') and args.experiment_name is not None:
+            _logger.info(f"Experiment: {args.experiment_name}")
         _logger.info(f"Results directory: {args.output_dir}")
     # saver
     eval_metric = args.eval_metric
@@ -136,7 +148,6 @@ def main(args):
     best_metric = None
     best_epoch = None
     output_dir = None
-    writer = None
     if args.rank == 0:
         output_dir = get_outdir(args.output_dir)
         _logger = setup_logger(save_dir=output_dir, distributed_rank=args.rank)
@@ -145,22 +156,36 @@ def main(args):
         saver = CheckpointSaver(
             model=model, optimizer=optimizer, args=args, model_ema=model_ema, amp_scaler=loss_scaler,
             checkpoint_dir=output_dir, recovery_dir=output_dir, decreasing=decreasing, max_history=args.max_history)
-        TB_BASE = "/home/ashtomer/projects/ares/results/tensorboard_logs"
-        if "c=0" in args.model_id:
-            group_name = "baseline"
-        elif "gradnorm=1" in args.model_id:
-            group_name = "gradnorm"
+        # wandb init:
+        if args.model_id is None:
+            group_name = "test_models"
+        else:    
+            if "c=0" in args.model_id and "gradnorm=0" in args.model_id:
+                group_name = "baseline"
+            elif "gradnorm=1" in args.model_id:
+                group_name = "gradnorm"
+            else:
+                group_name = args.attack_norm
+        wandb_config = {k: v for k, v in vars(args).items() if not k.startswith('_')}
+        # Use experiment_name as ID if given, otherwise generate one
+        if args.experiment_name is None:   
+            run_id = wandb.util.generate_id()
+            run_name = run_id          # use run_id as the visible name
         else:
-            group_name = args.attack_norm
-        tb_dir = os.path.join(TB_BASE, group_name, args.experiment_name)
-        os.makedirs(tb_dir, exist_ok=True)
-        writer = SummaryWriter(log_dir=tb_dir)
-        
-        # Add metadata for clarity
-        writer.add_text("config/model_id", args.model_id)
-        writer.add_text("config/attack_norm", str(args.attack_norm))
-        writer.add_text("config/constraint", str(args.attack_eps))
-        writer.add_text("config/seed", str(args.experiment_num))
+            run_id = args.experiment_name
+            run_name = args.experiment_name
+
+        wandb.init(
+            project="robust-training",
+            entity="ashtomer-ben-gurion-university-of-the-negev",
+            id=run_id,  
+            resume="allow",
+            name=run_name,
+            group=group_name,
+            config=wandb_config,
+        )
+        _logger.info(f"Weights & Biases logging initialized for run: {args.experiment_name} in group: {group_name}")
+
         
         args_text = yaml.safe_dump(args.__dict__, default_flow_style=False)
         with open(os.path.join(output_dir, 'args.yaml'), 'w') as f:
@@ -168,6 +193,7 @@ def main(args):
 
     # start training
     _logger.info(f"Start training for {args.epochs-start_epoch} epochs")
+    _logger.info(f"gradclip: {args.clip_grad}")
     
     for epoch in range(start_epoch, args.epochs):
         if hasattr(loader_train, 'sampler') and hasattr(loader_train.sampler, 'set_epoch'):
@@ -177,8 +203,7 @@ def main(args):
             train_metrics = train_one_epoch(
                 epoch, model, loader_train, optimizer, train_loss_fn, args,
                 lr_scheduler=lr_scheduler, saver=saver, amp_autocast=amp_autocast,
-                loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn, _logger=_logger, writer=writer,
-                sch=sch, model_id=args.model_id)
+                loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn, _logger=_logger)
 
         # distributed bn sync
         if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
@@ -186,15 +211,29 @@ def main(args):
             distribute_bn(model, args.world_size, args.dist_bn == 'reduce')
 
         # calculate evaluation metric
-        eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, _logger=_logger, writer=writer, epoch=epoch, tb_tag='val')
+        eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, _logger=_logger, epoch=epoch)
 
         # model ema update
+        ema_eval_metrics = None
         if model_ema is not None and not args.model_ema_force_cpu:
             if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
                 distribute_bn(model_ema, args.world_size, args.dist_bn == 'reduce')
-            ema_eval_metrics = validate(model_ema.module, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, log_suffix=' (EMA)', _logger=_logger, writer=writer, epoch=epoch, tb_tag='val_ema')
-            eval_metrics = ema_eval_metrics
-
+            ema_eval_metrics = validate(model_ema.module, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, log_suffix=' (EMA)', _logger=_logger, epoch=epoch)
+            
+        # log wandb
+        if args.rank == 0:
+            wandb_log_dict = {}
+            for k, v in train_metrics.items():
+                wandb_log_dict[f"train/{k}"] = v
+            for k, v in eval_metrics.items():
+                wandb_log_dict[f"eval/{k}"] = v
+            if ema_eval_metrics is not None:
+                for k, v in ema_eval_metrics.items():
+                    wandb_log_dict[f"eval_ema/{k}"] = v
+            wandb.log({"lr": optimizer.param_groups[0]['lr']}, step=epoch)
+            wandb.log(wandb_log_dict, step=epoch)
+            
+        eval_metrics = ema_eval_metrics if ema_eval_metrics is not None else eval_metrics
         # lr_scheduler update
         if lr_scheduler is not None:
             # step LR for next epoch
@@ -203,35 +242,20 @@ def main(args):
         # output summary.csv
         if output_dir is not None:
             update_summary(
-                epoch, train_metrics, eval_metrics, os.path.join(output_dir, 'summary.csv'),
+                epoch, train_metrics, eval_metrics, os.path.join(output_dir, 'summary.csv'),lr=optimizer.param_groups[0]['lr'],
                 write_header=best_metric is None)
-
+            
+        # save best checkpoint
         if saver is not None:
-            save_path = os.path.join(saver.checkpoint_dir, f"checkpoint-{epoch}.pth.tar")
-            # If a checkpoint with this name already exists, remove it to avoid FileExistsError
-            if os.path.exists(save_path):
-                if args.rank == 0:
-                    print(f"[Warning] Removing existing checkpoint: {save_path}")
-                    os.remove(save_path)
-                # Ensure all ranks see the same file state before continuing
-                if args.distributed:
-                    torch.distributed.barrier()
-
             best_metric, best_epoch = saver.save_checkpoint(epoch, eval_metrics[eval_metric])
             
         # -------- DB update: end-of-epoch --------
         if sch is not None and args.model_id is not None and args.rank == 0:
             sch.update_progress_epoch_end(model_id=args.model_id, epoch=epoch+1)
 
-        if writer is not None and args.rank == 0:
-            writer.flush()
-
         if args.distributed:
             torch.distributed.barrier()
 
-    if writer is not None and args.rank == 0:
-        writer.flush()
-        writer.close()
     if best_metric is not None:
         _logger.info('*** Best metric: {0} (epoch {1})'.format(best_metric, best_epoch))
 

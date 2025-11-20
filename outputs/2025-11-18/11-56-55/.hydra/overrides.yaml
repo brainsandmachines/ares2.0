@@ -1,0 +1,8 @@
+- attacks.attack_norm=linf
+- attacks.attack_eps=0.0
+- attacks.advtrain=false
+- attacks.gradnorm=false
+- model.experiment_num=1
+- training.epochs=300
+- optimizer.clip_grad=0.5
+- output_dir=/home/ashtomer/projects/ares/results/hydra_test_gradclip

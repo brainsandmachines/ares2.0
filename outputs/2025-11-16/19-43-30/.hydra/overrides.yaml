@@ -1,0 +1,7 @@
+- attacks.attack_norm=linf
+- attacks.attack_eps=1
+- attacks.advtrain=false
+- attacks.gradnorm=false
+- model.experiment_num=1
+- model.experiment_name=convnext_small_baseline_test
+- model.model_id='baseline'

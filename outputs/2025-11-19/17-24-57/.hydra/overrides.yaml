@@ -1,0 +1,14 @@
+- attacks.attack_norm=linf
+- attacks.attack_eps=0.0
+- attacks.advtrain=false
+- attacks.gradnorm=false
+- model.experiment_num=1
+- model.resume=/home/ashtomer/projects/ares/results/baseline-wandb_test/last.pth.tar
+- training.epochs=250
+- training.batch_size=256
+- optimizer.clip_grad=null
+- dataset.mixup=0.2
+- dataset.cutmix=0.2
+- dataset.train_dir=/storage/test/bml_group/tomerash/datasets/imagenet_sample/train/
+- dataset.eval_dir=/storage/test/bml_group/tomerash/datasets/imagenet_sample/val/
+- output_dir=/home/ashtomer/projects/ares/results/baseline-wandb_test

@@ -1,0 +1,6 @@
+- attacks.attack_norm=linf
+- attacks.attack_eps=0.0
+- attacks.advtrain=false
+- attacks.gradnorm=false
+- model.experiment_num=1
+- model.resume=/home/ashtomer/projects/ares/results/baseline-no-mixup_with_gradclip/last.pth.tar

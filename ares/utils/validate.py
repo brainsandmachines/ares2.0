@@ -11,7 +11,7 @@ from timm.utils import  reduce_tensor
 from ares.utils.adv import adv_generator
 from ares.utils.metrics import AverageMeter, accuracy
 
-def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _logger=None, writer=None, epoch=None, tb_tag='val'):
+def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _logger=None, epoch=None):
     batch_time_m = AverageMeter()
     losses_m = AverageMeter()
     top1_m = AverageMeter()
@@ -109,14 +109,4 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
                     adv_loss=adv_losses_m, adv_top1=adv_top1_m, adv_top5=adv_top5_m))
 
     metrics = OrderedDict([('loss', losses_m.avg), ('top1', top1_m.avg), ('top5', top5_m.avg), ('advloss', adv_losses_m.avg), ('advtop1', adv_top1_m.avg), ('advtop5', adv_top5_m.avg)])
-    if writer is not None and (not args.distributed or args.rank == 0):
-        step = int(epoch) if epoch is not None else 0
-        writer.add_scalar(f'{tb_tag}/loss', losses_m.avg, step)
-        writer.add_scalar(f'{tb_tag}/top1', top1_m.avg, step)
-        writer.add_scalar(f'{tb_tag}/top5', top5_m.avg, step)
-        # If adversarial eval was run, log those too
-        if args.advtrain:
-            writer.add_scalar(f'{tb_tag}_adv/loss', adv_losses_m.avg, step)
-            writer.add_scalar(f'{tb_tag}_adv/top1', adv_top1_m.avg, step)
-            writer.add_scalar(f'{tb_tag}_adv/top5', adv_top5_m.avg, step)
     return metrics

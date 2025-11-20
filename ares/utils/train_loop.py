@@ -16,20 +16,21 @@ from ares.utils.metrics import AverageMeter
 def train_one_epoch(
         epoch, model, loader, optimizer, loss_fn, args,
         lr_scheduler=None, saver=None, amp_autocast=None,
-        loss_scaler=None, model_ema=None, mixup_fn=None, _logger=None, writer=None, sch=None, model_id=None):
-    
+        loss_scaler=None, model_ema=None, mixup_fn=None, _logger=None):
     # mixup setting
     if args.mixup_off_epoch and epoch >= args.mixup_off_epoch:
-        print("[DEBUG] Disabling mixup!")
-    if mixup_fn is not None:
-        mixup_fn.mixup_enabled = False
-        print(f"[DEBUG] mixup_fn.mixup_enabled set to {mixup_fn.mixup_enabled}")
-
+        if mixup_fn is not None:
+            mixup_fn.mixup_enabled = False
+    
     # statistical variables
     second_order = hasattr(optimizer, 'is_second_order') and optimizer.is_second_order
     batch_time_m = AverageMeter()
     data_time_m = AverageMeter()
     losses_m = AverageMeter()
+    grad_global_m = AverageMeter()
+    grad_avg_m = AverageMeter()
+    grad_max_m = AverageMeter()
+
     num_epochs = args.epochs + args.cooldown_epochs
 
     model.train()
@@ -93,13 +94,23 @@ def train_one_epoch(
                 clip_grad=args.clip_grad, clip_mode=args.clip_mode,
                 parameters=model_parameters(model, exclude_head='agc' in args.clip_mode),
                 create_graph=second_order)
+            global_g, avg_g, max_g = compute_grad_stats(model)
+
         else:
             loss.backward(create_graph=second_order)
             if args.clip_grad is not None:
                 dispatch_clip_grad(
                     model_parameters(model, exclude_head='agc' in args.clip_mode),
                     value=args.clip_grad, mode=args.clip_mode)
+            global_g, avg_g, max_g = compute_grad_stats(model)
+
+            
             optimizer.step()
+                
+        if global_g is not None:
+            grad_global_m.update(global_g)
+            grad_avg_m.update(avg_g)
+            grad_max_m.update(max_g)
 
         if model_ema is not None:
             model_ema.update(model)
@@ -114,17 +125,6 @@ def train_one_epoch(
             if args.distributed:
                 reduced_loss = reduce_tensor(loss.data, args.world_size)
                 losses_m.update(reduced_loss.item(), input.size(0))
-            if writer is not None and (not args.distributed or args.rank == 0):
-                global_step = num_updates  # already maintained above
-                # scalars you already have handy
-                writer.add_scalar('train/loss', losses_m.val, global_step)
-                writer.add_scalar('train/loss_avg', losses_m.avg, global_step)
-                writer.add_scalar('train/lr', lr, global_step)
-                writer.add_scalar('train/time_per_batch', batch_time_m.val, global_step)
-                writer.add_scalar('train/data_time', data_time_m.val, global_step)
-                writer.add_scalar('train/throughput_imgs_per_s',
-                                  input.size(0) * args.world_size / batch_time_m.val,
-                                  global_step)
            
             _logger.info(
             'Train: [{}/{}] [{:>4d}/{} ({:>3.0f}%)]  '
@@ -160,5 +160,26 @@ def train_one_epoch(
         
     
         
-    return OrderedDict([('loss', losses_m.avg)])
+    return OrderedDict([
+    ('loss', losses_m.avg),
+    ('grad_global', grad_global_m.avg),
+    ('grad_avg', grad_avg_m.avg),
+    ('grad_max', grad_max_m.avg),
+])
 
+
+def compute_grad_stats(model):
+    grads = [p.grad.detach() for p in model.parameters()
+             if p.requires_grad and p.grad is not None]
+
+    if not grads:
+        return None, None, None
+
+    # global L2 norm
+    global_norm = torch.sqrt(sum(g.norm()**2 for g in grads)).item()
+    # average per-tensor norm
+    avg_norm = sum(g.norm().item() for g in grads) / len(grads)
+    # maximum element across all gradients
+    max_grad = max(g.abs().max().item() for g in grads)
+
+    return global_norm, avg_norm, max_grad

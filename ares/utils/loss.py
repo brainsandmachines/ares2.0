@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from timm.loss import JsdCrossEntropy, BinaryCrossEntropy, LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
+from timm.loss import JsdCrossEntropy, BinaryCrossEntropy, SoftTargetCrossEntropy
 from contextlib import suppress
 from timm.utils import NativeScaler
 try:
@@ -93,7 +93,7 @@ def build_loss(args, mixup_fn, num_aug_splits):
     if args.jsd_loss:
         assert num_aug_splits > 1  # JSD only valid with aug splits set
         train_loss_fn = JsdCrossEntropy(num_splits=num_aug_splits, smoothing=args.smoothing)
-    elif mixup_fn is not None:
+    elif mixup_fn is not None and args.gradnorm==False:
         # smoothing is handled with mixup target transform which outputs sparse, soft targets
         if args.bce_loss:
             train_loss_fn = BinaryCrossEntropy(target_threshold=args.bce_target_thresh)
@@ -103,7 +103,7 @@ def build_loss(args, mixup_fn, num_aug_splits):
         if args.bce_loss:
             train_loss_fn = BinaryCrossEntropy(smoothing=args.smoothing, target_threshold=args.bce_target_thresh)
         else:
-            train_loss_fn = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
+            train_loss_fn = nn.CrossEntropyLoss(label_smoothing=args.smoothing)
     #  Case 2: DBP (GradNorm) loss
     elif args.gradnorm:
         train_loss_fn = GradNorm_Loss(

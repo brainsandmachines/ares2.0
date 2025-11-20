@@ -1,0 +1,11 @@
+- attacks.attack_norm=linf
+- attacks.attack_eps=0.0
+- attacks.advtrain=false
+- attacks.gradnorm=false
+- model.experiment_num=1
+- model.resume=/home/ashtomer/projects/ares/results/baseline-test_mixup_path/last.pth.tar
+- training.epochs=250
+- training.batch_size=256
+- optimizer.clip_grad=null
+- dataset.mixup_prob=1e-6
+- output_dir=/home/ashtomer/projects/ares/results/baseline-test_mixup_path

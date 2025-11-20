@@ -1,6 +1,5 @@
 # Main Hydra config. It composes the specific group configs below.
 defaults:
-  - _self_
   - lr_scheduler: cosine
   - model: convnext_small
   - dataset: imagenet
@@ -8,6 +7,7 @@ defaults:
   - attacks: adv
   - dist: default
   - training: convnext_small
+  - _self_
 
 
 # Training / schedule / augmentation / misc settings split from convnext_small.yaml

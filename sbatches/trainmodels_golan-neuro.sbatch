@@ -9,7 +9,7 @@
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
 #SBATCH --output=/home/ashtomer/projects/ares/outs/advtrain/golan_neuro/convnextsmall/%A/%a.out
-#SBATCH --array=1-500%5
+#SBATCH --array=1-500%4
 
 cd /home/ashtomer/projects/ares/sh_files || exit 1
 
