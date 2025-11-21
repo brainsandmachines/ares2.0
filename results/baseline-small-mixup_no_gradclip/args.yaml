@@ -37,7 +37,7 @@ epoch_repeats: 0
 epochs: 250
 eval_dir: /storage/test/bml_group/tomerash/datasets/imagenet/val/
 eval_metric: top1
-experiment_name: ''
+experiment_name: null
 experiment_num: 1
 gp: null
 gradnorm: false
@@ -75,7 +75,7 @@ model: convnext_small
 model_ema: true
 model_ema_decay: 0.9998
 model_ema_force_cpu: false
-model_id: ''
+model_id: null
 momentum: 0.9
 native_amp: true
 no_aug: false
