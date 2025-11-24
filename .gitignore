@@ -7,7 +7,7 @@ datasets/*
 *.zip
 *.tar.gz
 # training artifacts
-robust_training/results/
+results/
 ~/
 *.pth
 *.pth.tar
