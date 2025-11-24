@@ -16,11 +16,7 @@ from ares.utils.metrics import AverageMeter
 def train_one_epoch(
         epoch, model, loader, optimizer, loss_fn, args,
         lr_scheduler=None, saver=None, amp_autocast=None,
-        loss_scaler=None, model_ema=None, mixup_fn=None, _logger=None):
-    # mixup setting
-    if args.mixup_off_epoch and epoch >= args.mixup_off_epoch:
-        if mixup_fn is not None:
-            mixup_fn.mixup_enabled = False
+        loss_scaler=None, model_ema=None, _logger=None):
     
     # statistical variables
     second_order = hasattr(optimizer, 'is_second_order') and optimizer.is_second_order
@@ -48,11 +44,7 @@ def train_one_epoch(
         if not torch.isfinite(input).all():
             raise ValueError("Input contains NaN or Inf values")
         last_batch = batch_idx == last_idx
-
-        # processing input and target
         input, target = input.cuda(non_blocking=True), target.cuda(non_blocking=True)
-        if mixup_fn is not None:
-            input, target = mixup_fn(input, target)
         if args.channels_last:
             input=input.contiguous(memory_format=torch.channels_last)
         
@@ -103,8 +95,6 @@ def train_one_epoch(
                     model_parameters(model, exclude_head='agc' in args.clip_mode),
                     value=args.clip_grad, mode=args.clip_mode)
             global_g, avg_g, max_g = compute_grad_stats(model)
-
-            
             optimizer.step()
                 
         if global_g is not None:

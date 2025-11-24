@@ -1,0 +1,9 @@
+- attacks.attack_norm=linf
+- attacks.attack_eps=0.0
+- attacks.advtrain=false
+- attacks.gradnorm=false
+- model.experiment_num=1
+- training.epochs=150
+- output_dir=/home/ashtomer/projects/ares/results/hydra_test5
+- dataset.train_dir=/storage/test/bml_group/tomerash/datasets/imagenet_sample/train/
+- dataset.eval_dir=/storage/test/bml_group/tomerash/datasets/imagenet_sample/val/

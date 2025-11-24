@@ -57,18 +57,30 @@ class PrintFormatter:
 
     def flush(self):
         pass
-
-
+    
+    
 def _auto_experiment_name(args):
-    """Builds <model>_eps<eps-in-255>_<norm>, e.g. resnet50_eps4_linf"""
-    try:
-        eps255 = args.attack_eps * 255.0
-        if abs(eps255 - round(eps255)) < 1e-6:
-            eps_tag = f"eps{int(round(eps255))}"
+    parts = [f"{args.model}"]
+    if args.advtrain:
+        if args.attack_norm=="linf":
+            parts.append(f"linf_{args.attack_eps*255}")
+        elif args.attack_norm=="l2":
+            parts.append(f"l2_{args.attack_eps}")
+        elif args.attack_norm=="linf_trades":
+            parts.append(f"linf_trades_{args.attack_eps*255}")
+        elif args.attack_norm=="l2_trades":
+            parts.append(f"l2_trades_{args.attack_eps}")
+            
         else:
-            eps_tag = f"eps{eps255:.2f}"
-    except Exception:
-        eps_tag = f"eps{args.attack_eps}"
-    norm_tag = getattr(args, 'attack_norm', 'linf')
-    model_tag = getattr(args, 'model', 'model')
-    return f"{model_tag}_{eps_tag}_{norm_tag}"
+            raise ValueError(f"Unknown attack norm: {args.attack_norm}")
+    if args.gradnorm:
+        parts.append(f"gradnorm_{args.attack_eps*255}")
+    # if args.lipshitz:
+    #     parts.append(f"lip_{args.lip_coeff}")
+    # if args.jacobian_reg:
+    #     parts.append(f"jacobian_{args.jacobian_coeff}")
+    if args.experiment_num is not None:
+        parts.append(f"init{args.experiment_num}")
+    experiment_name = "_".join(parts)
+    return experiment_name
+    

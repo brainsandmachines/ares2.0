@@ -24,16 +24,18 @@ python -c "import torch; print(torch.version.cuda, torch.version.git_version)"
 
 export MASTER_PORT=$((10000 + RANDOM % 50000))
 
-python -m robust_training.hydra_advtrain \
+python -m robust_training.adversarial_training \
     attacks.attack_norm=linf \
-    attacks.attack_eps=0.0 \
-    attacks.advtrain=false \
-    attacks.gradnorm=false \
+    attacks.attack_eps=5 \
+    attacks.advtrain=True \
+    attacks.gradnorm=True \
     model.experiment_num=1 \
-    model.resume="/home/ashtomer/projects/ares/results/baseline-test_mixup_path/last.pth.tar" \
+    model.resume="/home/ashtomer/projects/ares/results/last.pth.tar" \
+    model.experiment_num=1 \
     training.epochs=250 \
     training.batch_size=256 \
     optimizer.clip_grad=null \
     dataset.mixup_prob=1e-6 \
-    hydra.run.dir="/home/ashtomer/projects/ares/results/baseline-test_mixup_path/${now:%Y-%m-%d}/${now:%H-%M-%S}" \
-    output_dir="/home/ashtomer/projects/ares/results/baseline-test_mixup_path"
+    dataset.train_dir="/storage/test/bml_group/tomerash/datasets/imagenet_sample/train/" \
+    dataset.eval_dir="/storage/test/bml_group/tomerash/datasets/imagenet_sample/val/" \
+    hydra.run.dir="/home/ashtomer/projects/ares/results/${now:%Y-%m-%d}/${now:%H-%M-%S}" 

@@ -5,8 +5,8 @@ into a flat argparse.Namespace so the existing `adversarial_training.main(args)`
 re-used without refactoring the training code.
 
 Usage examples:
-  python robust_training/hydra_runner.py  # uses defaults from configs/
-  python robust_training/hydra_runner.py training.epochs=200 optimizer.weight_decay=0.1
+  python robust_training/hydra_advtrain.py  # uses defaults from configs/
+  python robust_training/hydra_advtrain.py training.epochs=200 optimizer.weight_decay=0.1
 
 """
 from __future__ import annotations

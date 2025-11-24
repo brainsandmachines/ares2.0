@@ -1,0 +1,55 @@
+[2025-11-24 08:36:39 ARES 2.0] INFO: Runtime distributed=False, world_size=1, rank=0, local_rank=0, device_id=0
+[2025-11-24 08:36:39 ARES 2.0] INFO: Creating model: convnext_small
+[2025-11-24 08:36:39 ARES 2.0] INFO: Model convnext_small created, param count:50223688
+[2025-11-24 08:36:40 ARES 2.0] INFO: Using native Torch AMP. Training in mixed precision.
+[2025-11-24 08:48:37 ARES 2.0] INFO: Runtime distributed=False, world_size=1, rank=0, local_rank=0, device_id=0
+[2025-11-24 08:48:37 ARES 2.0] INFO: Creating model: convnext_small
+[2025-11-24 08:48:37 ARES 2.0] INFO: Model convnext_small created, param count:50223688
+[2025-11-24 08:48:37 ARES 2.0] INFO: Using native Torch AMP. Training in mixed precision.
+[2025-11-24 08:52:48 ARES 2.0] INFO: Results directory: /home/ashtomer/projects/ares/results/hydra_test5
+[2025-11-24 08:52:48 ARES 2.0] INFO: Experiment directory: /home/ashtomer/projects/ares/results/hydra_test5
+[2025-11-24 08:52:48 ARES 2.0] INFO: Experiment directory: /home/ashtomer/projects/ares/results/hydra_test5
+[2025-11-24 08:52:50 ARES 2.0] INFO: Weights & Biases logging initialized for run: None in group: test_models
+[2025-11-24 08:52:50 ARES 2.0] INFO: Weights & Biases logging initialized for run: None in group: test_models
+[2025-11-24 08:52:50 ARES 2.0] INFO: Start training for 150 epochs
+[2025-11-24 08:52:50 ARES 2.0] INFO: Start training for 150 epochs
+[2025-11-24 08:52:50 ARES 2.0] INFO: gradclip: None
+[2025-11-24 08:52:50 ARES 2.0] INFO: gradclip: None
+[2025-11-24 08:53:16 ARES 2.0] INFO: Train: [0/150] [   0/7 (  0%)]  Loss: 7.115 (7.11)  Time: 25.915s,    9.88/s  (25.915s,    9.88/s)  LR: 1.000e-06  Data: 2.347 (2.347)
+[2025-11-24 08:53:16 ARES 2.0] INFO: Train: [0/150] [   0/7 (  0%)]  Loss: 7.115 (7.11)  Time: 25.915s,    9.88/s  (25.915s,    9.88/s)  LR: 1.000e-06  Data: 2.347 (2.347)
+[2025-11-24 08:53:40 ARES 2.0] INFO: Runtime distributed=False, world_size=1, rank=0, local_rank=0, device_id=0
+[2025-11-24 08:53:40 ARES 2.0] INFO: Creating model: convnext_small
+[2025-11-24 08:53:40 ARES 2.0] INFO: Model convnext_small created, param count:50223688
+[2025-11-24 08:53:40 ARES 2.0] INFO: Using native Torch AMP. Training in mixed precision.
+[2025-11-24 08:54:01 ARES 2.0] INFO: Results directory: /home/ashtomer/projects/ares/results/hydra_test5
+[2025-11-24 08:54:01 ARES 2.0] INFO: Experiment directory: /home/ashtomer/projects/ares/results/hydra_test5
+[2025-11-24 08:54:01 ARES 2.0] INFO: Experiment directory: /home/ashtomer/projects/ares/results/hydra_test5
+[2025-11-24 08:54:03 ARES 2.0] INFO: Weights & Biases logging initialized for run: None in group: test_models
+[2025-11-24 08:54:03 ARES 2.0] INFO: Weights & Biases logging initialized for run: None in group: test_models
+[2025-11-24 08:54:03 ARES 2.0] INFO: Start training for 150 epochs
+[2025-11-24 08:54:03 ARES 2.0] INFO: Start training for 150 epochs
+[2025-11-24 08:54:03 ARES 2.0] INFO: gradclip: None
+[2025-11-24 08:54:03 ARES 2.0] INFO: gradclip: None
+[2025-11-24 08:55:43 ARES 2.0] INFO: Runtime distributed=False, world_size=1, rank=0, local_rank=0, device_id=0
+[2025-11-24 08:55:43 ARES 2.0] INFO: Creating model: convnext_small
+[2025-11-24 08:55:44 ARES 2.0] INFO: Model convnext_small created, param count:50223688
+[2025-11-24 08:55:44 ARES 2.0] INFO: Using native Torch AMP. Training in mixed precision.
+[2025-11-24 08:55:53 ARES 2.0] INFO: Results directory: /home/ashtomer/projects/ares/results/hydra_test5
+[2025-11-24 08:55:53 ARES 2.0] INFO: Experiment directory: /home/ashtomer/projects/ares/results/hydra_test5
+[2025-11-24 08:55:53 ARES 2.0] INFO: Experiment directory: /home/ashtomer/projects/ares/results/hydra_test5
+[2025-11-24 08:55:55 ARES 2.0] INFO: Weights & Biases logging initialized for run: None in group: test_models
+[2025-11-24 08:55:55 ARES 2.0] INFO: Weights & Biases logging initialized for run: None in group: test_models
+[2025-11-24 08:55:55 ARES 2.0] INFO: Start training for 150 epochs
+[2025-11-24 08:55:55 ARES 2.0] INFO: Start training for 150 epochs
+[2025-11-24 08:55:55 ARES 2.0] INFO: gradclip: None
+[2025-11-24 08:55:55 ARES 2.0] INFO: gradclip: None
+[2025-11-24 08:56:19 ARES 2.0] INFO: Train: [0/150] [   0/7 (  0%)]  Loss: 7.046 (7.05)  Time: 23.498s,   10.89/s  (23.498s,   10.89/s)  LR: 1.000e-06  Data: 1.964 (1.964)
+[2025-11-24 08:56:19 ARES 2.0] INFO: Train: [0/150] [   0/7 (  0%)]  Loss: 7.046 (7.05)  Time: 23.498s,   10.89/s  (23.498s,   10.89/s)  LR: 1.000e-06  Data: 1.964 (1.964)
+[2025-11-24 08:56:25 ARES 2.0] INFO: Train: [0/150] [   6/7 (100%)]  Loss: 7.025 (7.05)  Time: 1.022s,  250.38/s  (4.253s,   60.19/s)  LR: 5.200e-06  Data: 0.054 (0.331)
+[2025-11-24 08:56:25 ARES 2.0] INFO: Train: [0/150] [   6/7 (100%)]  Loss: 7.025 (7.05)  Time: 1.022s,  250.38/s  (4.253s,   60.19/s)  LR: 5.200e-06  Data: 0.054 (0.331)
+[2025-11-24 08:56:29 ARES 2.0] INFO: Test: [   0/4]  Time: 2.680 (2.680)  Loss:  7.0430 (7.0430)  Acc@1:  0.3906 ( 0.3906)  Acc@5:  0.3906 ( 0.3906)  AdvLoss:  0.0000 (0.0000)  AdvAcc@1:  0.0000 ( 0.0000)  AdvAcc@5:  0.0000 ( 0.0000)
+[2025-11-24 08:56:29 ARES 2.0] INFO: Test: [   0/4]  Time: 2.680 (2.680)  Loss:  7.0430 (7.0430)  Acc@1:  0.3906 ( 0.3906)  Acc@5:  0.3906 ( 0.3906)  AdvLoss:  0.0000 (0.0000)  AdvAcc@1:  0.0000 ( 0.0000)  AdvAcc@5:  0.0000 ( 0.0000)
+[2025-11-24 08:56:36 ARES 2.0] INFO: Test: [   4/4]  Time: 5.832 (1.986)  Loss:  7.1289 (7.0500)  Acc@1:  0.0000 ( 0.2547)  Acc@5:  0.0000 ( 0.3396)  AdvLoss:  0.0000 (0.0000)  AdvAcc@1:  0.0000 ( 0.0000)  AdvAcc@5:  0.0000 ( 0.0000)
+[2025-11-24 08:56:36 ARES 2.0] INFO: Test: [   4/4]  Time: 5.832 (1.986)  Loss:  7.1289 (7.0500)  Acc@1:  0.0000 ( 0.2547)  Acc@5:  0.0000 ( 0.3396)  AdvLoss:  0.0000 (0.0000)  AdvAcc@1:  0.0000 ( 0.0000)  AdvAcc@5:  0.0000 ( 0.0000)
+[2025-11-24 08:56:39 ARES 2.0] INFO: Test (EMA): [   0/4]  Time: 2.270 (2.270)  Loss:  7.0508 (7.0508)  Acc@1:  0.3906 ( 0.3906)  Acc@5:  0.3906 ( 0.3906)  AdvLoss:  0.0000 (0.0000)  AdvAcc@1:  0.0000 ( 0.0000)  AdvAcc@5:  0.0000 ( 0.0000)
+[2025-11-24 08:56:39 ARES 2.0] INFO: Test (EMA): [   0/4]  Time: 2.270 (2.270)  Loss:  7.0508 (7.0508)  Acc@1:  0.3906 ( 0.3906)  Acc@5:  0.3906 ( 0.3906)  AdvLoss:  0.0000 (0.0000)  AdvAcc@1:  0.0000 ( 0.0000)  AdvAcc@5:  0.0000 ( 0.0000)

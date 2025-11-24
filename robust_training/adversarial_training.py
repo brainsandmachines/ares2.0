@@ -3,19 +3,17 @@ warnings.filterwarnings("ignore")
 import argparse
 from omegaconf import DictConfig, OmegaConf
 import hydra
-import time
 import yaml
 import os
-from collections import OrderedDict
 import torch
 from torch.nn.parallel import DistributedDataParallel as NativeDDP
 import wandb
 
 # timm functions
-from timm.models import resume_checkpoint, load_checkpoint, model_parameters
+from timm.models import resume_checkpoint, load_checkpoint
 from timm.scheduler import create_scheduler_v2, scheduler_kwargs
 from timm.optim import create_optimizer_v2, optimizer_kwargs
-from timm.utils import ModelEmaV2, distribute_bn, reduce_tensor, dispatch_clip_grad, get_outdir, CheckpointSaver, update_summary
+from timm.utils import ModelEmaV2, distribute_bn, get_outdir, CheckpointSaver, update_summary
 
 # robust training functions
 from ares.utils.dist import distributed_init, random_seed
@@ -23,13 +21,15 @@ from ares.utils.logger import setup_logger , _auto_experiment_name
 from ares.utils.model import build_model
 from ares.utils.loss import build_loss, resolve_amp, build_loss_scaler
 from ares.utils.dataset import build_dataset
-from ares.utils.adv import adv_generator
-from ares.utils.metrics import AverageMeter, accuracy
 from ares.utils.defaults import get_args_parser
 from ares.utils.train_loop import train_one_epoch
 from ares.utils.validate import validate
 
 from job_manager.model_scheduler import Model_scheduler
+
+from omegaconf import DictConfig, OmegaConf
+import hydra
+
 
 def main(args):
     # distributed settings and logger
@@ -37,16 +37,22 @@ def main(args):
         args.world_size=int(os.environ["WORLD_SIZE"])
     args.distributed=float(args.world_size)>1
     distributed_init(args)
-    if args.output_dir and args.rank == 0:
-        os.makedirs(args.output_dir, exist_ok = True)
+    
     # normalize attack eps/step for linf (values historically stored as 0-255)
     if getattr(args, 'attack_norm', None) == 'linf':
         if getattr(args, 'attack_eps', None) is not None:
             args.attack_eps = float(args.attack_eps) / 255.0
         if getattr(args, 'attack_step', None) is not None:
             args.attack_step = float(args.attack_step) / 255.0
+    if args.rank == 0:
+        experiment_name = _auto_experiment_name(args)
+        args.output_dir = os.path.join(args.output_dir,experiment_name)
+        os.makedirs(args.output_dir, exist_ok = True)
+    
     _logger = setup_logger(save_dir=args.output_dir, distributed_rank=args.rank)
     _logger.info(f"Runtime distributed={args.distributed}, world_size={args.world_size}, rank={args.rank}, local_rank={args.local_rank}, device_id={args.device_id}")
+    _logger.info(f"Experiment: {experiment_name}")
+    _logger.info(f"Results directory: {args.output_dir}")
 
     # fix the seed for reproducibility
     random_seed(args.seed, args.rank)
@@ -70,7 +76,7 @@ def main(args):
     if args.lr is None:
         args.lr=args.lrb * args.batch_size * args.world_size / 512
     optimizer = create_optimizer_v2(model, **optimizer_kwargs(cfg=args))
-    print(optimizer.__class__.__name__)
+    _logger.info(f"Optimizer: {optimizer.__class__.__name__}")
 
     # build loss scaler
     amp_autocast, loss_scaler = build_loss_scaler(args, _logger)
@@ -100,18 +106,16 @@ def main(args):
         # NOTE: EMA model does not need to be wrapped by DDP
     
     # create the train and eval dataloaders
-    loader_train, loader_eval, mixup_fn = build_dataset(args, num_aug_splits)
+    loader_train, loader_eval = build_dataset(args, num_aug_splits)
     
     images, targets = next(iter(loader_train))
     print(f"Training data min: {images.min()}, max: {images.max()}, mean: {images.mean()}, std: {images.std()}")
-    print(f"Targets sample: {targets[:10]}")
     images, targets = next(iter(loader_eval))
     print(f"Evaluation data min: {images.min()}, max: {images.max()}, mean: {images.mean()}, std: {images.std()}")
-    print(f"Evaluation targets sample: {targets[:10]}")
-    print(f"mixup_fn active: {mixup_fn is not None}")
+
 
     # setup loss function
-    train_loss_fn, validate_loss_fn = build_loss(args, mixup_fn, num_aug_splits)
+    train_loss_fn, validate_loss_fn = build_loss(args, num_aug_splits)
     print(f"Using training loss: {train_loss_fn}, validation loss: {validate_loss_fn}")
 
     # setup learning rate schedule and starting epoch
@@ -133,25 +137,15 @@ def main(args):
             lr_scheduler.step(start_epoch)
     
     sch = Model_scheduler(db_path="/home/ashtomer/projects/ares/job_manager/model_scheduler.db")
-    
-    if not args.output_dir:
-        args.output_dir = args.experiment_name
 
-
-    if args.rank == 0:
-        if hasattr(args, 'experiment_name') and args.experiment_name is not None:
-            _logger.info(f"Experiment: {args.experiment_name}")
-        _logger.info(f"Results directory: {args.output_dir}")
     # saver
     eval_metric = args.eval_metric
     saver = None
     best_metric = None
     best_epoch = None
-    output_dir = None
+    output_dir = args.output_dir
+    
     if args.rank == 0:
-        output_dir = get_outdir(args.output_dir)
-        _logger = setup_logger(save_dir=output_dir, distributed_rank=args.rank)
-        _logger.info(f"Experiment directory: {output_dir}")
         decreasing=True if eval_metric=='loss' else False
         saver = CheckpointSaver(
             model=model, optimizer=optimizer, args=args, model_ema=model_ema, amp_scaler=loss_scaler,
@@ -195,15 +189,22 @@ def main(args):
     _logger.info(f"Start training for {args.epochs-start_epoch} epochs")
     _logger.info(f"gradclip: {args.clip_grad}")
     
+    already_canceled_mixup = False
+    
     for epoch in range(start_epoch, args.epochs):
         if hasattr(loader_train, 'sampler') and hasattr(loader_train.sampler, 'set_epoch'):
             loader_train.sampler.set_epoch(epoch)
+            # mixup setting
+        if args.mixup_off_epoch and epoch >= args.mixup_off_epoch:
+            if not already_canceled_mixup:
+                args.mixup_fn.mixup_enabled = False
+                loader_train, loader_eval = build_dataset(args, num_aug_splits)
+                already_canceled_mixup = True
         # one epoch training
-        with torch.autograd.detect_anomaly():
-            train_metrics = train_one_epoch(
-                epoch, model, loader_train, optimizer, train_loss_fn, args,
-                lr_scheduler=lr_scheduler, saver=saver, amp_autocast=amp_autocast,
-                loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn, _logger=_logger)
+        train_metrics = train_one_epoch(
+            epoch, model, loader_train, optimizer, train_loss_fn, args,
+            lr_scheduler=lr_scheduler, saver=saver, amp_autocast=amp_autocast,
+            loss_scaler=loss_scaler, model_ema=model_ema, _logger=_logger)
 
         # distributed bn sync
         if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
@@ -261,51 +262,62 @@ def main(args):
 
 
 
-def _cfg_to_namespace(cfg):
-    """Convert a DictConfig (Hydra/OmegaConf) or dict to argparse.Namespace expected by main().
-
-    The original code expected a flat Namespace. Our Hydra configs are grouped (training, model,
-    dataset, optimizer, attacks). Merge known groups into a single flat dict and return Namespace.
+def _merge_groups_for_hydra(cfg):
     """
-    if isinstance(cfg, argparse.Namespace):
-        return cfg
-    if isinstance(cfg, DictConfig) or isinstance(cfg, dict):
-        cfg_dict = OmegaConf.to_container(cfg, resolve=True)
-        merged = {}
-        # take top-level scalars
-        for k, v in cfg_dict.items():
-            if not isinstance(v, dict):
-                merged[k] = v
-        # merge known groups
-        for group in ('training', 'model', 'dataset', 'optimizer', 'attacks'):
-            if group in cfg_dict and cfg_dict[group] is not None:
-                grp = cfg_dict[group]
-                if isinstance(grp, dict):
-                    merged.update(grp)
-        return argparse.Namespace(**merged)
-    # fallback
-    return argparse.Namespace(**dict(cfg))
+    Merge Hydra's grouped config dictionaries (training/model/dataset/optimizer/attacks/etc.)
+    into a flat argparse.Namespace-compatible dictionary.
 
+    This preserves ALL your original training logic WITHOUT modifying it.
+    """
+    cfg_dict = OmegaConf.to_container(cfg, resolve=True)
+    merged = {}
+
+    # Keep all top-level primitive values
+    for k, v in cfg_dict.items():
+        if not isinstance(v, dict):
+            merged[k] = v
+
+    # Merge known Hydra config groups
+    for group in (
+        'training', 'model', 'dataset', 'optimizer',
+        'attacks', 'dist', 'loss', 'lr_scheduler'
+    ):
+        if group in cfg_dict and isinstance(cfg_dict[group], dict):
+            merged.update(cfg_dict[group])
+
+    return merged
 
 @hydra.main(config_path="configs", config_name="config", version_base="1.3")
 def hydra_main(cfg: DictConfig):
-    """Hydra entrypoint: composes configs and calls existing main()."""
-    args = _cfg_to_namespace(cfg)
-    if getattr(args, 'attack_norm', None) == 'linf':
-        if getattr(args, 'attack_eps', None) is not None:
-            args.attack_eps = args.attack_eps / 255.0
-        if getattr(args, 'attack_step', None) is not None:
-            args.attack_step = args.attack_step / 255.0
+    """
+    Hydra entrypoint: converts grouped Hydra config into the argparse-style Namespace
+    expected by main(args), then launches the adversarial training.
+    """
+    merged = _merge_groups_for_hydra(cfg)
+    args = argparse.Namespace(**merged)
     main(args)
 
 
 if __name__ == '__main__':
-    # keep the original argparse CLI for backward compatibility
-    parser = argparse.ArgumentParser('Robust training script', parents=[get_args_parser()])
-    args = parser.parse_args()
-    opt = vars(args)
-    if args.configs:
-        opt.update(yaml.load(open(args.configs), Loader=yaml.FullLoader))
-    
-    args = argparse.Namespace(**opt)
-    main(args)
+    import sys
+
+    # Detect Hydra-style overrides such as:
+    #   python adversarial_training.py training.epochs=200 optimizer.lr=1e-3
+    #
+    # If any CLI argument contains "=", we assume the user wants Hydra.
+    if any("=" in arg for arg in sys.argv[1:]):
+        hydra_main()  # use Hydra
+    else:
+        # ORIGINAL argparse CLI (unchanged)
+        parser = argparse.ArgumentParser(
+            "Robust training script",
+            parents=[get_args_parser()]
+        )
+        args = parser.parse_args()
+        opt = vars(args)
+
+        if args.configs:
+            opt.update(yaml.load(open(args.configs), Loader=yaml.FullLoader))
+
+        args = argparse.Namespace(**opt)
+        main(args)

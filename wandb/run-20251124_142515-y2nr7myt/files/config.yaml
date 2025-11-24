@@ -1,0 +1,308 @@
+_wandb:
+    value:
+        cli_version: 0.23.0
+        e:
+            6pnbqkma1v1m3t3avl8my6say01qt3ng:
+                args:
+                    - attacks.attack_norm=linf
+                    - attacks.attack_eps=5
+                    - attacks.advtrain=True
+                    - attacks.gradnorm=false
+                    - model.experiment_num=1
+                    - model.resume=/home/ashtomer/projects/ares/results/last.pth.tar
+                    - training.epochs=250
+                    - training.batch_size=256
+                    - optimizer.clip_grad=null
+                    - dataset.train_dir=/storage/test/bml_group/tomerash/datasets/imagenet_sample/train/
+                    - dataset.eval_dir=/storage/test/bml_group/tomerash/datasets/imagenet_sample/val/
+                    - output_dir=/home/ashtomer/projects/ares/results
+                cpu_count: 32
+                cpu_count_logical: 64
+                cudaVersion: "12.7"
+                disk:
+                    /:
+                        total: "861060038656"
+                        used: "23441506304"
+                email: ashtomer@post.bgu.ac.il
+                executable: /home/ashtomer/.conda/envs/tomer_advtrain/bin/python
+                git:
+                    commit: 2a784405585de078a803b789f03459aced98c12b
+                    remote: https://github.com/brainsandmachines/ares2.0.git
+                gpu: NVIDIA RTX 6000 Ada Generation
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 18176
+                      memoryTotal: "51527024640"
+                      name: NVIDIA RTX 6000 Ada Generation
+                      uuid: GPU-0aa25a0c-3088-fe08-3c2c-903b34b96051
+                host: cs-6000-03.auth.ad.bgu.ac.il
+                memory:
+                    total: "540341641216"
+                os: Linux-5.14.0-503.29.1.el9_5.x86_64-x86_64-with-glibc2.34
+                program: -m robust_training.adversarial_training
+                python: CPython 3.11.14
+                root: /home/ashtomer/projects/ares
+                slurm:
+                    job_id: "8319710"
+                startedAt: "2025-11-24T12:25:15.946586Z"
+                writerId: 6pnbqkma1v1m3t3avl8my6say01qt3ng
+        m: []
+        python_version: 3.11.14
+        t:
+            "1":
+                - 1
+                - 41
+                - 49
+                - 50
+                - 63
+                - 82
+            "2":
+                - 1
+                - 41
+                - 49
+                - 50
+                - 63
+                - 82
+            "3":
+                - 13
+                - 14
+                - 16
+            "4": 3.11.14
+            "5": 0.23.0
+            "12": 0.23.0
+            "13": linux-x86_64
+aa:
+    value: null
+advprop:
+    value: false
+advtrain:
+    value: true
+amp_version:
+    value: native
+apex_amp:
+    value: false
+attack_criterion:
+    value: mixup
+attack_eps:
+    value: 0.0196078431372549
+attack_it:
+    value: 3
+attack_norm:
+    value: linf
+attack_step:
+    value: 0.00392156862745098
+aug_repeats:
+    value: 0
+aug_splits:
+    value: 0
+backend:
+    value: nccl
+batch_size:
+    value: 256
+bce_loss:
+    value: false
+bn_eps:
+    value: null
+bn_momentum:
+    value: null
+channels_last:
+    value: false
+clip_grad:
+    value: null
+clip_mode:
+    value: norm
+color_jitter:
+    value: 0
+cooldown_epochs:
+    value: 0
+crop_pct:
+    value: 0.875
+cutmix:
+    value: 1
+cutmix_minmax:
+    value: null
+decay_epochs:
+    value: 30
+decay_rate:
+    value: 0.1
+device_id:
+    value: 0
+dist_backend:
+    value: nccl
+dist_bn:
+    value: reduce
+dist_url:
+    value: env://
+distributed:
+    value: false
+drop:
+    value: 0
+drop_block:
+    value: null
+drop_path:
+    value: 0
+epoch_repeats:
+    value: 0
+epochs:
+    value: 250
+eval_dir:
+    value: /storage/test/bml_group/tomerash/datasets/imagenet_sample/val/
+eval_metric:
+    value: top1
+experiment_name:
+    value: null
+experiment_num:
+    value: 1
+gp:
+    value: null
+gradnorm:
+    value: false
+hflip:
+    value: true
+init_method:
+    value: env://
+input_size:
+    value: 224
+interpolation:
+    value: bicubic
+jsd_loss:
+    value: false
+lambda_ce:
+    value: 0.8
+lambda_gn:
+    value: 1.2
+layer_decay:
+    value: null
+local_rank:
+    value: 0
+log_interval:
+    value: 50
+lr:
+    value: 5e-05
+lr_cycle_decay:
+    value: 0.5
+lr_cycle_limit:
+    value: 1
+lr_cycle_mul:
+    value: 1
+lr_k_decay:
+    value: 1
+lr_noise:
+    value: null
+lr_noise_pct:
+    value: 0.67
+lr_noise_std:
+    value: 1
+lrb:
+    value: 0.0001
+max_history:
+    value: 10
+mean:
+    value:
+        - 0.485
+        - 0.456
+        - 0.406
+min_lr:
+    value: 1e-05
+mixup:
+    value: 0.8
+mixup_active:
+    value: true
+mixup_mode:
+    value: elem
+mixup_off_epoch:
+    value: 200
+mixup_prob:
+    value: 0.5
+mixup_switch_prob:
+    value: 0.5
+model:
+    value: convnext_small
+model_ema:
+    value: true
+model_ema_decay:
+    value: 0.9998
+model_ema_force_cpu:
+    value: false
+model_id:
+    value: null
+momentum:
+    value: 0.9
+native_amp:
+    value: true
+no_aug:
+    value: false
+num_classes:
+    value: 1000
+num_workers:
+    value: 6
+opt:
+    value: adamw
+opt_betas:
+    value: null
+opt_eps:
+    value: 1e-08
+output_dir:
+    value: /home/ashtomer/projects/ares/results/convnext_small_linf_5.0_init1
+patience_epochs:
+    value: 0
+pin_mem:
+    value: true
+rank:
+    value: 0
+ratio:
+    value:
+        - 0.75
+        - 1.3333
+recount:
+    value: 1
+recovery_interval:
+    value: 0
+remode:
+    value: pixel
+reprob:
+    value: 0
+resplit:
+    value: false
+resume:
+    value: /home/ashtomer/projects/ares/results/last.pth.tar
+save_log:
+    value: save_log.txt
+scale:
+    value:
+        - 0.08
+        - 1
+sched:
+    value: cosine
+sched_on_updates:
+    value: true
+seed:
+    value: 0
+smoothing:
+    value: 0.1
+split_bn:
+    value: false
+start_epoch:
+    value: null
+std:
+    value:
+        - 0.229
+        - 0.224
+        - 0.225
+sync_bn:
+    value: false
+train_dir:
+    value: /storage/test/bml_group/tomerash/datasets/imagenet_sample/train/
+train_interpolation:
+    value: bicubic
+vflip:
+    value: false
+warmup_epochs:
+    value: 10
+warmup_lr:
+    value: 1e-06
+weight_decay:
+    value: 0.05
+world_size:
+    value: 1

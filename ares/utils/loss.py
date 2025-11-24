@@ -88,35 +88,27 @@ def build_loss_scaler(args, _logger):
     return amp_autocast, loss_scaler
 
 
-def build_loss(args, mixup_fn, num_aug_splits):
+def build_loss(args, num_aug_splits):
     '''The function to build loss function for robust training.'''
     if args.jsd_loss:
         assert num_aug_splits > 1  # JSD only valid with aug splits set
         train_loss_fn = JsdCrossEntropy(num_splits=num_aug_splits, smoothing=args.smoothing)
-    elif mixup_fn is not None and args.gradnorm==False:
-        # smoothing is handled with mixup target transform which outputs sparse, soft targets
-        if args.bce_loss:
-            train_loss_fn = BinaryCrossEntropy(target_threshold=args.bce_target_thresh)
-        else:
-            train_loss_fn = SoftTargetCrossEntropy()
-    elif args.smoothing:
-        if args.bce_loss:
-            train_loss_fn = BinaryCrossEntropy(smoothing=args.smoothing, target_threshold=args.bce_target_thresh)
-        else:
-            train_loss_fn = nn.CrossEntropyLoss(label_smoothing=args.smoothing)
-    #  Case 2: DBP (GradNorm) loss
     elif args.gradnorm:
         train_loss_fn = GradNorm_Loss(
             eps=args.attack_eps,
             lambda_gn=getattr(args, "lambda_gn", 1.0),
         )
+    elif args.mixup_active:
+        # smoothing is handled with mixup target transform which outputs sparse, soft targets
+        train_loss_fn = nn.CrossEntropyLoss()
+    elif args.smoothing > 0.0:
+        train_loss_fn = nn.CrossEntropyLoss(label_smoothing=args.smoothing)
     else:
         train_loss_fn = nn.CrossEntropyLoss()
     train_loss_fn = train_loss_fn.cuda()
     validate_loss_fn = nn.CrossEntropyLoss().cuda()
     
     return train_loss_fn, validate_loss_fn
-
 
 
 class GradNorm_Loss(nn.Module):

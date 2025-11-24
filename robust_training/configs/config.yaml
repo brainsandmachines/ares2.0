@@ -20,7 +20,7 @@ seed: 0
 log_interval: 50
 recovery_interval: 0
 num_workers: 6
-output_dir: './results/models/convnext_small'
+output_dir: '/home/ashtomer/projects/ares/results/models/'
 save_log: save_log.txt
 eval_metric: top1
 pin_mem: True

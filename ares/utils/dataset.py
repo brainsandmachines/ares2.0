@@ -66,6 +66,18 @@ def build_dataset(args, num_aug_splits=0):
     else:
         assert args.aug_repeats == 0, "RepeatAugment not currently supported in non-distributed or IterableDataset use"
     sampler_eval = OrderedDistributedSampler(dataset_eval)
+    
+    # setup mixup / cutmix
+    mixup_fn = None
+    if args.mixup_active:
+        mixup_args = dict(
+            mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
+            prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
+            label_smoothing=args.smoothing, num_classes=args.num_classes)
+        mixup_fn = Mixup(**mixup_args)
+        
+    collate_fn = mixup_collate_fn(mixup_fn) if mixup_fn is not None else None
+    print(f"mixup_fn active: {mixup_fn is not None}")
 
     # create dataloader
     dataloader_train = torch.utils.data.DataLoader(
@@ -74,7 +86,7 @@ def build_dataset(args, num_aug_splits=0):
         shuffle=not args.distributed,
         num_workers=args.num_workers,
         sampler=sampler_train,
-        collate_fn=None,
+        collate_fn=collate_fn,
         pin_memory=args.pin_mem,
         drop_last=True
     )
@@ -89,14 +101,17 @@ def build_dataset(args, num_aug_splits=0):
         drop_last=False
     )
 
-    # setup mixup / cutmix
-    mixup_fn = None
-    mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
-    if mixup_active:
-        mixup_args = dict(
-            mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
-            prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
-            label_smoothing=args.smoothing, num_classes=args.num_classes)
-        mixup_fn = Mixup(**mixup_args)
+    return dataloader_train, dataloader_eval
 
-    return dataloader_train, dataloader_eval, mixup_fn
+def mixup_collate_fn(mixup_fn):
+    def collate(batch):
+        # batch = list of (image, label)
+        images, labels = zip(*batch)          # unpack
+        images = torch.stack(images, dim=0)   # (B, C, H, W)
+        labels = torch.tensor(labels)         # (B)
+
+        # apply mixup (timm Mixup returns mixed images + soft labels)
+        images, labels = mixup_fn(images, labels)
+
+        return images, labels
+    return collate

@@ -1,0 +1,6 @@
+[2025-11-24 10:55:16 ARES 2.0] INFO: Runtime distributed=False, world_size=1, rank=0, local_rank=0, device_id=0
+[2025-11-24 10:55:16 ARES 2.0] INFO: Experiment: convnext_small_init1
+[2025-11-24 10:55:16 ARES 2.0] INFO: Results directory: /home/ashtomer/projects/ares/results/convnext_small_init1
+[2025-11-24 10:55:16 ARES 2.0] INFO: Creating model: convnext_small
+[2025-11-24 10:55:17 ARES 2.0] INFO: Model convnext_small created, param count:50223688
+[2025-11-24 10:55:17 ARES 2.0] INFO: Using native Torch AMP. Training in mixed precision.
