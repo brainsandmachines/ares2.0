@@ -1,14 +1,17 @@
 #!/bin/bash
 #SBATCH --job-name=convnext_small_training
-#SBATCH --time=7-00:00:00
-#SBATCH --partition=main                 # main queue
-#SBATCH --gpus=1                          # request 1 GPU
-#SBATCH --constraint=rtx_pro_6000            # GPUs with >24GB VRAM
-#SBATCH --mem=96G                        # memory (optional override)
+#SBATCH --time=14-00:00:00
+#SBATCH --partition=rtx6000
+#SBATCH --qos=golan-neuro
+#SBATCH --gpus=1
+#SBATCH --constraint=rtx_6000
+#SBATCH --mem=48G
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
-#SBATCH --output=/home/ashtomer/projects/ares/outs/advtrain/main/convnextsmall/%A/%a.out
-#SBATCH --array=1-200%1
+#SBATCH --output=/home/ashtomer/projects/ares/outs/advtrain/golan_neuro/convnextsmall/%A/%a.out
+#SBATCH --array=1-500%1
+
+
 nvidia-smi
 # ---- Env once ----
 module load anaconda

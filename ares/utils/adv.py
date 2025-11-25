@@ -178,12 +178,7 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
         step = LinfStep(eps=eps, orig_input=orig_input, step_size=attack_lr)
 
     # define loss function
-    if attack_criterion == 'regular':
-        attack_criterion = torch.nn.CrossEntropyLoss(reduction='none')
-    elif attack_criterion == 'smooth':
-        attack_criterion = LabelSmoothingCrossEntropy()
-    elif attack_criterion == 'mixup':
-        attack_criterion = SoftTargetCrossEntropy()
+    attack_criterion = torch.nn.CrossEntropyLoss()
 
     # amp_autocast
     amp_autocast=suppress

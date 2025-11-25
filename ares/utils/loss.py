@@ -136,7 +136,7 @@ class GradNorm_Loss(nn.Module):
         grad = torch.autograd.grad(loss_ce, x, create_graph=True)[0]
 
         # GradNorm penalty (L1 norm)
-        grad_norm = grad.abs().sum(dim=(1, 2, 3)).sum()
+        grad_norm = grad.abs().sum(dim=(1, 2, 3)).mean()
 
         # Total loss
         loss = (loss_ce
