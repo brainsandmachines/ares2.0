@@ -162,12 +162,12 @@ def main(args):
                 group_name = args.attack_norm
         wandb_config = {k: v for k, v in vars(args).items() if not k.startswith('_')}
         # Use experiment_name as ID if given, otherwise generate one
-        if args.experiment_name is None:   
+        if experiment_name is None:   
             run_id = wandb.util.generate_id()
             run_name = run_id          # use run_id as the visible name
         else:
-            run_id = args.experiment_name
-            run_name = args.experiment_name
+            run_id = experiment_name
+            run_name = experiment_name
 
         wandb.init(
             project="robust-training",

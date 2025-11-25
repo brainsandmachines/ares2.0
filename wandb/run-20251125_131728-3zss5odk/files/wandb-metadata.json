@@ -1,0 +1,29 @@
+{
+  "os": "Linux-5.14.0-570.55.1.el9_6.x86_64-x86_64-with-glibc2.34",
+  "python": "CPython 3.11.14",
+  "startedAt": "2025-11-25T11:17:28.442606Z",
+  "args": [
+    "attacks.attack_norm=linf",
+    "attacks.attack_eps=0.0",
+    "attacks.advtrain=false",
+    "attacks.gradnorm=false",
+    "model.experiment_num=2",
+    "model.resume=/home/ashtomer/projects/ares/results/sweep_mixup_light/last.pth.tar",
+    "training.epochs=250",
+    "training.batch_size=512",
+    "optimizer.clip_grad=1",
+    "dataset.mixup=0.2",
+    "dataset.cutmix=0.0",
+    "output_dir=/home/ashtomer/projects/ares/results/sweep_mixup_light"
+  ],
+  "program": "-m robust_training.hydra_advtrain",
+  "git": {
+    "remote": "https://github.com/brainsandmachines/ares2.0.git",
+    "commit": "e2e5888fd4df709257952c2ef198aeba85b7f1d3"
+  },
+  "email": "ashtomer@post.bgu.ac.il",
+  "root": "/home/ashtomer/projects/ares",
+  "host": "ise-6000p-01.auth.ad.bgu.ac.il",
+  "executable": "/home/ashtomer/.conda/envs/tomer_advtrain_pro/bin/python",
+  "writerId": "nata421rdivpxnwk4d0it70robg1bbx5"
+}

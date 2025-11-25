@@ -79,6 +79,8 @@ def _auto_experiment_name(args):
     #     parts.append(f"lip_{args.lip_coeff}")
     # if args.jacobian_reg:
     #     parts.append(f"jacobian_{args.jacobian_coeff}")
+    if len(parts)==1:
+        parts.append("baseline")
     if args.experiment_num is not None:
         parts.append(f"init{args.experiment_num}")
     experiment_name = "_".join(parts)

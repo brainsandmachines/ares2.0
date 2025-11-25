@@ -1,0 +1,96 @@
+{
+  "os": "Linux-5.14.0-570.55.1.el9_6.x86_64-x86_64-with-glibc2.34",
+  "python": "CPython 3.11.14",
+  "startedAt": "2025-11-25T12:12:38.745591Z",
+  "args": [
+    "attacks.attack_norm=linf",
+    "attacks.attack_eps=0.0",
+    "attacks.advtrain=false",
+    "attacks.gradnorm=false",
+    "model.experiment_num=2",
+    "model.resume=/home/ashtomer/projects/ares/results/sweep_mixup_light/last.pth.tar",
+    "training.epochs=250",
+    "training.batch_size=512",
+    "optimizer.clip_grad=1",
+    "dataset.mixup=0.2",
+    "dataset.cutmix=0.0",
+    "output_dir=/home/ashtomer/projects/ares/results/sweep_mixup_light"
+  ],
+  "program": "-m robust_training.hydra_advtrain",
+  "git": {
+    "remote": "https://github.com/brainsandmachines/ares2.0.git",
+    "commit": "e2e5888fd4df709257952c2ef198aeba85b7f1d3"
+  },
+  "email": "ashtomer@post.bgu.ac.il",
+  "root": "/home/ashtomer/projects/ares",
+  "host": "ise-6000p-01.auth.ad.bgu.ac.il",
+  "executable": "/home/ashtomer/.conda/envs/tomer_advtrain_pro/bin/python",
+  "cpu_count": 32,
+  "cpu_count_logical": 64,
+  "gpu": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "861060038656",
+      "used": "13832880128"
+    }
+  },
+  "memory": {
+    "total": "540332716032"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memoryTotal": "102641958912",
+      "cudaCores": 24064,
+      "architecture": "Blackwell",
+      "uuid": "GPU-d7a930b2-d1f8-f6fd-e796-41816c9d9fe5"
+    }
+  ],
+  "cudaVersion": "12.8",
+  "slurm": {
+    "array_job_id": "8254941",
+    "array_task_count": "200",
+    "array_task_id": "21",
+    "array_task_max": "200",
+    "array_task_min": "1",
+    "array_task_step": "1",
+    "cluster_name": "cluster",
+    "conf": "/var/spool/slurmd/conf-cache/slurm.conf",
+    "cpus_on_node": "12",
+    "gpus": "1",
+    "gpus_on_node": "1",
+    "gtids": "0",
+    "job_account": "golan.neuro",
+    "job_cpus_per_node": "12",
+    "job_end_time": "1764677415",
+    "job_gid": "1945600513",
+    "job_gpus": "4",
+    "job_id": "8331140",
+    "job_name": "convnext_small_training",
+    "job_nodelist": "ise-6000p-01",
+    "job_num_nodes": "1",
+    "job_partition": "gpu",
+    "job_qos": "normal",
+    "job_start_time": "1764072615",
+    "job_uid": "343900539",
+    "job_user": "ashtomer",
+    "jobid": "8331140",
+    "localid": "0",
+    "mem_per_node": "98304",
+    "nnodes": "1",
+    "nodeid": "0",
+    "nodelist": "ise-6000p-01",
+    "oom_kill_step": "0",
+    "prio_process": "0",
+    "procid": "0",
+    "script_context": "prolog_task",
+    "submit_dir": "/home/ashtomer",
+    "submit_host": "slurm-login-01",
+    "task_pid": "1984890",
+    "tasks_per_node": "1",
+    "topology_addr": "ise-6000p-01",
+    "topology_addr_pattern": "node"
+  },
+  "writerId": "8xgq7r281mlvq1wgj4plx5gwxzyqf9qm"
+}

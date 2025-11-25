@@ -1,0 +1,12 @@
+- attacks.attack_norm=linf
+- attacks.attack_eps=0.0
+- attacks.advtrain=false
+- attacks.gradnorm=false
+- model.experiment_num=2
+- model.resume=/home/ashtomer/projects/ares/results/sweep_mixup_light/last.pth.tar
+- training.epochs=250
+- training.batch_size=512
+- optimizer.clip_grad=1
+- dataset.mixup=0.2
+- dataset.cutmix=0.0
+- output_dir=/home/ashtomer/projects/ares/results/sweep_mixup_light

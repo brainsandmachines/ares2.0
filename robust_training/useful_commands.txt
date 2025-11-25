@@ -1,0 +1,3 @@
+sinteractive --part rtx6000 --qos golan-neuro --gpu 1 --time 0-05:00:00
+
+

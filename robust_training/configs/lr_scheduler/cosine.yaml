@@ -2,7 +2,7 @@
 
 sched: cosine
 sched_on_updates: True
-lrb: 1.0e-4
+lrb: 1.0e-3
 lr: null
 lr_noise: null
 lr_noise_pct: 0.67
@@ -16,7 +16,7 @@ min_lr: 1.0e-5
 epoch_repeats: 0
 start_epoch: null
 decay_epochs: 30
-warmup_epochs: 10
+warmup_epochs: 20
 cooldown_epochs: 0
 patience_epochs: 0
 decay_rate: 0.1

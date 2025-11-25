@@ -1,0 +1,11 @@
+- attacks.attack_norm=linf
+- attacks.attack_eps=5
+- attacks.advtrain=True
+- attacks.gradnorm=false
+- model.experiment_num=1
+- model.resume=/home/ashtomer/projects/ares/results/last.pth.tar
+- training.epochs=250
+- training.batch_size=256
+- optimizer.clip_grad=null
+- dataset.train_dir=/storage/test/bml_group/tomerash/datasets/imagenet_sample/train/
+- dataset.eval_dir=/storage/test/bml_group/tomerash/datasets/imagenet_sample/val/

@@ -11,7 +11,7 @@ vflip: False
 # augmentation
 no_aug: False
 color_jitter: 0
-aa: null
+aa: rand-m9-mstd0.5-inc1
 aug_repeats: 0
 aug_splits: 0
 jsd_loss: False

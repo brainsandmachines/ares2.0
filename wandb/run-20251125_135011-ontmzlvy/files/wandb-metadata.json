@@ -1,0 +1,54 @@
+{
+  "os": "Linux-5.14.0-570.55.1.el9_6.x86_64-x86_64-with-glibc2.34",
+  "python": "CPython 3.11.14",
+  "startedAt": "2025-11-25T11:50:11.716355Z",
+  "args": [
+    "attacks.attack_norm=linf",
+    "attacks.attack_eps=5",
+    "attacks.advtrain=True",
+    "attacks.gradnorm=false",
+    "model.experiment_num=1",
+    "model.resume=/home/ashtomer/projects/ares/results/last.pth.tar",
+    "training.epochs=250",
+    "training.batch_size=256",
+    "optimizer.clip_grad=null",
+    "dataset.train_dir=/storage/test/bml_group/tomerash/datasets/imagenet_sample/train/",
+    "dataset.eval_dir=/storage/test/bml_group/tomerash/datasets/imagenet_sample/val/"
+  ],
+  "program": "-m robust_training.adversarial_training",
+  "git": {
+    "remote": "https://github.com/brainsandmachines/ares2.0.git",
+    "commit": "e2e5888fd4df709257952c2ef198aeba85b7f1d3"
+  },
+  "email": "ashtomer@post.bgu.ac.il",
+  "root": "/home/ashtomer/projects/ares",
+  "host": "ise-cpu256-14.auth.ad.bgu.ac.il",
+  "executable": "/home/ashtomer/.conda/envs/tomer_advtrain/bin/python",
+  "cpu_count": 128,
+  "cpu_count_logical": 256,
+  "gpu": "NVIDIA RTX 6000 Ada Generation",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "861060038656",
+      "used": "24400285696"
+    }
+  },
+  "memory": {
+    "total": "1081427099648"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA RTX 6000 Ada Generation",
+      "memoryTotal": "51527024640",
+      "cudaCores": 18176,
+      "architecture": "Ada",
+      "uuid": "GPU-6b2888b1-45e8-1933-9d5b-7c5266e9779b"
+    }
+  ],
+  "cudaVersion": "12.7",
+  "slurm": {
+    "job_id": "8331090"
+  },
+  "writerId": "w45ek65abxinx3hplx3hup0h5waknhs0"
+}
