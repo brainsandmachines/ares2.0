@@ -63,18 +63,18 @@ def _auto_experiment_name(args):
     parts = [f"{args.model}"]
     if args.advtrain:
         if args.attack_norm=="linf":
-            parts.append(f"linf_{args.attack_eps*255}")
+            parts.append(f"linf_{int(args.attack_eps*255)}")
         elif args.attack_norm=="l2":
             parts.append(f"l2_{args.attack_eps}")
         elif args.attack_norm=="linf_trades":
-            parts.append(f"linf_trades_{args.attack_eps*255}")
+            parts.append(f"linf_trades_{int(args.attack_eps*255)}")
         elif args.attack_norm=="l2_trades":
             parts.append(f"l2_trades_{args.attack_eps}")
             
         else:
             raise ValueError(f"Unknown attack norm: {args.attack_norm}")
     if args.gradnorm:
-        parts.append(f"gradnorm_{args.attack_eps*255}")
+        parts.append(f"gradnorm_{int(args.attack_eps*255)}")
     # if args.lipshitz:
     #     parts.append(f"lip_{args.lip_coeff}")
     # if args.jacobian_reg:

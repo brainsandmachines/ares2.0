@@ -30,10 +30,11 @@ python -m robust_training.adversarial_training \
     attacks.attack_eps=0 \
     attacks.advtrain=false \
     attacks.gradnorm=false \
-    model.experiment_num=1 \
-    model.resume="/home/ashtomer/projects/ares/results/models/convnext_small_baseline_init1/last.pth.tar" \
+    model.experiment_num=3 \
+    model.resume="/home/ashtomer/projects/ares/results/models/convnext_small_baseline_init3/last.pth.tar" \
     training.epochs=300 \
-    training.batch_size=512 \
+    training.batch_size=256 \
     optimizer.clip_grad=null \
-    dataset.mixup_active=True \
-    hydra.run.dir="/home/ashtomer/projects/ares/results/models/convnext_small_baseline_init1/${now:%Y-%m-%d}/${now:%H-%M-%S}" 
+    lr_scheduler.lrb=0.0001 \
+    dataset.mixup_active=false \
+    hydra.run.dir="/home/ashtomer/projects/ares/results/models/convnext_small_baseline_init3/${now:%Y-%m-%d}/${now:%H-%M-%S}" 

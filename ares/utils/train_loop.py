@@ -70,6 +70,8 @@ def train_one_epoch(
             elif args.advtrain:
                 output = model(input_advtrain)
                 loss = loss_fn(output, target)
+            elif args.gradnorm:
+                loss = loss_fn(model, input, target)
             else:
                 output = model(input)
                 loss = loss_fn(output, target)

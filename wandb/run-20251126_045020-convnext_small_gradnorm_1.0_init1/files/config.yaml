@@ -1,0 +1,350 @@
+_wandb:
+    value:
+        cli_version: 0.23.0
+        e:
+            hcofg4xzat0g1x81ganrn4lpkj96nqt1:
+                args:
+                    - attacks.attack_eps=1
+                    - attacks.advtrain=false
+                    - attacks.attack_norm=linf
+                    - attacks.gradnorm=true
+                    - model.experiment_num=1
+                    - model.resume=/home/ashtomer/projects/ares/results/models/convnext_small_gradnorm_1_init1/last.pth.tar
+                    - training.epochs=300
+                    - training.batch_size=256
+                    - optimizer.clip_grad=null
+                    - dataset.mixup_active=True
+                    - hydra.run.dir=/home/ashtomer/projects/ares/results/models/convnext_small_gradnorm_1_init1//
+                cpu_count: 128
+                cpu_count_logical: 256
+                cudaVersion: "12.7"
+                disk:
+                    /:
+                        total: "821072203776"
+                        used: "24264855552"
+                email: ashtomer@post.bgu.ac.il
+                executable: /home/ashtomer/.conda/envs/tomer_advtrain/bin/python
+                git:
+                    commit: 4f9454e847a261f6466c2e803fdf4fe190a0e998
+                    remote: https://github.com/brainsandmachines/ares2.0.git
+                gpu: NVIDIA RTX 6000 Ada Generation
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 18176
+                      memoryTotal: "51527024640"
+                      name: NVIDIA RTX 6000 Ada Generation
+                      uuid: GPU-48004756-1438-86dc-bdaa-0ae1b36226c0
+                host: ise-cpu256-10.auth.ad.bgu.ac.il
+                memory:
+                    total: "1081427017728"
+                os: Linux-5.14.0-570.55.1.el9_6.x86_64-x86_64-with-glibc2.34
+                program: -m robust_training.adversarial_training
+                python: CPython 3.11.14
+                root: /home/ashtomer/projects/ares
+                slurm:
+                    array_job_id: "8339195"
+                    array_task_count: "500"
+                    array_task_id: "244"
+                    array_task_max: "500"
+                    array_task_min: "1"
+                    array_task_step: "1"
+                    cluster_name: cluster
+                    conf: /var/spool/slurmd/conf-cache/slurm.conf
+                    cpus_on_node: "8"
+                    gpus: "1"
+                    gpus_on_node: "1"
+                    gtids: "0"
+                    job_account: golan.neuro
+                    job_cpus_per_node: "8"
+                    job_end_time: "1765334869"
+                    job_gid: "1945600513"
+                    job_gpus: "0"
+                    job_id: "8348736"
+                    job_name: convnext_small_training
+                    job_nodelist: ise-cpu256-10
+                    job_num_nodes: "1"
+                    job_partition: rtx6000
+                    job_qos: golan-neuro
+                    job_start_time: "1764125269"
+                    job_uid: "343900539"
+                    job_user: ashtomer
+                    jobid: "8348736"
+                    localid: "0"
+                    mem_per_node: "49152"
+                    nnodes: "1"
+                    nodeid: "0"
+                    nodelist: ise-cpu256-10
+                    oom_kill_step: "0"
+                    prio_process: "19"
+                    procid: "0"
+                    script_context: prolog_task
+                    submit_dir: /home/ashtomer/projects/ares
+                    submit_host: slurm-login-03
+                    task_pid: "448201"
+                    tasks_per_node: "1"
+                    topology_addr: ise-cpu256-10
+                    topology_addr_pattern: node
+                startedAt: "2025-11-26T02:50:20.126369Z"
+                writerId: hcofg4xzat0g1x81ganrn4lpkj96nqt1
+        m: []
+        python_version: 3.11.14
+        t:
+            "1":
+                - 1
+                - 41
+                - 49
+                - 50
+                - 63
+                - 82
+            "2":
+                - 1
+                - 41
+                - 49
+                - 50
+                - 63
+                - 82
+            "3":
+                - 5
+                - 13
+                - 14
+                - 16
+                - 62
+            "4": 3.11.14
+            "5": 0.23.0
+            "12": 0.23.0
+            "13": linux-x86_64
+aa:
+    value: rand-m9-mstd0.5-inc1
+advprop:
+    value: false
+advtrain:
+    value: false
+amp_version:
+    value: native
+apex_amp:
+    value: false
+attack_criterion:
+    value: mixup
+attack_eps:
+    value: 0.00392156862745098
+attack_it:
+    value: 3
+attack_norm:
+    value: linf
+attack_step:
+    value: 0.00392156862745098
+aug_repeats:
+    value: 0
+aug_splits:
+    value: 0
+backend:
+    value: nccl
+batch_size:
+    value: 256
+bce_loss:
+    value: false
+bn_eps:
+    value: null
+bn_momentum:
+    value: null
+channels_last:
+    value: false
+clip_grad:
+    value: null
+clip_mode:
+    value: norm
+color_jitter:
+    value: 0
+cooldown_epochs:
+    value: 0
+crop_pct:
+    value: 0.875
+cutmix:
+    value: 1
+cutmix_minmax:
+    value: null
+decay_epochs:
+    value: 30
+decay_rate:
+    value: 0.1
+device_id:
+    value: 0
+dist_backend:
+    value: nccl
+dist_bn:
+    value: reduce
+dist_url:
+    value: env://
+distributed:
+    value: false
+drop:
+    value: 0
+drop_block:
+    value: null
+drop_path:
+    value: 0
+epoch_repeats:
+    value: 0
+epochs:
+    value: 300
+eval_dir:
+    value: /storage/test/bml_group/tomerash/datasets/imagenet/val/
+eval_metric:
+    value: top1
+experiment_name:
+    value: null
+experiment_num:
+    value: 1
+gp:
+    value: null
+gradnorm:
+    value: true
+hflip:
+    value: true
+init_method:
+    value: env://
+input_size:
+    value: 224
+interpolation:
+    value: bicubic
+jsd_loss:
+    value: false
+lambda_ce:
+    value: 0.8
+lambda_gn:
+    value: 1.2
+layer_decay:
+    value: null
+local_rank:
+    value: 0
+log_interval:
+    value: 50
+lr:
+    value: 0.0005
+lr_cycle_decay:
+    value: 0.5
+lr_cycle_limit:
+    value: 1
+lr_cycle_mul:
+    value: 1
+lr_k_decay:
+    value: 1
+lr_noise:
+    value: null
+lr_noise_pct:
+    value: 0.67
+lr_noise_std:
+    value: 1
+lrb:
+    value: 0.001
+max_history:
+    value: 10
+mean:
+    value:
+        - 0.485
+        - 0.456
+        - 0.406
+min_lr:
+    value: 1e-05
+mixup:
+    value: 0.8
+mixup_active:
+    value: true
+mixup_mode:
+    value: elem
+mixup_off_epoch:
+    value: 200
+mixup_prob:
+    value: 0.5
+mixup_switch_prob:
+    value: 0.5
+model:
+    value: convnext_small
+model_ema:
+    value: true
+model_ema_decay:
+    value: 0.9998
+model_ema_force_cpu:
+    value: false
+model_id:
+    value: null
+momentum:
+    value: 0.9
+native_amp:
+    value: true
+no_aug:
+    value: false
+num_classes:
+    value: 1000
+num_workers:
+    value: 6
+opt:
+    value: adamw
+opt_betas:
+    value: null
+opt_eps:
+    value: 1e-08
+output_dir:
+    value: /home/ashtomer/projects/ares/results/models/convnext_small_gradnorm_1.0_init1
+patience_epochs:
+    value: 0
+pin_mem:
+    value: true
+rank:
+    value: 0
+ratio:
+    value:
+        - 0.75
+        - 1.3333
+recount:
+    value: 1
+recovery_interval:
+    value: 0
+remode:
+    value: pixel
+reprob:
+    value: 0
+resplit:
+    value: false
+resume:
+    value: /home/ashtomer/projects/ares/results/models/convnext_small_gradnorm_1_init1/last.pth.tar
+save_log:
+    value: save_log.txt
+scale:
+    value:
+        - 0.08
+        - 1
+sched:
+    value: cosine
+sched_on_updates:
+    value: true
+seed:
+    value: 0
+smoothing:
+    value: 0.1
+split_bn:
+    value: false
+start_epoch:
+    value: null
+std:
+    value:
+        - 0.229
+        - 0.224
+        - 0.225
+sync_bn:
+    value: false
+train_dir:
+    value: /storage/test/bml_group/tomerash/datasets/imagenet/train/
+train_interpolation:
+    value: bicubic
+vflip:
+    value: false
+warmup_epochs:
+    value: 20
+warmup_lr:
+    value: 1e-06
+weight_decay:
+    value: 0.05
+world_size:
+    value: 1
