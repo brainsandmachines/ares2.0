@@ -8,6 +8,7 @@ datasets/*
 *.tar.gz
 # training artifacts
 results/
+robust_training/results/
 ~/
 *.pth
 *.pth.tar
@@ -16,3 +17,4 @@ results/
 *.out
 /home/ashtomer/projects/ares/wandb
 wandb/
+outputs/

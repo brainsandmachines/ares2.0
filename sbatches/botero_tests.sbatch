@@ -27,12 +27,14 @@ export MASTER_PORT=$((10000 + RANDOM % 50000))
 model_name="convnext_small_linf_2_init1"
 
 python -m robust_training.adversarial_training \
-    attacks.attack_eps=2 \
-    attacks.advtrain=true \
+    attacks.attack_eps=3 \
+    attacks.advtrain=false \
     attacks.attack_norm=linf \
-    attacks.gradnorm=false \
+    attacks.gradnorm=true \
     model.experiment_num=1 \
-    model.resume="/home/ashtomer/projects/ares/results/models/${model_name}/last.pth.tar" \
     training.epochs=300 \
-    training.batch_size=256 \
-    hydra.run.dir="/home/ashtomer/projects/ares/results/models/${model_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}" 
+    training.batch_size=64 \
+    optimizer.clip_grad=null \
+    dataset.mixup_active=True \
+    dataset.train_dir=/mnt/data/datasets/imagenet_sample/train \
+    dataset.eval_dir=/mnt/data/datasets/imagenet_sample/val \

@@ -136,7 +136,9 @@ def main(args):
         else:
             lr_scheduler.step(start_epoch)
     
-    sch = Model_scheduler(db_path="/home/ashtomer/projects/ares/job_manager/model_scheduler.db")
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # /ares
+    db_path = os.path.join(ROOT, "job_manager", "model_scheduler.db")
+    sch = Model_scheduler(db_path=db_path)
 
     # saver
     eval_metric = args.eval_metric

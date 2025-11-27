@@ -58,36 +58,34 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
             top5_m.update(acc5.item(), output.size(0))
 
         # adv eval process
-        if args.advtrain:
-            att_step = args.attack_step * min(epoch, 5)/5
-            att_eps=args.attack_eps
-            if args.attack_norm=='l2':
-                att_eps=att_eps*255
-                att_step=att_step*255
-    
-            adv_input=adv_generator(args, input, target, model, att_eps, 8, att_step, random_start=True, use_best=False, attack_criterion='regular')
-            with torch.no_grad():
-                with amp_autocast():
-                    adv_output = model(adv_input)
-                if isinstance(adv_output, (tuple, list)):
-                    adv_output = adv_output[0]
-                
-                adv_loss = loss_fn(adv_output, target)
-                adv_acc1, adv_acc5 = accuracy(adv_output, target, topk=(1, 5))
+        if args.advtrain or args.gradnorm:
+            if epoch > 0:
+                att_step = args.attack_step * min(epoch, 5)/5
+                att_eps=args.attack_eps
+                print(f'Adv eval with eps {att_eps} and step {att_step}')
+                adv_input=adv_generator(args, input, target, model, att_eps, 8, att_step, random_start=True, use_best=False, attack_criterion='regular')
+                with torch.no_grad():
+                    with amp_autocast():
+                        adv_output = model(adv_input)
+                    if isinstance(adv_output, (tuple, list)):
+                        adv_output = adv_output[0]
+                    
+                    adv_loss = loss_fn(adv_output, target)
+                    adv_acc1, adv_acc5 = accuracy(adv_output, target, topk=(1, 5))
 
-                if args.distributed:
-                    adv_reduced_loss = reduce_tensor(adv_loss.data, args.world_size)
-                    adv_acc1 = reduce_tensor(adv_acc1, args.world_size)
-                    adv_acc5 = reduce_tensor(adv_acc5, args.world_size)
-                else:
-                    adv_reduced_loss = adv_loss.data
+                    if args.distributed:
+                        adv_reduced_loss = reduce_tensor(adv_loss.data, args.world_size)
+                        adv_acc1 = reduce_tensor(adv_acc1, args.world_size)
+                        adv_acc5 = reduce_tensor(adv_acc5, args.world_size)
+                    else:
+                        adv_reduced_loss = adv_loss.data
 
-                torch.cuda.synchronize()
+                    torch.cuda.synchronize()
 
-                # record adv results
-                adv_losses_m.update(adv_reduced_loss.item(), adv_input.size(0))
-                adv_top1_m.update(adv_acc1.item(), adv_output.size(0))
-                adv_top5_m.update(adv_acc5.item(), adv_output.size(0))
+                    # record adv results
+                    adv_losses_m.update(adv_reduced_loss.item(), adv_input.size(0))
+                    adv_top1_m.update(adv_acc1.item(), adv_output.size(0))
+                    adv_top5_m.update(adv_acc5.item(), adv_output.size(0))
 
 
         batch_time_m.update(time.time() - end)
