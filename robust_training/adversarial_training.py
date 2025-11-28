@@ -45,7 +45,7 @@ def main(args):
         if getattr(args, 'attack_step', None) is not None:
             args.attack_step = float(args.attack_step) / 255.0
     if args.rank == 0:
-        experiment_name = _auto_experiment_name(args)
+        experiment_name, group_name = _auto_experiment_name(args)
         args.output_dir = os.path.join(args.output_dir,experiment_name)
         os.makedirs(args.output_dir, exist_ok = True)
     
@@ -153,15 +153,6 @@ def main(args):
             model=model, optimizer=optimizer, args=args, model_ema=model_ema, amp_scaler=loss_scaler,
             checkpoint_dir=output_dir, recovery_dir=output_dir, decreasing=decreasing, max_history=args.max_history)
         # wandb init:
-        if args.model_id is None:
-            group_name = "test_models"
-        else:    
-            if "c=0" in args.model_id and "gradnorm=0" in args.model_id:
-                group_name = "baseline"
-            elif "gradnorm=1" in args.model_id:
-                group_name = "gradnorm"
-            else:
-                group_name = args.attack_norm
         wandb_config = {k: v for k, v in vars(args).items() if not k.startswith('_')}
         # Use experiment_name as ID if given, otherwise generate one
         if experiment_name is None:   

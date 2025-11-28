@@ -64,25 +64,32 @@ def _auto_experiment_name(args):
     if args.advtrain:
         if args.attack_norm=="linf":
             parts.append(f"linf_{int(args.attack_eps*255)}")
+            group_name = "linf_madry"
         elif args.attack_norm=="l2":
             parts.append(f"l2_{args.attack_eps}")
+            group_name = "l2_madry"
         elif args.attack_norm=="linf_trades":
-            parts.append(f"linf_trades_{int(args.attack_eps*255)}")
+            parts.append(f"linftrades_{int(args.attack_eps*255)}")
+            group_name = "linf_trades"
         elif args.attack_norm=="l2_trades":
-            parts.append(f"l2_trades_{args.attack_eps}")
-            
+            parts.append(f"l2trades_{args.attack_eps}")
+            group_name = "l2_trades"
         else:
             raise ValueError(f"Unknown attack norm: {args.attack_norm}")
     if args.gradnorm:
         parts.append(f"gradnorm_{int(args.attack_eps*255)}")
+        group_name = "gradnorm"
     # if args.lipshitz:
     #     parts.append(f"lip_{args.lip_coeff}")
+    #     group_name = "lipshitz"
     # if args.jacobian_reg:
     #     parts.append(f"jacobian_{args.jacobian_coeff}")
+    #     group_name = "jacobian"
     if len(parts)==1:
         parts.append("baseline")
     if args.experiment_num is not None:
         parts.append(f"init{args.experiment_num}")
     experiment_name = "_".join(parts)
-    return experiment_name
+    
+    return experiment_name, group_name
     

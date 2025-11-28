@@ -31,7 +31,7 @@ python -m robust_training.adversarial_training \
     attacks.advtrain=false \
     attacks.attack_norm=linf \
     attacks.gradnorm=true \
-    model.experiment_num=1 \
+    model.experiment_num=5 \
     training.epochs=300 \
     training.batch_size=64 \
     optimizer.clip_grad=null \
