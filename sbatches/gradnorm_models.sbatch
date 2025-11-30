@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gradnorm_1_init2
+#SBATCH --job-name=gradnorm_8_init2
 #SBATCH --time=7-00:00:00
 #SBATCH --partition=main                 # main queue
 #SBATCH --gpus=1                          # request 1 GPU
@@ -25,17 +25,15 @@ python -c "import torch; print(torch.version.cuda, torch.version.git_version)"
 
 export MASTER_PORT=$((10000 + RANDOM % 50000))
 
-model_name="convnext_small_gradnorm_1_init2"
+model_name="convnext_small_gradnorm_8_init2"
 
 python -m robust_training.adversarial_training \
-    attacks.attack_eps=1 \
+    attacks.attack_eps=8 \
     attacks.advtrain=false \
     attacks.attack_norm=linf \
     attacks.gradnorm=true \
-    model.experiment_num=1 \
-    model.resume="/home/ashtomer/projects/ares/results/models/convnext_small_gradnorm_1_init2/last.pth.tar" \
+    model.experiment_num=2 \
+    model.resume="/home/ashtomer/projects/ares/results/models/$model_name/last.pth.tar" \
     training.epochs=300 \
     training.batch_size=256 \
-    optimizer.clip_grad=null \
-    dataset.mixup_active=True \
-    hydra.run.dir="/home/ashtomer/projects/ares/results/models/convnext_small_gradnorm_1_init2/${now:%Y-%m-%d}/${now:%H-%M-%S}" 
+    hydra.run.dir="/home/ashtomer/projects/ares/results/models/$model_name/${now:%Y-%m-%d}/${now:%H-%M-%S}" 
