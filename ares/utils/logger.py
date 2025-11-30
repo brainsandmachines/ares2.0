@@ -60,6 +60,7 @@ class PrintFormatter:
     
     
 def _auto_experiment_name(args):
+    group_name = "default"  # Initialize group_name with a default value
     parts = [f"{args.model}"]
     if args.advtrain:
         if args.attack_norm=="linf":
@@ -87,9 +88,9 @@ def _auto_experiment_name(args):
     #     group_name = "jacobian"
     if len(parts)==1:
         parts.append("baseline")
+        group_name = "baseline"
     if args.experiment_num is not None:
         parts.append(f"init{args.experiment_num}")
     experiment_name = "_".join(parts)
-    
+
     return experiment_name, group_name
-    

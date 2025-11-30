@@ -10,8 +10,6 @@
 #SBATCH --output=/home/ashtomer/projects/ares/outs/advtrain/main/convnextsmall/%A/%a.out
 #SBATCH --array=1-100%1
 
-
-
 nvidia-smi
 # ---- Env once ----
 module load anaconda

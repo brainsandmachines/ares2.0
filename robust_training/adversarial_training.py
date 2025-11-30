@@ -190,7 +190,7 @@ def main(args):
             # mixup setting
         if args.mixup_off_epoch and epoch >= args.mixup_off_epoch:
             if not already_canceled_mixup:
-                args.mixup_fn.mixup_enabled = False
+                args.mixup_active = False
                 loader_train, loader_eval = build_dataset(args, num_aug_splits)
                 already_canceled_mixup = True
         # one epoch training
