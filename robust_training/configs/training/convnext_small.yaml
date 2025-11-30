@@ -1,5 +1,5 @@
 # Training defaults: convnext_small
-epochs: 250
+epochs: 300
 batch_size: 256
 
 # drop connection

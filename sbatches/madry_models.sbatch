@@ -8,7 +8,7 @@
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
 #SBATCH --output=/home/ashtomer/projects/ares/outs/advtrain/main/convnextsmall/%A/%a.out
-#SBATCH --array=1-200%1
+#SBATCH --array=1-100%1
 
 
 nvidia-smi
