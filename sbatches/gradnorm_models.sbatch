@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gradnorm_8_init2
+#SBATCH --job-name=gradnorm_4_init2
 #SBATCH --time=7-00:00:00
 #SBATCH --partition=main                 # main queue
 #SBATCH --gpus=1                          # request 1 GPU
@@ -23,10 +23,10 @@ python -c "import torch; print(torch.version.cuda, torch.version.git_version)"
 
 export MASTER_PORT=$((10000 + RANDOM % 50000))
 
-model_name="convnext_small_gradnorm_8_init2"
+model_name="convnext_small_gradnorm_4_init2"
 
 python -m robust_training.adversarial_training \
-    attacks.attack_eps=8 \
+    attacks.attack_eps=4 \
     attacks.advtrain=false \
     attacks.attack_norm=linf \
     attacks.gradnorm=true \
