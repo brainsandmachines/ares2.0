@@ -3,15 +3,18 @@ import os, time
 import pandas as pd
 
 class Model_scheduler():
-    def __init__(self, db_path='model_scheduler.db',num_epochs=250):
+    def __init__(self, db_path='model_scheduler.db', num_epochs=250):
+        print("[DEBUG] Initializing Model_scheduler...")
         self.db_path = db_path
         self.num_epochs = num_epochs
-            
+
         is_new = not os.path.isfile(self.db_path)
-        conn = sqlite3.connect(self.db_path)
+        print(f"[DEBUG] Database path: {self.db_path}, is_new: {is_new}")
+
+        conn = sqlite3.connect(self.db_path, timeout=5.0)
         c = conn.cursor()
-        
-        
+        print("[DEBUG] Connected to SQLite database.")
+
         # --- Models table ---
         c.execute("""
         CREATE TABLE IF NOT EXISTS models (
@@ -28,12 +31,16 @@ class Model_scheduler():
             job_id TEXT
         )
         """)
-        
+        print("[DEBUG] Models table created or already exists.")
+
         conn.commit()
         conn.close()
-        
+        print("[DEBUG] Database connection closed.")
+
         if is_new:
+            print("[DEBUG] Seeding models...")
             self.seed_models()
+            print("[DEBUG] Models seeded.")
             
     # ---------------- internal helpers ----------------
     def _execute_sqlite(self, query, parameters=None, quiet_duplicate=False):
