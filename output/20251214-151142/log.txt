@@ -1,0 +1,7 @@
+[2025-12-14 15:11:42 ARES 2.0] WARNING: Neither APEX or native Torch AMP is available, using float32. Install NVIDA apex or upgrade to PyTorch 1.6
+[2025-12-14 15:11:42 ARES 2.0] INFO: Creating model: convnext_small
+[2025-12-14 15:11:43 ARES 2.0] INFO: Model convnext_small created, param count:50223688
+[2025-12-14 15:11:43 ARES 2.0] INFO: AMP not enabled. Training in float32.
+[2025-12-14 15:11:43 ARES 2.0] INFO: Scheduled epochs: 160
+[2025-12-14 15:11:43 ARES 2.0] INFO: Reg losses: DBP()
+[2025-12-14 15:11:43 ARES 2.0] INFO: Start training for 150 epochs

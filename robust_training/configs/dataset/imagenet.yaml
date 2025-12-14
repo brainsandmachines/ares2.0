@@ -1,6 +1,7 @@
 # Dataset settings for ImageNet
 train_dir: '/storage/test/bml_group/tomerash/datasets/imagenet/train/'
 eval_dir: '/storage/test/bml_group/tomerash/datasets/imagenet/val/'
+grad_accum: 1
 mean: [0.485, 0.456, 0.406]
 std: [0.229, 0.224, 0.225]
 scale: [0.08, 1.0]

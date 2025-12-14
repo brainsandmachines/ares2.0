@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from timm.loss import JsdCrossEntropy, BinaryCrossEntropy, SoftTargetCrossEntropy
+from timm.loss import JsdCrossEntropy, BinaryCrossEntropy, LabelSmoothingCrossEntropy
 from contextlib import suppress
 from timm.utils import NativeScaler
 try:
@@ -93,11 +93,6 @@ def build_loss(args, num_aug_splits):
     if args.jsd_loss:
         assert num_aug_splits > 1  # JSD only valid with aug splits set
         train_loss_fn = JsdCrossEntropy(num_splits=num_aug_splits, smoothing=args.smoothing)
-    elif args.gradnorm:
-        train_loss_fn = GradNorm_Loss(
-            eps=args.attack_eps,
-            lambda_gn=getattr(args, "lambda_gn", 1.0),
-        )
     elif args.mixup_active:
         # smoothing is handled with mixup target transform which outputs sparse, soft targets
         train_loss_fn = nn.CrossEntropyLoss()
@@ -142,3 +137,13 @@ class GradNorm_Loss(nn.Module):
         loss = (loss_ce
                 + self.lambda_gn * self.eps * grad_norm)
         return loss
+    
+    
+class DBP(nn.Module):
+    def __init__(self, eps=4./255., std=0.225) -> None:
+        super().__init__()
+        self.eps = eps/std
+
+    def forward(self, gradients, inputs):
+        batch_size = gradients.shape[0]
+        return self.eps*batch_size*gradients.abs().sum((-3, -2, -1)).mean()

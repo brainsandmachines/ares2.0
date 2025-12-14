@@ -15,7 +15,7 @@ from ares.utils.metrics import AverageMeter
 
 def train_one_epoch(
         epoch, model, loader, optimizer, loss_fn, args,
-        lr_scheduler=None, saver=None, amp_autocast=None,
+        reg_loss_fn=None, lr_scheduler=None, saver=None, amp_autocast=None,
         loss_scaler=None, model_ema=None, _logger=None):
     
     # statistical variables
@@ -71,13 +71,19 @@ def train_one_epoch(
                 output = model(input_advtrain)
                 loss = loss_fn(output, target)
             elif args.gradnorm:
-                loss = loss_fn(model, input, target)
+                input.requires_grad_(True)
+                output = model(input)
+                ce_loss = loss_fn(output, target)
+                
+                gradient = torch.autograd.grad(ce_loss, input, create_graph=True, retain_graph=True)[0]
+                loss_reg = reg_loss_fn(gradient, input)
+                loss = ce_loss + loss_reg
             else:
                 output = model(input)
                 loss = loss_fn(output, target)
         # debugging NaN/Inf in loss
         assert torch.isfinite(loss).all(), "Loss is NaN or Inf"
-                
+
         if not args.distributed:
             losses_m.update(loss.item(), input.size(0))
 
@@ -98,7 +104,7 @@ def train_one_epoch(
                     value=args.clip_grad, mode=args.clip_mode)
             global_g, avg_g, max_g = compute_grad_stats(model)
             optimizer.step()
-                
+        
         if global_g is not None:
             grad_global_m.update(global_g)
             grad_avg_m.update(avg_g)
@@ -121,7 +127,7 @@ def train_one_epoch(
             _logger.info(
             'Train: [{}/{}] [{:>4d}/{} ({:>3.0f}%)]  '
             'Loss: {loss.val:#.4g} ({loss.avg:#.3g})  '
-            'Time: {batch_time.val:.3f}s, {rate:>7.2f}/s  '
+            'Batch Time: {batch_time.val:.3f}s, {rate:>7.2f}/s  '
             '({batch_time.avg:.3f}s, {rate_avg:>7.2f}/s)  '
             'LR: {lr:.3e}  '
             'Data: {data_time.val:.3f} ({data_time.avg:.3f})'.format(

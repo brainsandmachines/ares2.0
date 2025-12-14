@@ -19,7 +19,7 @@ from timm.utils import ModelEmaV2, distribute_bn, get_outdir, CheckpointSaver, u
 from ares.utils.dist import distributed_init, random_seed
 from ares.utils.logger import setup_logger , _auto_experiment_name
 from ares.utils.model import build_model
-from ares.utils.loss import build_loss, resolve_amp, build_loss_scaler
+from ares.utils.loss import build_loss, resolve_amp, build_loss_scaler, DBP
 from ares.utils.dataset import build_dataset
 from ares.utils.defaults import get_args_parser
 from ares.utils.train_loop import train_one_epoch
@@ -64,6 +64,9 @@ def main(args):
     if args.aug_splits > 0:
         assert args.aug_splits > 1, 'A split of 1 makes no sense'
         num_aug_splits = args.aug_splits
+    
+    if args.gradnorm:
+        args.native_amp = False  # GradNorm not compatible with amp
 
     # resolve amp
     resolve_amp(args, _logger)
@@ -80,6 +83,8 @@ def main(args):
 
     # build loss scaler
     amp_autocast, loss_scaler = build_loss_scaler(args, _logger)
+    print(f'Using amp_autocast: {amp_autocast}')
+    print(f"Using loss scaler: {loss_scaler}")
 
     # resume from a checkpoint
     resume_epoch = None
@@ -96,6 +101,7 @@ def main(args):
         # Important to create EMA model after cuda(), DP wrapper, and AMP but before SyncBN and DDP wrapper
         model_ema = ModelEmaV2(
             model, decay=args.model_ema_decay, device='cpu' if args.model_ema_force_cpu else None)
+        _logger.info("Using EMA model")
         if args.resume and os.path.exists(args.resume):
             load_checkpoint(model_ema.module, args.resume, use_ema=True)
 
@@ -117,6 +123,12 @@ def main(args):
     # setup loss function
     train_loss_fn, validate_loss_fn = build_loss(args, num_aug_splits)
     print(f"Using training loss: {train_loss_fn}, validation loss: {validate_loss_fn}")
+    
+    # setup gradnorm regularization loss function
+    reg_loss_fn = None
+    if args.gradnorm:
+        reg_loss_fn = DBP(eps=args.attack_eps, std=0.225)
+    _logger.info(f'Reg losses: {str(reg_loss_fn)}')
 
     # setup learning rate schedule and starting epoch
     updates_per_epoch = len(loader_train)
@@ -136,9 +148,9 @@ def main(args):
         else:
             lr_scheduler.step(start_epoch)
     
-    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # /ares
-    db_path = os.path.join(ROOT, "job_manager", "model_scheduler.db")
-    sch = Model_scheduler(db_path=db_path)
+    # ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # /ares
+    # db_path = os.path.join(ROOT, "job_manager", "model_scheduler.db")
+    # sch = Model_scheduler(db_path=db_path)
 
     # saver
     eval_metric = args.eval_metric
@@ -195,7 +207,7 @@ def main(args):
                 already_canceled_mixup = True
         # one epoch training
         train_metrics = train_one_epoch(
-            epoch, model, loader_train, optimizer, train_loss_fn, args,
+            epoch, model, loader_train, optimizer, train_loss_fn, args,reg_loss_fn=reg_loss_fn,
             lr_scheduler=lr_scheduler, saver=saver, amp_autocast=amp_autocast,
             loss_scaler=loss_scaler, model_ema=model_ema, _logger=_logger)
 
@@ -244,8 +256,8 @@ def main(args):
             best_metric, best_epoch = saver.save_checkpoint(epoch, eval_metrics[eval_metric])
             
         # -------- DB update: end-of-epoch --------
-        if sch is not None and args.model_id is not None and args.rank == 0:
-            sch.update_progress_epoch_end(model_id=args.model_id, epoch=epoch+1)
+        # if sch is not None and args.model_id is not None and args.rank == 0:
+        #     sch.update_progress_epoch_end(model_id=args.model_id, epoch=epoch+1)
 
         if args.distributed:
             torch.distributed.barrier()

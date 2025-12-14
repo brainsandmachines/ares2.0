@@ -8,8 +8,14 @@ attack_step: 1.0
 attack_it: 3
 bce_loss: False
 
+random_start: False
+random_start_eps_factor: 0.5
+
 
 # GradNorm related defaults
 gradnorm: False
-lambda_ce: 0.8
-lambda_gn: 1.2
+loss_fn: 'DBP'
+ce_weight: 0.8
+gradnorm_weight: 1.2
+alpha: [0.0, 0.2, 1.0]
+alpha_start_epoch: 0
