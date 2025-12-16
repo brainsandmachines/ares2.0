@@ -11,12 +11,13 @@ from timm.utils import  reduce_tensor, dispatch_clip_grad
 # robust training functions
 from ares.utils.adv import adv_generator
 from ares.utils.metrics import AverageMeter
+from ares.utils.gradnorm import compute_gradnorm_alpha
 
 
 def train_one_epoch(
         epoch, model, loader, optimizer, loss_fn, args,
         reg_loss_fn=None, lr_scheduler=None, saver=None, amp_autocast=None,
-        loss_scaler=None, model_ema=None, _logger=None):
+        loss_scaler=None, model_ema=None, _logger=None,gradnorm_start_epoch=0):
     
     # statistical variables
     second_order = hasattr(optimizer, 'is_second_order') and optimizer.is_second_order
@@ -76,7 +77,10 @@ def train_one_epoch(
                 ce_loss = loss_fn(output, target)
                 
                 gradient = torch.autograd.grad(ce_loss, input, create_graph=True, retain_graph=True)[0]
-                loss_reg = reg_loss_fn(gradient, input)
+                alpha = compute_gradnorm_alpha(epoch, batch_idx, len(loader), gradnorm_start_epoch)
+                loss_reg = reg_loss_fn(gradient, input)* alpha
+                print(f"gradnorm: {loss_reg.item()}")
+                print(f"ce_loss: {ce_loss.item()}")
                 loss = ce_loss + loss_reg
             else:
                 output = model(input)
