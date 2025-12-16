@@ -79,8 +79,6 @@ def train_one_epoch(
                 gradient = torch.autograd.grad(ce_loss, input, create_graph=True, retain_graph=True)[0]
                 alpha = compute_gradnorm_alpha(epoch, batch_idx, len(loader), gradnorm_start_epoch)
                 loss_reg = reg_loss_fn(gradient, input)* alpha
-                print(f"gradnorm: {loss_reg.item()}")
-                print(f"ce_loss: {ce_loss.item()}")
                 loss = ce_loss + loss_reg
             else:
                 output = model(input)
