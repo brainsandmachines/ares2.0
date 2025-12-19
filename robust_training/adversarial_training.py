@@ -124,6 +124,7 @@ def main(args):
     
     # setup gradnorm regularization loss function
     reg_loss_fn = None
+    gradnorm_start_epoch = args.epochs  # default: never start
     if args.gradnorm:
         reg_loss_fn = DBP(eps=args.attack_eps, std=0.225)
         gradnorm_start_epoch = args.alpha_start_epoch
