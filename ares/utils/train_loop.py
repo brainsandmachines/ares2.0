@@ -9,7 +9,7 @@ from timm.models import model_parameters
 from timm.utils import  reduce_tensor, dispatch_clip_grad
 
 # robust training functions
-from ares.utils.adv import adv_generator
+from ares.utils.adv import adv_generator, trades_adv_generator
 from ares.utils.metrics import AverageMeter
 from ares.utils.gradnorm import compute_gradnorm_alpha
 
@@ -53,12 +53,15 @@ def train_one_epoch(
 
         # generate adv input
         if args.advtrain:
-            input_advtrain = adv_generator(args, input, target, model, att_eps, att_it, att_step, random_start=False, attack_criterion=args.attack_criterion)
+            if args.attack_criterion == 'madry':
+                input_advtrain = adv_generator(args, input, target, model, att_eps, att_it, att_step, random_start=False)
+            elif args.attack_criterion == 'trades': 
+                input_advtrain = trades_adv_generator(args, input, model, att_eps, att_it, att_step, random_start=True)
 
         # generate advprop input
         if args.advprop:
             model.apply(lambda m: setattr(m, 'bn_mode', 'adv'))
-            input_advprop = adv_generator(args, input, target, model, 1/255, 1, 1/255, random_start=True, attack_criterion=args.attack_criterion, use_best=False)
+            input_advprop = adv_generator(args, input, target, model, 1/255, 1, 1/255, random_start=True, use_best=False)
             
         # forward
         with amp_autocast():
@@ -69,8 +72,18 @@ def train_one_epoch(
                 outputs = model(input)
                 loss = loss_fn(outputs, target) + adv_loss
             elif args.advtrain:
-                output = model(input_advtrain)
-                loss = loss_fn(output, target)
+                if args.attack_criterion == 'madry':
+                    output = model(input_advtrain)
+                    loss = loss_fn(output, target)
+                elif args.attack_criterion == 'trades':
+                    output = model(input)
+                    ce_loss = loss_fn(output, target)
+                    output_adv = model(input_advtrain)
+                    kl_loss = torch.nn.functional.kl_div(
+                        torch.nn.functional.log_softmax(output_adv, dim=1),
+                        torch.nn.functional.softmax(output, dim=1),
+                        reduction='batchmean')
+                    loss = ce_loss + args.trades_beta * kl_loss
             elif args.gradnorm:
                 input.requires_grad_(True)
                 output = model(input)

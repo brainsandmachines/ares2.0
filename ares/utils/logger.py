@@ -64,17 +64,23 @@ def _auto_experiment_name(args):
     parts = [f"{args.model}"]
     if args.advtrain:
         if args.attack_norm=="linf":
-            parts.append(f"linf_{int(args.attack_eps*255)}")
-            group_name = "linf_madry"
+            if args.attack_criterion=="madry":
+                parts.append(f"linf_{int(args.attack_eps*255)}")
+                group_name = "linf_madry"
+            elif args.attack_criterion=="trades":
+                parts.append(f"linftrades_{int(args.attack_eps*255)}")
+                group_name = "linf_trades"
+            else:
+                raise ValueError(f"Unknown attack criterion: {args.attack_criterion}")
         elif args.attack_norm=="l2":
-            parts.append(f"l2_{args.attack_eps}")
-            group_name = "l2_madry"
-        elif args.attack_norm=="linf_trades":
-            parts.append(f"linftrades_{int(args.attack_eps*255)}")
-            group_name = "linf_trades"
-        elif args.attack_norm=="l2_trades":
-            parts.append(f"l2trades_{args.attack_eps}")
-            group_name = "l2_trades"
+            if args.attack_criterion=="madry":
+                parts.append(f"l2_{args.attack_eps}")
+                group_name = "l2_madry"
+            elif args.attack_criterion=="trades":
+                parts.append(f"l2trades_{args.attack_eps}")
+                group_name = "l2_trades"
+            else:
+                raise ValueError(f"Unknown attack criterion: {args.attack_criterion}")
         else:
             raise ValueError(f"Unknown attack norm: {args.attack_norm}")
     if args.gradnorm:

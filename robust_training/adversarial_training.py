@@ -132,6 +132,9 @@ def main(args):
             gradnorm_start_epoch = resume_epoch
     _logger.info(f'GradNorm start: {gradnorm_start_epoch}')
     _logger.info(f'Reg losses: {str(reg_loss_fn)}')
+    
+    if args.attack_criterion == 'trades' and args.advtrain:
+        args.random_start = True
 
     # setup learning rate schedule and starting epoch
     updates_per_epoch = len(loader_train)

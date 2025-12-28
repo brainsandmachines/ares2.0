@@ -1,6 +1,6 @@
 # Adversarial / attack related defaults
 advtrain: False
-attack_criterion: mixup
+attack_criterion: madry
 attack_norm: linf
 advprop: False
 attack_eps: 0.0
@@ -10,6 +10,9 @@ bce_loss: False
 
 random_start: False
 random_start_eps_factor: 0.5
+
+# TRADES related defaults
+trades_beta: 1.0
 
 
 # GradNorm related defaults
