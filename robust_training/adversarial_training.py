@@ -1,3 +1,4 @@
+import logging
 import warnings
 warnings.filterwarnings("ignore")
 import argparse
@@ -20,7 +21,7 @@ from ares.utils.dist import distributed_init, random_seed
 from ares.utils.logger import setup_logger , _auto_experiment_name
 from ares.utils.model import build_model
 from ares.utils.loss import build_loss, resolve_amp, build_loss_scaler
-from ares.utils.gradnorm import DBP
+from ares.utils.gradnorm import DBP ,GradNormFast
 from ares.utils.dataset import build_dataset
 from ares.utils.defaults import get_args_parser
 from ares.utils.train_loop import train_one_epoch
@@ -125,9 +126,11 @@ def main(args):
     # setup gradnorm regularization loss function
     reg_loss_fn = None
     gradnorm_start_epoch = args.epochs  # default: never start
+    gradnorm_stepper = None
     if args.gradnorm:
         reg_loss_fn = DBP(eps=args.attack_eps, std=0.225)
         gradnorm_start_epoch = args.alpha_start_epoch
+        gradnorm_stepper = GradNormFast(attack_eps=args.attack_eps)
         if resume_epoch is not None:
             gradnorm_start_epoch = resume_epoch
     _logger.info(f'GradNorm start: {gradnorm_start_epoch}')
@@ -215,7 +218,7 @@ def main(args):
         train_metrics = train_one_epoch(
             epoch, model, loader_train, optimizer, train_loss_fn, args,reg_loss_fn=reg_loss_fn,
             lr_scheduler=lr_scheduler, saver=saver, amp_autocast=amp_autocast,
-            loss_scaler=loss_scaler, model_ema=model_ema, _logger=_logger,gradnorm_start_epoch=gradnorm_start_epoch)
+            loss_scaler=loss_scaler, model_ema=model_ema, _logger=_logger,gradnorm_start_epoch=gradnorm_start_epoch, gradnorm_stepper=gradnorm_stepper)
 
         # distributed bn sync
         if args.distributed and args.dist_bn in ('broadcast', 'reduce'):

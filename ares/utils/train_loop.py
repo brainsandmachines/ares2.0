@@ -17,7 +17,7 @@ from ares.utils.gradnorm import compute_gradnorm_alpha
 def train_one_epoch(
         epoch, model, loader, optimizer, loss_fn, args,
         reg_loss_fn=None, lr_scheduler=None, saver=None, amp_autocast=None,
-        loss_scaler=None, model_ema=None, _logger=None,gradnorm_start_epoch=0):
+        loss_scaler=None, model_ema=None, _logger=None,gradnorm_start_epoch=0, gradnorm_stepper=None):
     
     # statistical variables
     second_order = hasattr(optimizer, 'is_second_order') and optimizer.is_second_order
