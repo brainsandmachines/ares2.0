@@ -1,0 +1,6 @@
+model,clean_acc,robust_acc
+convnext_small_l2_4_init1.pth,0.7131,0.28125
+convnext_small_l2_2_init1.pth,0.745,0.515625
+convnext_small_linf_1_init2.pth,0.78896,0.60625
+convnext_small_linf_1_init1.pth,0.78644,0.684375
+convnext_small_l2_1_init1.pth,0.63614,0.496875
