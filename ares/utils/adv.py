@@ -221,7 +221,7 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
     best_x=(best_x-mean_tensor)/std_tensor
     return best_x
 
-def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, random_start):
+def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, random_start=True, use_best=True):
     std = torch.Tensor(args.std).cuda()[None,:,None,None]
     mean = torch.Tensor(args.mean).cuda()[None,:,None,None]
     images = images * std + mean
@@ -259,7 +259,7 @@ def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, rand
         grad = torch.autograd.grad(kl.sum(), x_adv)[0]
 
         with torch.no_grad():
-            best_loss, best_x = replace_best(kl, best_loss, x_adv, best_x)
+            best_loss, best_x = replace_best(kl, best_loss, x_adv, best_x) if use_best else (kl, x_adv)
             x_adv = step.step(x_adv, grad)
             x_adv = step.project(x_adv)
 
@@ -270,7 +270,7 @@ def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, rand
         nat_probs,
         reduction='none'
     ).sum(dim=1)
-    best_loss, best_x = replace_best(kl.detach(), best_loss, x_adv.detach(), best_x)
+    best_loss, best_x = replace_best(kl.detach(), best_loss, x_adv.detach(), best_x) if use_best else (kl, x_adv.detach())
 
     model.train()
     best_x = torch.clamp(best_x, 0.0, 1.0)
