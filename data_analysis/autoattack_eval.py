@@ -154,7 +154,7 @@ if __name__ == "__main__":
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     logger = logging.getLogger(f"auto-attack_eval-{datetime.datetime.now().strftime('%Y-%m-%d')}")
-    models_path = "/mnt/data/robustness models/madry/"
+    models_path = "/mnt/data/robustness_models/madry/"
     batch_size = 64
     num_batches = 20
     results = {}
