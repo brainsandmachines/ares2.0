@@ -1,0 +1,15 @@
+model,clean_acc,robust_acc
+convnext_small_linf_2_init2.pth,0.75048,0.5609375
+convnext_small_l2_1_init2.pth,0.75616,0.53359375
+convnext_small_l2_4_init1.pth,0.7131,0.31953125
+convnext_small_l2_4_init2.pth,0.7092,0.121875
+convnext_small_l2_2_init2.pth,0.74304,0.54375
+convnext_small_l2_2_init1.pth,0.745,0.49375
+convnext_small_l2_8_init2.pth,0.7058,0.0140625
+convnext_small_linf_1_init2.pth,0.78896,0.75703125
+convnext_small_linf_1_init1.pth,0.78644,0.7109375
+convnext_small_l2_8_init1.pth,0.70706,0.00625
+convnext_small_linf_4_init2.pth,0.73494,0.4796875
+convnext_small_l2_1_init1.pth,0.63614,0.5734375
+convnext_small_linf_2_init1.pth,0.76194,0.584375
+convnext_small_linf_4_init1.pth,0.73366,0.44921875
