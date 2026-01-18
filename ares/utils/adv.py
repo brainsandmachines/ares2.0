@@ -137,6 +137,105 @@ class L2Step(AttackerStep):
     def random_uniform(self, x):
         return self.random_perturb(x)
     
+
+# Assuming AttackerStep is defined elsewhere in your codebase
+class L1Step(AttackerStep):
+    """
+    Attack step for L1 threat model. 
+    Projects updates onto the L1 ball: S = {x | ||x - x0||_1 <= epsilon}
+    """
+    
+    def project(self, x):
+        """
+        Project x back to the L1 ball around orig_input using Duchi's algorithm.
+        """
+        # 1. Compute perturbation
+        diff = x - self.orig_input
+        diff_flat = diff.view(diff.size(0), -1)
+        
+        # 2. OPTIMIZATION: Skip projection if already inside L1 ball
+        # This saves massive computation time for small perturbations
+        current_l1 = torch.norm(diff_flat, p=1, dim=1, keepdim=True)
+        if (current_l1 <= self.eps).all():
+            return torch.clamp(x, 0, 1)
+
+        # 3. Identify violators (batch-wise optimization)
+        # We only project samples that violate the constraint
+        mask_needs_proj = (current_l1 > self.eps).squeeze()
+        if not mask_needs_proj.any():
+            return torch.clamp(x, 0, 1)
+        
+        diff_to_proj = diff_flat[mask_needs_proj]
+        
+        # 4. Robust Duchi Algorithm
+        # Use abs values for sorting
+        abs_diff = torch.abs(diff_to_proj)
+        sorted_vals, _ = torch.sort(abs_diff, dim=1, descending=True)
+        
+        cumsum = torch.cumsum(sorted_vals, dim=1)
+        rho = torch.arange(1, diff_flat.size(1) + 1, device=x.device, dtype=x.dtype).unsqueeze(0)
+        
+        # Calculate candidate thresholds
+        theta_candidates = (cumsum - self.eps) / rho
+        
+        # Find the *last* index where (val - theta) > 0
+        # This is the mathematically correct condition for Duchi
+        active_cond = (sorted_vals - theta_candidates) > 0
+        # Count how many indices satisfy the condition to find the 'cut' point
+        num_active = torch.sum(active_cond, dim=1, keepdim=True)
+        
+        # Gather the valid theta at that index
+        # We use (num_active - 1) because indices are 0-based
+        idx = torch.clamp(num_active - 1, min=0).long()
+        theta_star = torch.gather(theta_candidates, 1, idx)
+        
+        # 5. Apply Soft-Thresholding
+        # sign(v) * max(|v| - theta, 0)
+        projected_flat = torch.sign(diff_to_proj) * torch.clamp(abs_diff - theta_star, min=0)
+        
+        # 6. Scatter back to original tensor
+        diff_flat_out = diff_flat.clone()
+        diff_flat_out[mask_needs_proj] = projected_flat
+        
+        # 7. Add back to original input and Box-Constraint [0, 1]
+        x_out = self.orig_input + diff_flat_out.view_as(diff)
+        return torch.clamp(x_out, 0, 1)
+
+    def step(self, x, g):
+        """
+        L1 Gradient Update: Normalize gradient by L1 norm.
+        Do NOT use sign(g) for L1 attacks.
+        """
+        # Avoid division by zero
+        g_flat = g.view(g.size(0), -1)
+        l1_norm = torch.norm(g_flat, p=1, dim=1, keepdim=True).view(-1, 1, 1, 1)
+        
+        # Normalized Gradient Ascent
+        # This ensures the step size is effectively 'alpha'
+        grad_normalized = g / (l1_norm + 1e-10)
+        
+        return x + grad_normalized * self.step_size
+
+    def random_perturb(self, x):
+        """
+        Random perturbation.
+        For L1, sparse noise is often better, but uniform L1 noise is acceptable for restart.
+        """
+        # Generate random noise
+        diff = torch.rand_like(x) - 0.5
+        diff = diff.view(diff.size(0), -1)
+        
+        # Normalize to have L1 norm = 1, then scale by epsilon
+        # Note: This puts points on the surface of the L1 ball
+        norm = torch.norm(diff, p=1, dim=1, keepdim=True)
+        diff = diff / (norm + 1e-10)
+        diff = diff.view_as(x) * self.eps
+        
+        return torch.clamp(x + diff, 0, 1)
+
+    def random_uniform(self, x):
+        return self.random_perturb(x)
+    
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 
@@ -174,8 +273,13 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
     orig_input = images.detach().cuda(non_blocking=True)
     if args.attack_norm=='l2':
         step = L2Step(eps=eps, orig_input=orig_input, step_size=attack_lr)
-    else:
+    elif args.attack_norm=='l1':
+        step = L1Step(eps=eps, orig_input=orig_input, step_size=attack_lr)
+    elif args.attack_norm=='linf':
         step = LinfStep(eps=eps, orig_input=orig_input, step_size=attack_lr)
+    else:
+        raise NotImplementedError
+
 
     # define loss function
     attack_criterion = torch.nn.CrossEntropyLoss()
@@ -211,8 +315,8 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
 
             images = step.step(images, grad)
             images = step.project(images)
-
-    adv_losses = attack_criterion(model(images), target)
+    with torch.no_grad():
+        adv_losses = attack_criterion(model((images-mean_tensor)/std_tensor), target)
     varlist = [adv_losses, best_loss, images, best_x]
     best_loss, best_x = replace_best(*varlist) if use_best else (adv_losses, images)
     if prev_training:
@@ -233,10 +337,14 @@ def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, rand
         nat_logits = model((x_nat - mean) / std)
         nat_probs = torch.softmax(nat_logits, dim=1).detach()
 
-    if args.attack_norm == 'l2':
-        step = L2Step(x_nat, eps, attack_lr)
+    if args.attack_norm=='l2':
+        step = L2Step(eps=eps, orig_input=x_nat, step_size=attack_lr)
+    elif args.attack_norm=='l1':
+        step = L1Step(eps=eps, orig_input=x_nat, step_size=attack_lr)
+    elif args.attack_norm=='linf':
+        step = LinfStep(eps=eps, orig_input=x_nat, step_size=attack_lr)
     else:
-        step = LinfStep(x_nat, eps, attack_lr)
+        raise NotImplementedError
 
     if random_start:
         x_adv = step.random_perturb(x_nat)
@@ -264,13 +372,14 @@ def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, rand
             x_adv = step.project(x_adv)
 
     # Final selection safety
-    logits_adv = model((x_adv - mean) / std)
-    kl = torch.nn.functional.kl_div(
+    with torch.no_grad():
+        logits_adv = model((x_adv - mean) / std)
+        kl = torch.nn.functional.kl_div(
         torch.log_softmax(logits_adv, dim=1),
         nat_probs,
         reduction='none'
     ).sum(dim=1)
-    best_loss, best_x = replace_best(kl.detach(), best_loss, x_adv.detach(), best_x) if use_best else (kl, x_adv.detach())
+        best_loss, best_x = replace_best(kl.detach(), best_loss, x_adv.detach(), best_x) if use_best else (kl, x_adv.detach())
 
     model.train()
     best_x = torch.clamp(best_x, 0.0, 1.0)
