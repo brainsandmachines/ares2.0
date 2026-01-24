@@ -62,10 +62,7 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
             if epoch > 0:
                 att_step = args.attack_step * min(epoch, 5)/5
                 att_eps=args.attack_eps
-                if args.attack_criterion == 'trades':
-                    adv_input = trades_adv_generator(args, input, model, att_eps, 8, att_step, random_start=True)
-                else:
-                    adv_input=adv_generator(args, input, target, model, att_eps, 8, att_step, random_start=True, use_best=False)
+                adv_input=adv_generator(args, input, target, model, att_eps, 8, att_step, random_start=True, use_best=False)
                 with torch.no_grad():
                     with amp_autocast():
                         adv_output = model(adv_input)
