@@ -10,6 +10,9 @@ from tqdm import tqdm
 import random
 import datetime
 import logging
+import numpy as np
+
+
 
 def n_batch_loader(loader, n=8):
     idx = list(range(len(loader)))
@@ -88,7 +91,9 @@ def autoattack_eval(checkpoint_path, batch_size=128, device="cuda",num_batches=5
     torch.backends.cudnn.benchmark = False
     torch.manual_seed(0)
     torch.cuda.manual_seed_all(0)
-
+    random.seed(0)
+    np.random.seed(0)
+    
     skip_auto, norm, eps = parse_attack_from_path(checkpoint_path)
 
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
@@ -101,13 +106,15 @@ def autoattack_eval(checkpoint_path, batch_size=128, device="cuda",num_batches=5
 
     model = NormalizeWrapper(model).to(device).eval()
 
-    loader = get_imagenet_raw_loader(batch_size=batch_size)
+    loader_clean = get_imagenet_raw_loader(batch_size=batch_size)
+    loader_attack = get_imagenet_raw_loader(batch_size=batch_size)
+
 
     # ---- Clean accuracy ----
     logger.info("Running clean evaluation...")
     correct, total = 0, 0
 
-    for x,y in tqdm(loader, desc=f"AA {norm} eps={eps}", ncols=100):
+    for x,y in tqdm(loader_clean, desc=f"AA {norm} eps={eps}", ncols=100):
 
         x,y = x.to(device), y.to(device)
         with torch.no_grad():
@@ -127,7 +134,7 @@ def autoattack_eval(checkpoint_path, batch_size=128, device="cuda",num_batches=5
     logger.info(f"Running AutoAttack on {num_batches} random batches ({norm}, eps={eps})...")
     robust_correct, robust_total = 0, 0
 
-    for x,y in n_batch_loader(loader, n=num_batches):
+    for x,y in n_batch_loader(loader_attack, n=num_batches):
         x,y = x.to(device), y.to(device)
         x_adv = adversary.run_standard_evaluation(x, y, bs=x.size(0))
 
@@ -154,22 +161,21 @@ if __name__ == "__main__":
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     logger = logging.getLogger(f"auto-attack_eval-{datetime.datetime.now().strftime('%Y-%m-%d')}")
-    models_path = "/mnt/data/robustness_models/madry/"
-    batch_size = 64
+    models_path = "/home/ashtomer/projects/ares/results/models"
+    batch_size = 32
     num_batches = 20
     results = {}
     for root, dirs, files in os.walk(models_path):
-        for filename in files:
-            if filename.endswith(".tar"):
-                ckpt = os.path.join(root, filename)
-                name = filename.replace(".tar","")
+        if "model_best.pth.tar" in files:
+            ckpt = os.path.join(root, "model_best.pth.tar")
+            name = os.path.basename(root)
 
-                logger.info(f"\n===== Evaluating {name} =====")
-                results[name] = autoattack_eval(ckpt, batch_size=batch_size, device="cuda", num_batches=num_batches, logger=logger, log_path=log_path)
+            logger.info(f"\n===== Evaluating {name} =====")
+            results[name] = autoattack_eval(ckpt, batch_size=batch_size, device="cuda", num_batches=num_batches, logger=logger, log_path=log_path)
 
-                # free attack memory
-                torch.cuda.empty_cache()
-                gc.collect()
+            # free attack memory
+            torch.cuda.empty_cache()
+            gc.collect()
     save_path = f"autoattack_results-{datetime.datetime.now().strftime('%Y-%m-%d')}.csv"
     save_csv(results, save_path)
     logger.info(f"Results saved to {save_path}")
