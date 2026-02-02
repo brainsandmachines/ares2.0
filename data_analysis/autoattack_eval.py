@@ -30,7 +30,7 @@ def save_csv(results_dict, filename):
         for model, (clean, robust) in results_dict.items():
             writer.writerow([model, clean, robust])
 
-def get_imagenet_raw_loader(batch_size=128, workers=8, path="/mnt/data/datasets/imagenet/val"):
+def get_imagenet_raw_loader(batch_size=128, workers=4, path="/storage/test/bml_group/tomerash/datasets/imagenet/val/"):
     tf = transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(224),
@@ -55,7 +55,7 @@ class NormalizeWrapper(torch.nn.Module):
 
 
 def parse_attack_from_path(checkpoint_path):
-    name = checkpoint_path.split("/")[-1].lower()
+    name = os.path.basename(os.path.dirname(checkpoint_path)).lower()
 
     # ---------- Baseline ----------
     if "baseline" in name:
@@ -93,6 +93,8 @@ def autoattack_eval(checkpoint_path, batch_size=128, device="cuda",num_batches=5
     torch.cuda.manual_seed_all(0)
     random.seed(0)
     np.random.seed(0)
+    print("Parsing attack from:", checkpoint_path)
+
     
     skip_auto, norm, eps = parse_attack_from_path(checkpoint_path)
 
@@ -106,8 +108,8 @@ def autoattack_eval(checkpoint_path, batch_size=128, device="cuda",num_batches=5
 
     model = NormalizeWrapper(model).to(device).eval()
 
-    loader_clean = get_imagenet_raw_loader(batch_size=batch_size)
-    loader_attack = get_imagenet_raw_loader(batch_size=batch_size)
+    loader_clean = get_imagenet_raw_loader(batch_size=batch_size, workers=4)
+    loader_attack = get_imagenet_raw_loader(batch_size=batch_size, workers=4)
 
 
     # ---- Clean accuracy ----
@@ -153,7 +155,9 @@ def autoattack_eval(checkpoint_path, batch_size=128, device="cuda",num_batches=5
 
 
 if __name__ == "__main__":
-    log_path = f"/home/tomer_a/Documents/project/ares/data_analysis/logs/autoattack_eval-{datetime.datetime.now().strftime('%Y-%m-%d')}.log"
+    log_path = f"/home/ashtomer/projects/ares/data_analysis/logs/autoattack_eval-{datetime.datetime.now().strftime('%Y-%m-%d')}.log"
+    # Ensure the logs directory exists
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
     logging.basicConfig(
     level=logging.INFO,
     filename=log_path,
