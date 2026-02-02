@@ -3,7 +3,7 @@ distributed: False
 
 # amp parameters
 apex_amp: False
-native_amp: True  
+native_amp: True
 
 # model parameters
 model: convnext_small
@@ -53,9 +53,9 @@ patience_epochs: 0
 decay_rate: 0.1
 
 # dataset parameters
-batch_size: 256
-train_dir: '/sise/4-year-ise-proj/bml_group/tomerash/datasets/imagenet/train'
-eval_dir: '/sise/4-year-ise-proj/bml_group/tomerash/datasets/imagenet/val'
+batch_size: 64
+train_dir: ''
+eval_dir: ''
 input_size: 224
 crop_pct: 0.875
 interpolation: bicubic
@@ -98,8 +98,7 @@ seed: 0
 log_interval: 50
 recovery_interval: 0
 num_workers: 6
-output_dir: '/home/ashtomer/projects/ares/results/argphraser_test'
-save_log: save_log.txt
+output_dir: ''
 eval_metric: top1
 pin_mem: True
 
