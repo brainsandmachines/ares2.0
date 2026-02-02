@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from typing import Dict, List
 
 import torch
-from timm.data import create_transform
+from torchvision.transforms import Compose, CenterCrop, Resize, ToTensor, Normalize
 from timm.models import create_model
 from torch.utils.data import DataLoader
 from torchvision import datasets
@@ -38,7 +38,7 @@ DEFAULT_LOG_PATH = "data_analysis/pgd_validation.log"
 # ---------------------------
 EPS_VALUES = [0.1, 0.5, 1, 2, 4, 8, 16]
 NORMS = ["linf", "l2"]
-LINF_DIVISOR = 255.2  # requested: linf eps = eps / 255.2
+LINF_DIVISOR = 255  # requested: linf eps = eps / 255
 DEFAULT_ATTACK_STEPS = 10
 DEFAULT_BATCH_SIZE = 64
 DEFAULT_NUM_WORKERS = 8
@@ -148,15 +148,13 @@ def infer_eval_args(ckpt: Dict) -> SimpleNamespace:
 
 
 def build_eval_loader(val_dir: str, eval_cfg: SimpleNamespace, batch_size: int, num_workers: int) -> DataLoader:
-    transform = create_transform(
-        input_size=eval_cfg.input_size,
-        is_training=False,
-        use_prefetcher=False,
-        interpolation=eval_cfg.interpolation,
-        mean=eval_cfg.mean,
-        std=eval_cfg.std,
-        crop_pct=eval_cfg.crop_pct,
-    )
+    transform = Compose([
+        CenterCrop(min(eval_cfg.input_size, eval_cfg.input_size)),  # Crop to square
+        Resize(eval_cfg.input_size),  # Resize to desired input size
+        ToTensor(),
+        Normalize(mean=eval_cfg.mean, std=eval_cfg.std),
+    ])
+
     ds = datasets.ImageFolder(root=val_dir, transform=transform)
     return DataLoader(
         ds,
