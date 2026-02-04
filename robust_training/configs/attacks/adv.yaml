@@ -1,9 +1,9 @@
 # Adversarial / attack related defaults
-advtrain: False
-attack_criterion: madryv # madry / trades
+advtrain: True
+attack_criterion: madry # madry / trades
 attack_norm: linf # l2 / linf / l1
 advprop: False
-attack_eps: 0.0
+attack_eps: 1.0
 attack_step: 1.0
 attack_it: 3
 bce_loss: False

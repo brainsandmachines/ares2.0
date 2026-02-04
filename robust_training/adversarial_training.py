@@ -42,10 +42,10 @@ def main(args):
     
     # normalize attack eps/step for linf (values historically stored as 0-255)
     if getattr(args, 'attack_norm', None) == 'linf':
-        if getattr(args, 'attack_eps', None) is not None:
-            args.attack_eps = float(args.attack_eps) / 255.0
-        if getattr(args, 'attack_step', None) is not None:
-            args.attack_step = float(args.attack_step) / 255.0
+        args.attack_eps = float(args.attack_eps) / 255.0
+    if getattr(args, 'attack_norm', None) == 'l1':
+        args.attack_eps = float(args.attack_eps) * 255.0/2
+    
     if args.rank == 0:
         experiment_name, group_name = _auto_experiment_name(args)
         args.output_dir = os.path.join(args.output_dir,experiment_name)

@@ -1,0 +1,7 @@
+  - L1: images (23503, 43078) → classes (470, 861) (within-class positions 3, 28)
+  - L2: images (5586, 48346) → classes (111, 966) (positions 36, 46)
+  - Linf: images (48520, 49017) → classes (970, 980) (positions 20, 17)
+
+    - L1: 2691.4233398438 between classes (470, 861)
+  - L2: 13.9871616364 between classes (111, 966)
+  - Linf: 0.3137254715 between classes (970, 980)
