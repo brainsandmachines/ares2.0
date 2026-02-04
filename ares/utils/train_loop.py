@@ -56,7 +56,10 @@ def train_one_epoch(
             if args.attack_criterion == 'madry':
                 input_advtrain = adv_generator(args, input, target, model, att_eps, att_it, att_step, random_start=False)
             elif args.attack_criterion == 'trades': 
-                input_advtrain = trades_adv_generator(args, input, model, att_eps, att_it, att_step, random_start=True)
+                trades_random_start = args.attack_norm != 'l1'
+                input_advtrain = trades_adv_generator(
+                    args, input, model, att_eps, att_it, att_step, random_start=trades_random_start
+                )
 
         # generate advprop input
         if args.advprop:
