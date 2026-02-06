@@ -19,7 +19,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", default=DEFAULT_OUT_DIR, help="Output plot root directory")
     parser.add_argument(
         "--x-col",
-        default="epsilon_eval",
+        default="epsilon_input",
         choices=["epsilon_eval", "epsilon_input"],
         help="X-axis epsilon column",
     )
@@ -27,12 +27,19 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _norm_order(norms):
+    preferred = ["linf", "l2", "l1"]
+    ordered = [n for n in preferred if n in norms]
+    ordered.extend([n for n in sorted(norms) if n not in ordered])
+    return ordered
+
+
 def save_combined_plot(df_model: pd.DataFrame, model_name: str, category: str, init: str, out_dir: str, x_col: str) -> str:
     out_path = Path(out_dir) / category / "combined" / f"init{init}" / f"{model_name}_combined.png"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     plt.figure(figsize=(8, 5))
-    for norm in ["linf", "l2"]:
+    for norm in _norm_order(df_model["attack_norm"].unique()):
         d = df_model[df_model["attack_norm"] == norm].sort_values(x_col)
         if d.empty:
             continue
@@ -87,7 +94,7 @@ def main() -> None:
         saved.append(save_combined_plot(dmodel, model_name, category, init, args.out_dir, args.x_col))
 
         if args.make_norm_plots:
-            for norm in ["linf", "l2"]:
+            for norm in _norm_order(dmodel["attack_norm"].unique()):
                 p = save_norm_plot(dmodel, model_name, category, init, norm, args.out_dir, args.x_col)
                 if p:
                     saved.append(p)

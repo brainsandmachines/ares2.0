@@ -211,4 +211,43 @@ def get_args_parser():
                         help='Experiment name for output directory. '
                              'If empty, auto = "<model>_eps<eps255>_<norm>".')
 
+    # final evaluation (AutoAttack + PGD sweep)
+    parser.add_argument('--final-eval', action='store_true', default=False,
+                        help='Run final evaluation after training (AutoAttack and/or PGD sweep)')
+    parser.add_argument('--final-eval-ckpt-name', default='model_best.pth.tar',
+                        help='Checkpoint filename under output_dir to evaluate')
+    parser.add_argument('--final-eval-autoattack', action='store_true', default=False,
+                        help='Run AutoAttack in final evaluation')
+    parser.add_argument('--final-eval-aa-batch-size', type=int, default=None,
+                        help='Batch size for AutoAttack evaluation (default: training batch_size)')
+    parser.add_argument('--final-eval-aa-norm', default=None, choices=['Linf', 'L2'],
+                        help='Override AutoAttack norm (requires --final-eval-aa-eps)')
+    parser.add_argument('--final-eval-aa-eps', type=float, default=None,
+                        help='Override AutoAttack epsilon (requires --final-eval-aa-norm)')
+    parser.add_argument('--final-eval-aa-max-batches', type=int, default=None,
+                        help='Limit AutoAttack to N batches (debug)')
+    parser.add_argument('--final-eval-pgd', action='store_true', default=False,
+                        help='Run PGD epsilon sweep in final evaluation')
+    parser.add_argument('--final-eval-pgd-eps', default='0.5,1,2,4,8,16',
+                        help='Comma-separated eps list for PGD sweep')
+    parser.add_argument('--final-eval-pgd-norms', default='linf,l2,l1',
+                        help='Comma-separated norms for PGD sweep (linf,l2,l1)')
+    parser.add_argument('--final-eval-pgd-attack-steps', type=int, default=10,
+                        help='PGD attack steps for sweep')
+    parser.add_argument('--final-eval-pgd-batch-size', type=int, default=None,
+                        help='Batch size for PGD sweep evaluation (default: training batch_size)')
+    parser.add_argument('--final-eval-pgd-max-batches', type=int, default=None,
+                        help='Limit PGD sweep to N batches (debug)')
+    parser.add_argument('--final-eval-plots', action='store_true', default=False,
+                        help='Generate accuracy-vs-epsilon plots for PGD sweep')
+    parser.add_argument('--final-eval-plot-x-col', default='epsilon_input',
+                        choices=['epsilon_input', 'epsilon_eval'],
+                        help='X-axis column for PGD plots')
+    parser.add_argument('--final-eval-out-dir', default='',
+                        help='Output directory for final evaluation (default: <output_dir>)')
+    parser.add_argument('--final-eval-val-dir', default='',
+                        help='Validation dir for final evaluation (default: eval-dir)')
+    parser.add_argument('--final-eval-num-workers', type=int, default=8,
+                        help='Num workers for final evaluation DataLoaders')
+
     return parser

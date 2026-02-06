@@ -24,3 +24,23 @@ output_dir: 'results/models'
 save_log: save_log.txt
 eval_metric: top1
 pin_mem: True
+
+# final evaluation (AutoAttack + PGD sweep)
+final_eval: True
+final_eval_ckpt_name: model_best.pth.tar
+final_eval_autoattack: False
+final_eval_aa_batch_size: null
+final_eval_aa_norm: null
+final_eval_aa_eps: null
+final_eval_aa_max_batches: null
+final_eval_pgd: True
+final_eval_pgd_eps: 0.5,1,2,4,8,16
+final_eval_pgd_norms: linf,l2,l1
+final_eval_pgd_attack_steps: 10
+final_eval_pgd_batch_size: null
+final_eval_pgd_max_batches: null
+final_eval_plots: False
+final_eval_plot_x_col: epsilon_input
+final_eval_out_dir: ''
+final_eval_val_dir: ''
+final_eval_num_workers: 8

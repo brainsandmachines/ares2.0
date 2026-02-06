@@ -36,9 +36,10 @@ DEFAULT_LOG_PATH = "data_analysis/pgd_validation.log"
 # ---------------------------
 # Experiment settings
 # ---------------------------
-EPS_VALUES = [0.1, 0.5, 1, 2, 4, 8, 16]
-NORMS = ["linf", "l2"]
+EPS_VALUES = [0.5, 1, 2, 4, 8, 16]
+NORMS = ["linf", "l2", "l1"]
 LINF_DIVISOR = 255  # requested: linf eps = eps / 255
+L1_MULTIPLIER = 255 / 2  # requested: l1 eps = eps * (255/2)
 DEFAULT_ATTACK_STEPS = 10
 DEFAULT_BATCH_SIZE = 64
 DEFAULT_NUM_WORKERS = 8
@@ -316,7 +317,12 @@ def main() -> None:
 
         for norm in NORMS:
             for eps_input in EPS_VALUES:
-                eps_eval = eps_input / LINF_DIVISOR if norm == "linf" else float(eps_input)
+                if norm == "linf":
+                    eps_eval = eps_input / LINF_DIVISOR
+                elif norm == "l1":
+                    eps_eval = float(eps_input) * L1_MULTIPLIER
+                else:
+                    eps_eval = float(eps_input)
                 v_args = make_validate_args(eval_cfg, norm, eps_eval, args.attack_steps)
 
                 metrics = validate(

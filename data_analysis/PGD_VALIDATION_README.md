@@ -11,8 +11,9 @@ Editable paths for cluster runs:
   - `DEFAULT_OUT_DIR`
 
 Requested epsilon setup:
-- `EPS_VALUES = [0.1, 0.5, 1, 2, 4, 8, 16]`
-- For Linf only: `epsilon_eval = epsilon_input / 255.2`
+- `EPS_VALUES = [0.5, 1, 2, 4, 8, 16]`
+- For Linf only: `epsilon_eval = epsilon_input / 255`
+- For L1 only: `epsilon_eval = epsilon_input * (255/2)`
 
 Run examples:
 ```bash
@@ -41,3 +42,17 @@ conda run -n contstim python data_analysis/plot_pgd_validation.py \
 Plot folder structure:
 - Combined: `data_analysis/plots/<category>/combined/init<init>/<model>_combined.png`
 - Single norm: `data_analysis/plots/<category>/<norm>/init<init>/<model>_<norm>.png`
+
+Final eval (standalone for existing checkpoints):
+```bash
+conda run -n contstim python data_analysis/final_eval.py \
+  --checkpoint /path/to/model_best.pth.tar \
+  --val-dir /mnt/data/datasets/imagenet/val \
+  --aa --pgd --plots \
+  --out-dir data_analysis/final_eval
+```
+
+Final eval (run at end of training):
+```
+--final-eval --final-eval-autoattack --final-eval-pgd --final-eval-plots
+```
