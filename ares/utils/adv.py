@@ -208,11 +208,11 @@ class L1Step(AttackerStep):
         """
         # Avoid division by zero
         g_flat = g.view(g.size(0), -1)
-        l1_norm = torch.norm(g_flat, p=1, dim=1, keepdim=True).view(-1, 1, 1, 1)
+        l2_norm = torch.norm(g_flat, p=2, dim=1, keepdim=True).view(-1, 1, 1, 1)
         
         # Normalized Gradient Ascent
         # This ensures the step size is effectively 'alpha'
-        grad_normalized = g / (l1_norm + 1e-10)
+        grad_normalized = g / (l2_norm + 1e-10)
         
         return x + grad_normalized * self.step_size
 
