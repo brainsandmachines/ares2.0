@@ -35,7 +35,7 @@ DEFAULT_OUT_DIR = "data_analysis/final_eval"
 DEFAULT_PGD_EPS = "0.5,1,2,4,8,16"
 DEFAULT_PGD_NORMS = "linf,l2,l1"
 DEFAULT_PGD_ATTACK_STEPS = 10
-DEFAULT_PGD_BATCH_SIZE = 64
+DEFAULT_PGD_BATCH_SIZE = 32
 DEFAULT_AA_BATCH_SIZE = 32
 DEFAULT_NUM_WORKERS = 8
 LINF_DIVISOR = 255.0
@@ -144,7 +144,7 @@ def parse_model_meta(checkpoint_name: str) -> Dict[str, str]:
     init_match = re.search(r"init[_-]?(\d+)", low)
     init = init_match.group(1) if init_match else "unknown"
 
-    train_norm_match = re.search(r"(^|[_\-])(linf|l2)($|[_\-])", low)
+    train_norm_match = re.search(r"(^|[_\-])(linf|l2|l1)($|[_\-])", low)
     train_norm = train_norm_match.group(2) if train_norm_match else "unknown"
 
     return {

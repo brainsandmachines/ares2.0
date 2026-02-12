@@ -83,10 +83,10 @@ def _auto_experiment_name(args):
                 raise ValueError(f"Unknown attack criterion: {args.attack_criterion}")
         elif args.attack_norm=="l1":
             if args.attack_criterion=="madry":
-                parts.append(f"l1_{args.attack_eps}")
+                parts.append(f"l1_{int(args.attack_eps/(255/2))}")
                 group_name = "l1_madry"
             elif args.attack_criterion=="trades":
-                parts.append(f"l1trades_{args.attack_eps}")
+                parts.append(f"l1trades_{int(args.attack_eps/(255/2))}")
                 group_name = "l1_trades"
             else:
                 raise ValueError(f"Unknown attack criterion: {args.attack_criterion}")
