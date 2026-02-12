@@ -131,9 +131,12 @@ def main(args):
         reg_loss_fn = DBP(eps=args.attack_eps, std=0.225)
         gradnorm_start_epoch = args.alpha_start_epoch
         gradnorm_stepper = GradNormFast(attack_eps=args.attack_eps)
-        if resume_epoch is not None:
-            gradnorm_start_epoch = resume_epoch
     _logger.info(f'GradNorm start: {gradnorm_start_epoch}')
+    _logger.info(
+        f"GradNorm alpha scaling: init={getattr(args, 'alpha_scale_init', 0.1)}, "
+        f"scale_epochs={getattr(args, 'alpha_scale_epochs', 9.0)}, "
+        f"max_reg_to_ce_ratio={getattr(args, 'gradnorm_max_reg_to_ce_ratio', 3.0)}"
+    )
     _logger.info(f'Reg losses: {str(reg_loss_fn)}')
     
     if args.attack_criterion == 'trades' and args.advtrain:

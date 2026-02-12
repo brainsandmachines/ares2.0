@@ -45,17 +45,29 @@ class DBP(nn.Module):
         batch_size = gradients.shape[0]
         return self.eps*batch_size*gradients.abs().sum((-3, -2, -1)).mean()
     
-def compute_gradnorm_alpha(epoch, batch_idx, loader_len, start_epoch):
+def compute_gradnorm_alpha(
+    epoch,
+    batch_idx,
+    loader_len,
+    start_epoch,
+    scale_epochs=9.0,
+    alpha_init=0.1,
+):
     # progress since GradNorm started, measured in epochs
-    t = (epoch - start_epoch) + batch_idx / loader_len
+    t = (epoch - start_epoch) + batch_idx / max(loader_len, 1)
 
     if t < 0:
         return 0.0
 
-    # increase by 0.1 per epoch
-    alpha = 0.1 * (t + 1.0)
+    # Scale only in the beginning, then use unscaled alpha (=1.0).
+    if scale_epochs <= 0:
+        return 1.0
+    if t >= scale_epochs:
+        return 1.0
 
-    return min(alpha, 1.0)
+    progress = t / scale_epochs
+    alpha = alpha_init + (1.0 - alpha_init) * progress
+    return min(max(alpha, 0.0), 1.0)
 
 
 # --- Global Optimization Flags ---

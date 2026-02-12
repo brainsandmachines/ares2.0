@@ -22,3 +22,6 @@ ce_weight: 0.8
 gradnorm_weight: 1.2
 alpha: [0.0, 0.2, 1.0]
 alpha_start_epoch: 0
+alpha_scale_init: 0.1
+alpha_scale_epochs: 9
+gradnorm_max_reg_to_ce_ratio: 3.0

@@ -86,8 +86,9 @@ def test_loss_equivalence():
 
     # Check equivalence
     assert gradnorm >= ce_loss, f"GradNorm loss {gradnorm} is less than CrossEntropy loss {ce_loss}"
-    assert torch.isclose(gradnorm, ce_loss + gradnorm_loss.eps * dbp, atol=1e-6), (
-        f"GradNorm loss {gradnorm} does not match CE + eps * DBP ({ce_loss + gradnorm_loss.eps * dbp})"
+    expected = ce_loss + (dbp / batch_size)
+    assert torch.isclose(gradnorm, expected, atol=1e-6), (
+        f"GradNorm loss {gradnorm} does not match CE + DBP/batch_size ({expected})"
     )
 
     print("All loss functions produce equivalent results.")
@@ -106,7 +107,7 @@ def test_loss_combination():
 
     # Create a sample batch
     batch_size = 8
-    inputs = torch.randn(batch_size, 10)
+    inputs = torch.randn(batch_size, 10, requires_grad=True)
     targets = torch.randint(0, 3, (batch_size,))
 
     # Define the loss functions
@@ -128,7 +129,7 @@ def test_loss_combination():
     dbp = dbp_loss(gradients, inputs)
 
     # Check equivalence
-    combined_loss = ce_loss + gradnorm_loss.eps * dbp
+    combined_loss = ce_loss + (dbp / batch_size)
     assert torch.isclose(combined_loss, gradnorm, atol=1e-6), (
         f"Combined loss (CE + eps * DBP) {combined_loss} does not match GradNorm loss {gradnorm}"
     )

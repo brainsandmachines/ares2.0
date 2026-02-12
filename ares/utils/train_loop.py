@@ -93,14 +93,40 @@ def train_one_epoch(
                 ce_loss = loss_fn(output, target)
                 
                 gradient = torch.autograd.grad(ce_loss, input, create_graph=True, retain_graph=True)[0]
-                alpha = compute_gradnorm_alpha(epoch, batch_idx, len(loader), gradnorm_start_epoch)
-                loss_reg = reg_loss_fn(gradient, input)* alpha
+                alpha = compute_gradnorm_alpha(
+                    epoch,
+                    batch_idx,
+                    len(loader),
+                    gradnorm_start_epoch,
+                    getattr(args, 'alpha_scale_epochs', 9.0),
+                    getattr(args, 'alpha_scale_init', 0.1),
+                )
+                raw_reg = reg_loss_fn(gradient, input) * alpha
+
+                # Keep GradNorm regularization bounded relative to CE to avoid instability/NaNs.
+                max_ratio = float(getattr(args, 'gradnorm_max_reg_to_ce_ratio', 3.0))
+                if max_ratio > 0:
+                    reg_cap = ce_loss.detach() * max_ratio
+                    if raw_reg.detach() > reg_cap:
+                        scale = (reg_cap / (raw_reg.detach() + 1e-12)).clamp(max=1.0)
+                        loss_reg = raw_reg * scale
+                    else:
+                        loss_reg = raw_reg
+                else:
+                    loss_reg = raw_reg
                 loss = ce_loss + loss_reg
             else:
                 output = model(input)
                 loss = loss_fn(output, target)
         # debugging NaN/Inf in loss
-        assert torch.isfinite(loss).all(), "Loss is NaN or Inf"
+        if not torch.isfinite(loss).all():
+            if args.gradnorm:
+                raise ValueError(
+                    f"Loss is NaN/Inf. ce_loss={ce_loss.detach().item():.6g}, "
+                    f"reg_loss={loss_reg.detach().item():.6g}, alpha={alpha:.4f}, "
+                    f"epoch={epoch}, batch_idx={batch_idx}"
+                )
+            raise ValueError(f"Loss is NaN/Inf at epoch={epoch}, batch_idx={batch_idx}")
 
         if not args.distributed:
             losses_m.update(loss.item(), input.size(0))
@@ -158,6 +184,15 @@ def train_one_epoch(
                 rate_avg=input.size(0) * args.world_size / batch_time_m.avg,
                 lr=lr,
                 data_time=data_time_m))
+            if args.gradnorm:
+                ce_val = ce_loss.detach().item()
+                reg_val = loss_reg.detach().item()
+                ratio = reg_val / max(ce_val, 1e-12)
+                _logger.info(
+                    'GradNorm: alpha={:.4f} ce={:.6g} reg={:.6g} reg/ce={:.4f}'.format(
+                        alpha, ce_val, reg_val, ratio
+                    )
+                )
 
         # save checkpoint
         if saver is not None and args.recovery_interval and (

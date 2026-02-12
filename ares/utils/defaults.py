@@ -205,6 +205,10 @@ def get_args_parser():
     parser.add_argument('--attack-step', type=float, default=8.0/3, help='attack epsilon.')
     parser.add_argument('--attack-it', type=int, default=3, help='attack iteration')
     parser.add_argument('--attack-norm',type=str, default='linf',choices=['linf','l2'], help='norm used for adversarial training step')
+    parser.add_argument('--alpha-start-epoch', type=int, default=0, help='epoch to start gradnorm objective')
+    parser.add_argument('--alpha-scale-init', type=float, default=0.1, help='initial gradnorm alpha during scaling phase')
+    parser.add_argument('--alpha-scale-epochs', type=float, default=9.0, help='number of early epochs to scale gradnorm alpha before fixing alpha=1.0')
+    parser.add_argument('--gradnorm-max-reg-to-ce-ratio', type=float, default=3.0, help='caps gradnorm regularization relative to CE loss; <=0 disables cap')
     # advprop
     parser.add_argument('--advprop', default=False, help='if use advprop')
     parser.add_argument('--experiment', default='', type=str,
