@@ -39,7 +39,7 @@ final_eval_pgd_norms: linf,l2,l1
 final_eval_pgd_attack_steps: 10
 final_eval_pgd_batch_size: null
 final_eval_pgd_max_batches: null
-final_eval_plots: False
+final_eval_plots: True
 final_eval_plot_x_col: epsilon_input
 final_eval_out_dir: ''
 final_eval_val_dir: ''
