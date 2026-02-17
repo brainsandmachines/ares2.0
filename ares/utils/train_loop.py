@@ -17,7 +17,7 @@ from ares.utils.gradnorm import compute_gradnorm_alpha
 def train_one_epoch(
         epoch, model, loader, optimizer, loss_fn, args,
         reg_loss_fn=None, lr_scheduler=None, saver=None, amp_autocast=None,
-        loss_scaler=None, model_ema=None, _logger=None,gradnorm_start_epoch=0, gradnorm_stepper=None):
+        loss_scaler=None, model_ema=None, _logger=None,gradnorm_start_epoch=0):
     
     # statistical variables
     second_order = hasattr(optimizer, 'is_second_order') and optimizer.is_second_order
@@ -101,19 +101,8 @@ def train_one_epoch(
                     getattr(args, 'alpha_scale_epochs', 9.0),
                     getattr(args, 'alpha_scale_init', 0.1),
                 )
-                raw_reg = reg_loss_fn(gradient, input) * alpha
+                loss_reg = reg_loss_fn(gradient, input) * alpha
 
-                # Keep GradNorm regularization bounded relative to CE to avoid instability/NaNs.
-                max_ratio = float(getattr(args, 'gradnorm_max_reg_to_ce_ratio', 3.0))
-                if max_ratio > 0:
-                    reg_cap = ce_loss.detach() * max_ratio
-                    if raw_reg.detach() > reg_cap:
-                        scale = (reg_cap / (raw_reg.detach() + 1e-12)).clamp(max=1.0)
-                        loss_reg = raw_reg * scale
-                    else:
-                        loss_reg = raw_reg
-                else:
-                    loss_reg = raw_reg
                 loss = ce_loss + loss_reg
             else:
                 output = model(input)

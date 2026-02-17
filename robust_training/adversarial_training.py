@@ -126,11 +126,9 @@ def main(args):
     # setup gradnorm regularization loss function
     reg_loss_fn = None
     gradnorm_start_epoch = args.epochs  # default: never start
-    gradnorm_stepper = None
     if args.gradnorm:
         reg_loss_fn = DBP(eps=args.attack_eps, std=0.225)
         gradnorm_start_epoch = args.alpha_start_epoch
-        gradnorm_stepper = GradNormFast(attack_eps=args.attack_eps)
     _logger.info(f'GradNorm start: {gradnorm_start_epoch}')
     _logger.info(
         f"GradNorm alpha scaling: init={getattr(args, 'alpha_scale_init', 0.1)}, "
@@ -221,7 +219,7 @@ def main(args):
         train_metrics = train_one_epoch(
             epoch, model, loader_train, optimizer, train_loss_fn, args,reg_loss_fn=reg_loss_fn,
             lr_scheduler=lr_scheduler, saver=saver, amp_autocast=amp_autocast,
-            loss_scaler=loss_scaler, model_ema=model_ema, _logger=_logger,gradnorm_start_epoch=gradnorm_start_epoch, gradnorm_stepper=gradnorm_stepper)
+            loss_scaler=loss_scaler, model_ema=model_ema, _logger=_logger,gradnorm_start_epoch=gradnorm_start_epoch)
 
         # distributed bn sync
         if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
