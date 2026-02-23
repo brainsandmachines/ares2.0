@@ -23,7 +23,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from ares.utils.validate import validate
-from data_analysis.plot_pgd_validation import save_combined_plot, save_norm_plot
+from data_analysis.plot_pgd_validation import save_norm_plot
 
 try:
     from autoattack import AutoAttack
@@ -82,7 +82,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pgd-max-batches", type=int, default=None)
 
     parser.add_argument("--plots", action="store_true", help="Generate accuracy-vs-epsilon plots")
-    parser.add_argument("--plot-x-col", default="epsilon_input", choices=["epsilon_input", "epsilon_eval"])
+    parser.add_argument("--plot-x-col", default="pgd_constrained_eps", choices=["pgd_constrained_eps", "epsilon_input", "epsilon_eval"])
 
     parser.add_argument("--self-test", action="store_true", help="Run lightweight parser tests only")
     return parser.parse_args()
@@ -618,9 +618,7 @@ def run_final_evaluation(
                 df_model = pd.DataFrame(rows)
                 category = str(df_model["category"].iloc[0])
                 init = str(df_model["init"].iloc[0])
-
-                saved.append(save_combined_plot(df_model, model_name, category, init, plot_dir, plot_x_col))
-                for norm in ["linf", "l2"]:
+                for norm in ["linf", "l2", "l1"]:
                     p = save_norm_plot(df_model, model_name, category, init, norm, plot_dir, plot_x_col)
                     if p:
                         saved.append(p)
