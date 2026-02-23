@@ -342,7 +342,7 @@ def _maybe_run_final_eval(args, output_dir, _logger):
             pgd_attack_steps=int(getattr(args, "final_eval_pgd_attack_steps", 10)),
             pgd_max_batches=getattr(args, "final_eval_pgd_max_batches", None),
             plots=bool(getattr(args, "final_eval_plots", False)),
-            plot_x_col=getattr(args, "final_eval_plot_x_col", "epsilon_input"),
+            plot_x_col=getattr(args, "final_eval_plot_x_col", "pgd_constrained_eps"),
             num_workers=int(getattr(args, "final_eval_num_workers", 8)),
         )
     except Exception as exc:

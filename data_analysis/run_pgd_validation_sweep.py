@@ -119,7 +119,7 @@ def parse_model_meta(checkpoint_name: str) -> Dict[str, str]:
     init_match = re.search(r"init[_-]?(\d+)", low)
     init = init_match.group(1) if init_match else "unknown"
 
-    train_norm_match = re.search(r"(^|[_\-])(linf|l2)($|[_\-])", low)
+    train_norm_match = re.search(r"(^|[_\-])(linf|l2|l1)($|[_\-])", low)
     train_norm = train_norm_match.group(2) if train_norm_match else "unknown"
 
     return {
