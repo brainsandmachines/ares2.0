@@ -14,18 +14,19 @@ import wandb
 from timm.models import resume_checkpoint, load_checkpoint
 from timm.scheduler import create_scheduler_v2, scheduler_kwargs
 from timm.optim import create_optimizer_v2, optimizer_kwargs
-from timm.utils import ModelEmaV2, distribute_bn, get_outdir, CheckpointSaver, update_summary
+from timm.utils import ModelEmaV2, distribute_bn, CheckpointSaver, update_summary
 
 # robust training functions
 from ares.utils.dist import distributed_init, random_seed
 from ares.utils.logger import setup_logger , _auto_experiment_name
 from ares.utils.model import build_model
 from ares.utils.loss import build_loss, resolve_amp, build_loss_scaler
-from ares.utils.gradnorm import DBP ,GradNormFast
+from ares.utils.gradnorm import DBP 
 from ares.utils.dataset import build_dataset
 from ares.utils.defaults import get_args_parser
 from ares.utils.train_loop import train_one_epoch
 from ares.utils.validate import validate
+from ares.utils.final_eval_helpers import _maybe_run_final_eval
 
 from job_manager.model_scheduler import Model_scheduler
 
@@ -200,6 +201,8 @@ def main(args):
         with open(os.path.join(output_dir, 'args.yaml'), 'w') as f:
             f.write(args_text)
 
+    did_train_this_run = start_epoch < args.epochs
+
     # start training
     _logger.info(f"Start training for {args.epochs-start_epoch} epochs")
     _logger.info(f"gradclip: {args.clip_grad}")
@@ -276,77 +279,7 @@ def main(args):
         _logger.info('*** Best metric: {0} (epoch {1})'.format(best_metric, best_epoch))
 
     if args.rank == 0:
-        _maybe_run_final_eval(args, output_dir, _logger)
-
-
-def _parse_csv_list(value):
-    if value is None:
-        return []
-    return [v.strip() for v in str(value).split(",") if v.strip()]
-
-
-def _parse_float_list(value):
-    return [float(v) for v in _parse_csv_list(value)]
-
-
-def _maybe_run_final_eval(args, output_dir, _logger):
-    if not getattr(args, "final_eval", False):
-        return
-
-    if not (getattr(args, "final_eval_autoattack", False) or getattr(args, "final_eval_pgd", False)):
-        _logger.warning("Final eval enabled but no eval type selected. Use --final-eval-autoattack and/or --final-eval-pgd.")
-        return
-
-    ckpt_name = getattr(args, "final_eval_ckpt_name", "model_best.pth.tar")
-    ckpt_path = os.path.join(output_dir, ckpt_name)
-    if not os.path.exists(ckpt_path):
-        _logger.error("Final eval checkpoint not found: %s", ckpt_path)
-        return
-
-    val_dir = getattr(args, "final_eval_val_dir", "") or getattr(args, "eval_dir", "")
-    if not val_dir:
-        _logger.error("Final eval requires --eval-dir or --final-eval-val-dir.")
-        return
-
-    out_dir = getattr(args, "final_eval_out_dir", "") or output_dir
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    if device == "cpu":
-        _logger.error("Final eval requires CUDA (validate() uses .cuda()).")
-        return
-
-    try:
-        from data_analysis.final_eval import run_final_evaluation
-    except Exception as exc:
-        _logger.exception("Failed to import final evaluation runner: %s", exc)
-        return
-
-    try:
-        aa_bs = getattr(args, "final_eval_aa_batch_size", None) or getattr(args, "batch_size", 64)
-        pgd_bs = getattr(args, "final_eval_pgd_batch_size", None) or getattr(args, "batch_size", 64)
-
-        run_final_evaluation(
-            checkpoint_path=ckpt_path,
-            models_dir=None,
-            val_dir=val_dir,
-            device=device,
-            out_dir=out_dir,
-            aa=bool(getattr(args, "final_eval_autoattack", False)),
-            pgd=bool(getattr(args, "final_eval_pgd", False)),
-            aa_batch_size=int(aa_bs),
-            aa_norm=getattr(args, "final_eval_aa_norm", None),
-            aa_eps=getattr(args, "final_eval_aa_eps", None),
-            aa_max_batches=getattr(args, "final_eval_aa_max_batches", None),
-            pgd_batch_size=int(pgd_bs),
-            pgd_eps=_parse_float_list(getattr(args, "final_eval_pgd_eps", "0.5,1,2,4,8,16")),
-            pgd_norms=_parse_csv_list(getattr(args, "final_eval_pgd_norms", "linf,l2,l1")),
-            pgd_attack_steps=int(getattr(args, "final_eval_pgd_attack_steps", 10)),
-            pgd_max_batches=getattr(args, "final_eval_pgd_max_batches", None),
-            plots=bool(getattr(args, "final_eval_plots", False)),
-            plot_x_col=getattr(args, "final_eval_plot_x_col", "pgd_constrained_eps"),
-            num_workers=int(getattr(args, "final_eval_num_workers", 8)),
-        )
-    except Exception as exc:
-        _logger.exception("Final eval failed: %s", exc)
+        _maybe_run_final_eval(args, output_dir, _logger, did_train_this_run)
 
 
 
