@@ -45,6 +45,6 @@ final_eval_skip_if_complete: True
 final_eval_require_train_this_run: False
 final_eval_plots: True
 final_eval_plot_x_col: pgd_constrained_eps
-final_eval_out_dir: ''
+final_eval_out_dir: pgd_eval
 final_eval_val_dir: ''
 final_eval_num_workers: 8

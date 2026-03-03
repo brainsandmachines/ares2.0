@@ -1,10 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=PGD_eval_gradnorm
+#SBATCH --job-name=PGD_eval_trades
 #SBATCH --time=7-00:00:00
 #SBATCH --partition=rtx_3090
 #SBATCH --gpus=1
+#SBATCH --dependency=afterany:15253678
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
-#SBATCH --array=0-3%4
+#SBATCH --array=0-13%8
 #SBATCH --output=/home/ashtomer/projects/ares/outs/PGD_eval/%A/%a.out
 
 set -euo pipefail
@@ -17,14 +18,23 @@ source activate tomer_train
 cd /home/ashtomer/projects/ares
 
 # =========================
-# Fixed sweep: selected gradnorm models only
+# Fixed sweep: Madry models (from check_models_status.py) that reached >=199
 # =========================
 MODELS_ROOT="/home/ashtomer/projects/ares/results/models"
 TARGET_MODELS=(
-  "convnext_small_gradnorm_1_init1"
-  "convnext_small_gradnorm_1_init2"
-  "convnext_small_gradnorm_2_init1"
-  "convnext_small_gradnorm_2_init2"
+  "convnext_small_l2trades_2_init1"
+  "convnext_small_l2trades_2_init2"
+  "convnext_small_l2trades_4_init1"
+  "convnext_small_l2trades_4_init2"
+  "convnext_small_l2trades_8_init1"
+  "convnext_small_l2trades_8_init2"
+  "convnext_small_linftrades_1_init1"
+  "convnext_small_linftrades_1_init2"
+  "convnext_small_linftrades_2_init1"
+  "convnext_small_linftrades_2_init2"
+  "convnext_small_linftrades_4_init1"
+  "convnext_small_linftrades_8_init1"
+  "convnext_small_linftrades_8_init2"
 )
 NUM_MODELS=${#TARGET_MODELS[@]}
 
