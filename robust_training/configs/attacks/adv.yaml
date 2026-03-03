@@ -6,6 +6,7 @@ advprop: False
 attack_eps: 1.0
 attack_step: 1.0
 attack_it: 3
+attack_random_start: True # only used for validation
 bce_loss: False
 
 random_start: False
