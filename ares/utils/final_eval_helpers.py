@@ -181,7 +181,13 @@ def _maybe_run_final_eval(args, output_dir, _logger, did_train_this_run=True):
         _logger.error("Final eval requires --eval-dir or --final-eval-val-dir.")
         return
 
-    out_dir = getattr(args, "final_eval_out_dir", "") or output_dir
+    configured_out_dir = str(getattr(args, "final_eval_out_dir", "") or "").strip()
+    if configured_out_dir:
+        # Relative final_eval_out_dir should live under the model output dir.
+        out_dir = configured_out_dir if os.path.isabs(configured_out_dir) else os.path.join(output_dir, configured_out_dir)
+    else:
+        out_dir = output_dir
+    os.makedirs(out_dir, exist_ok=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     if device == "cpu":
         _logger.error("Final eval requires CUDA (validate() uses .cuda()).")
