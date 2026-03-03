@@ -4,6 +4,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 
@@ -64,6 +65,13 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         dest="make_pair_plots",
         help="Disable per-pair plots",
+    )
+    parser.add_argument("--make-heatmap-grid", action="store_true", default=True, help="Save 3x3 heatmap grid of accuracy")
+    parser.add_argument(
+        "--no-make-heatmap-grid",
+        action="store_false",
+        dest="make_heatmap_grid",
+        help="Disable 3x3 heatmap grid",
     )
     return parser.parse_args()
 
@@ -179,11 +187,24 @@ def _extract_model_dir_from_row(row: pd.Series) -> str:
     return "unknown_model"
 
 
+def _model_dir_from_csv_path(csv_path: Path) -> str:
+    # Supports both:
+    # 1) <model_dir>/pgd_eval/pgd_validation_results.csv
+    # 2) <model_dir>/pgd_validation_results.csv
+    if csv_path.parent.name == "pgd_eval":
+        return csv_path.parent.parent.name
+    return csv_path.parent.name
+
+
 def _discover_csvs(models_dir: str, filter_madry_only: bool) -> List[Path]:
     root = Path(models_dir)
-    csvs = sorted(root.glob("*/pgd_eval/pgd_validation_results.csv"))
+    csvs = list(root.glob("*/pgd_eval/pgd_validation_results.csv"))
+    csvs.extend(root.glob("*/pgd_validation_results.csv"))
+    # Deduplicate in case a model has both paths.
+    csvs = sorted({p.resolve() for p in csvs})
+    csvs = [Path(p) for p in csvs]
     if filter_madry_only:
-        csvs = [p for p in csvs if _is_madry_dir(p.parent.parent.name)]
+        csvs = [p for p in csvs if _is_madry_dir(_model_dir_from_csv_path(p))]
     return csvs
 
 
@@ -199,7 +220,7 @@ def _load_dataframe(args: argparse.Namespace) -> pd.DataFrame:
             if d.empty:
                 continue
             d["_source_csv"] = str(p)
-            d["_model_dir_name"] = p.parent.parent.name
+            d["_model_dir_name"] = _model_dir_from_csv_path(p)
             frames.append(d)
 
         if not frames:
@@ -274,6 +295,121 @@ def _build_norm_ticks(df: pd.DataFrame, x_col: str) -> Dict[str, List[float]]:
     return ticks
 
 
+def _format_tick_labels(values: List[object], norm: str) -> List[str]:
+    labels = []
+    for v in values:
+        if isinstance(v, str):
+            labels.append(v)
+        else:
+            labels.append(_tick_label_for_norm(float(v), norm))
+    return labels
+
+
+def _build_heatmap_pivot(dpair: pd.DataFrame) -> pd.DataFrame:
+    pivot = dpair.pivot_table(
+        index="pgd_constrained_eps",
+        columns="train_eps_constrained",
+        values="adv_top1",
+        aggfunc="mean",
+    )
+    return pivot.sort_index(axis=0).sort_index(axis=1)
+
+
+def _build_heatmap_with_clean_row(dpair: pd.DataFrame, train_norm: str, attack_norm: str):
+    pivot = _build_heatmap_pivot(dpair)
+    if pivot.empty:
+        return None, None, None
+
+    clean_by_train = (
+        dpair.groupby("train_eps_constrained", dropna=True)["clean_top1"]
+        .mean()
+        .reindex(pivot.columns)
+    )
+
+    data = np.vstack([clean_by_train.to_numpy(dtype=float), pivot.to_numpy(dtype=float)])
+    xlabels = _format_tick_labels(pivot.columns.tolist(), train_norm)
+    ylabels = ["clean"] + _format_tick_labels([float(v) for v in pivot.index.tolist()], attack_norm)
+    return data, xlabels, ylabels
+
+
+def _render_heatmap(ax, data: np.ndarray, xlabels: List[str], ylabels: List[str]):
+    im = ax.imshow(data, origin="lower", aspect="auto", cmap="turbo", vmin=0, vmax=100)
+
+    xticks = list(range(len(xlabels)))
+    yticks = list(range(len(ylabels)))
+    ax.set_xticks(xticks)
+    ax.set_yticks(yticks)
+
+    ax.set_xticklabels(xlabels, rotation=45, ha="right")
+    ax.set_yticklabels(ylabels)
+
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            val = float(data[i, j])
+            if np.isnan(val):
+                continue
+            txt_color = "white" if val < 20.0 else "black"
+            ax.text(j, i, f"{val:.1f}%", ha="center", va="center", color=txt_color, fontsize=7)
+    return im
+
+
+def save_heatmap_matrix_plot(df: pd.DataFrame, out_dir: str, madry_only: bool, subset_tag: str = "") -> str:
+    sub = "madry" if madry_only else "all"
+    if subset_tag:
+        out_path = Path(out_dir) / sub / "norm_matrix" / "by_init" / subset_tag / "pgd_train_eval_eps_heatmap_3x3.png"
+    else:
+        out_path = Path(out_dir) / sub / "norm_matrix" / "pgd_train_eval_eps_heatmap_3x3.png"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    d = df.copy()
+    d["train_eps_constrained"] = [
+        _compute_pgd_constrained_eps(eps_input=e, attack_norm=n) if pd.notna(e) else float("nan")
+        for e, n in zip(d["train_eps"], d["train_norm"])
+    ]
+
+    fig, axes = plt.subplots(3, 3, figsize=(18, 14), sharex=False, sharey=False, constrained_layout=True)
+    im = None
+
+    for row, attack_norm in enumerate(NORM_ORDER):
+        for col, train_norm in enumerate(NORM_ORDER):
+            ax = axes[row, col]
+            dpair = d[(d["train_norm"] == train_norm) & (d["attack_norm"] == attack_norm)].copy()
+            ax.set_title(f"trained on: {train_norm} eval on: {attack_norm}")
+
+            if dpair.empty:
+                ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+                if row == len(NORM_ORDER) - 1:
+                    ax.set_xlabel("Trained constrained eps")
+                if col == 0:
+                    ax.set_ylabel("Evaluated constrained eps")
+                continue
+
+            data, xlabels, ylabels = _build_heatmap_with_clean_row(dpair, train_norm, attack_norm)
+            if data is None:
+                ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+                if row == len(NORM_ORDER) - 1:
+                    ax.set_xlabel("Trained constrained eps")
+                if col == 0:
+                    ax.set_ylabel("Evaluated constrained eps")
+                continue
+
+            im = _render_heatmap(ax, data, xlabels, ylabels)
+
+            if row == len(NORM_ORDER) - 1:
+                ax.set_xlabel("Trained constrained eps")
+            if col == 0:
+                ax.set_ylabel("Evaluated constrained eps")
+
+    if im is not None:
+        cbar = fig.colorbar(im, ax=axes, location="right", shrink=0.92, pad=0.02)
+        cbar.set_label("Adv Top-1 Accuracy (%)")
+
+    fig.suptitle("PGD Accuracy Heatmap Matrix (rows=eval norm, cols=train norm)", fontsize=14)
+    fig.savefig(out_path)
+    plt.close(fig)
+    return str(out_path)
+
+
 def _plot_pair_subplot(ax, dpair: pd.DataFrame, train_norm: str, attack_norm: str, x_col: str, xticks: List[float]) -> None:
     ax.set_title(f"train={train_norm}, eval={attack_norm}")
 
@@ -321,9 +457,12 @@ def _plot_pair_subplot(ax, dpair: pd.DataFrame, train_norm: str, attack_norm: st
     ax.legend(fontsize=8)
 
 
-def save_norm_matrix_plot(df: pd.DataFrame, out_dir: str, x_col: str, madry_only: bool) -> str:
+def save_norm_matrix_plot(df: pd.DataFrame, out_dir: str, x_col: str, madry_only: bool, subset_tag: str = "") -> str:
     sub = "madry" if madry_only else "all"
-    out_path = Path(out_dir) / sub / "norm_matrix" / "pgd_train_vs_eval_3x3.png"
+    if subset_tag:
+        out_path = Path(out_dir) / sub / "norm_matrix" / "by_init" / subset_tag / "pgd_train_vs_eval_3x3.png"
+    else:
+        out_path = Path(out_dir) / sub / "norm_matrix" / "pgd_train_vs_eval_3x3.png"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     norm_ticks = _build_norm_ticks(df, x_col)
@@ -347,18 +486,42 @@ def save_norm_matrix_plot(df: pd.DataFrame, out_dir: str, x_col: str, madry_only
     return str(out_path)
 
 
-def save_pair_plot(df: pd.DataFrame, out_dir: str, x_col: str, train_norm: str, attack_norm: str, madry_only: bool) -> str:
+def save_pair_plot(
+    df: pd.DataFrame,
+    out_dir: str,
+    x_col: str,
+    train_norm: str,
+    attack_norm: str,
+    madry_only: bool,
+    subset_tag: str = "",
+) -> str:
     sub = "madry" if madry_only else "all"
-    out_path = Path(out_dir) / sub / "pairs" / f"train_{train_norm}__eval_{attack_norm}.png"
+    if subset_tag:
+        out_path = Path(out_dir) / sub / "pairs" / "by_init" / subset_tag / f"train_{train_norm}__eval_{attack_norm}.png"
+    else:
+        out_path = Path(out_dir) / sub / "pairs" / f"train_{train_norm}__eval_{attack_norm}.png"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    dpair = df[(df["train_norm"] == train_norm) & (df["attack_norm"] == attack_norm)]
-    ticks = _build_norm_ticks(df, x_col).get(attack_norm, [])
-
+    d = df.copy()
+    d["train_eps_constrained"] = [
+        _compute_pgd_constrained_eps(eps_input=e, attack_norm=n) if pd.notna(e) else float("nan")
+        for e, n in zip(d["train_eps"], d["train_norm"])
+    ]
+    dpair = d[(d["train_norm"] == train_norm) & (d["attack_norm"] == attack_norm)].copy()
     fig, ax = plt.subplots(figsize=(8, 5))
-    _plot_pair_subplot(ax, dpair, train_norm, attack_norm, x_col, ticks)
-    ax.set_xlabel("PGD constrained eps" if x_col == "pgd_constrained_eps" else x_col)
-    ax.set_ylabel("Top-1 Accuracy (%)")
+    ax.set_title(f"trained on: {train_norm} eval on: {attack_norm}")
+
+    if dpair.empty:
+        ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+    else:
+        data, xlabels, ylabels = _build_heatmap_with_clean_row(dpair, train_norm, attack_norm)
+        if data is None:
+            ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+        else:
+            _render_heatmap(ax, data, xlabels, ylabels)
+
+    ax.set_xlabel("Trained constrained eps")
+    ax.set_ylabel("Evaluated constrained eps")
     fig.tight_layout()
     fig.savefig(out_path)
     plt.close(fig)
@@ -471,6 +634,42 @@ def main() -> None:
             for train_norm in NORM_ORDER:
                 p = save_pair_plot(df, args.out_dir, args.x_col, train_norm, attack_norm, madry_only=args.filter_madry_only)
                 saved.append(p)
+
+    if args.make_heatmap_grid:
+        saved.append(save_heatmap_matrix_plot(df, args.out_dir, madry_only=args.filter_madry_only))
+
+    # Additional outputs per initialization (init1/init2/...) in addition to aggregated plots.
+    init_values = sorted(
+        {
+            str(v)
+            for v in df["init"].dropna().astype(str).tolist()
+            if str(v).strip().lower() not in ("", "unknown", "nan", "none")
+        },
+        key=lambda x: (not x.isdigit(), int(x) if x.isdigit() else x),
+    )
+    for init in init_values:
+        d_init = df[df["init"].astype(str) == init]
+        if d_init.empty:
+            continue
+        tag = f"init{init}"
+        if args.make_matrix_plot:
+            saved.append(save_norm_matrix_plot(d_init, args.out_dir, args.x_col, madry_only=args.filter_madry_only, subset_tag=tag))
+        if args.make_pair_plots:
+            for attack_norm in NORM_ORDER:
+                for train_norm in NORM_ORDER:
+                    saved.append(
+                        save_pair_plot(
+                            d_init,
+                            args.out_dir,
+                            args.x_col,
+                            train_norm,
+                            attack_norm,
+                            madry_only=args.filter_madry_only,
+                            subset_tag=tag,
+                        )
+                    )
+        if args.make_heatmap_grid:
+            saved.append(save_heatmap_matrix_plot(d_init, args.out_dir, madry_only=args.filter_madry_only, subset_tag=tag))
 
     print(f"Saved {len(saved)} plot(s).")
     print(f"Prepared CSV: {prepared_csv}")
