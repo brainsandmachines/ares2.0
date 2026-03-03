@@ -1,5 +1,6 @@
 import argparse
 import contextlib
+import csv
 import math
 import types
 
@@ -297,3 +298,76 @@ def test_maybe_run_final_eval_default_call(monkeypatch, tmp_path):
     assert kwargs["aa"] is False
     assert kwargs["pgd"] is True
     assert kwargs["plots"] is True
+
+
+def test_maybe_run_final_eval_skips_when_pgd_csv_is_in_pgd_eval_subdir(monkeypatch, tmp_path):
+    calls = []
+    fake_module = types.ModuleType("data_analysis.final_eval")
+
+    def _run_final_evaluation(**kwargs):
+        calls.append(kwargs)
+
+    fake_module.run_final_evaluation = _run_final_evaluation
+    monkeypatch.setitem(__import__("sys").modules, "data_analysis.final_eval", fake_module)
+    monkeypatch.setattr(advt.torch.cuda, "is_available", lambda: True)
+
+    class _Logger:
+        def info(self, *_a, **_k):
+            return None
+
+        def warning(self, *_a, **_k):
+            return None
+
+        def error(self, *_a, **_k):
+            return None
+
+        def exception(self, *_a, **_k):
+            return None
+
+    output_dir = tmp_path / "out"
+    pgd_eval_dir = output_dir / "pgd_eval"
+    pgd_eval_dir.mkdir(parents=True, exist_ok=True)
+    ckpt = output_dir / "model_best.pth.tar"
+    ckpt.write_bytes(b"x")
+
+    csv_path = pgd_eval_dir / "pgd_validation_results.csv"
+    with csv_path.open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["checkpoint_path", "attack_norm", "epsilon_input"])
+        w.writeheader()
+        for norm in ("linf", "l2", "l1"):
+            for eps in (0.5, 1, 2, 4, 8, 16):
+                w.writerow(
+                    {
+                        "checkpoint_path": str(ckpt),
+                        "attack_norm": norm,
+                        "epsilon_input": eps,
+                    }
+                )
+
+    args = argparse.Namespace(
+        final_eval=True,
+        final_eval_autoattack=False,
+        final_eval_pgd=True,
+        final_eval_ckpt_name="model_best.pth.tar",
+        final_eval_val_dir="",
+        eval_dir="/tmp/val",
+        final_eval_out_dir="",
+        final_eval_aa_batch_size=None,
+        batch_size=2,
+        final_eval_aa_norm=None,
+        final_eval_aa_eps=None,
+        final_eval_aa_max_batches=None,
+        final_eval_pgd_batch_size=None,
+        final_eval_pgd_eps="0.5,1,2,4,8,16",
+        final_eval_pgd_norms="linf,l2,l1",
+        final_eval_pgd_attack_steps=10,
+        final_eval_pgd_max_batches=None,
+        final_eval_plots=True,
+        final_eval_plot_x_col="epsilon_input",
+        final_eval_num_workers=8,
+        final_eval_skip_if_complete=True,
+    )
+
+    advt._maybe_run_final_eval(args, str(output_dir), _Logger())
+
+    assert len(calls) == 0
