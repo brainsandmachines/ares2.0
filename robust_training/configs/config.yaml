@@ -33,12 +33,16 @@ final_eval_aa_batch_size: null
 final_eval_aa_norm: null
 final_eval_aa_eps: null
 final_eval_aa_max_batches: null
+final_eval_aa_completion_csv: autoattack_results.csv
 final_eval_pgd: True
 final_eval_pgd_eps: 0.5,1,2,4,8,16
 final_eval_pgd_norms: linf,l2,l1
 final_eval_pgd_attack_steps: 10
 final_eval_pgd_batch_size: null
 final_eval_pgd_max_batches: null
+final_eval_pgd_completion_csv: pgd_validation_results.csv
+final_eval_skip_if_complete: True
+final_eval_require_train_this_run: False
 final_eval_plots: True
 final_eval_plot_x_col: pgd_constrained_eps
 final_eval_out_dir: ''
