@@ -60,9 +60,48 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
         # adv eval process
         if args.advtrain or args.gradnorm:
             if epoch > 0:
-                att_step = args.attack_step * min(epoch, 5)/5
+                # Keep training-time warmup by default; allow eval callers to opt out.
+                if getattr(args, "disable_attack_step_warmup", False):
+                    att_step = args.attack_step
+                else:
+                    att_step = args.attack_step * min(epoch, 5) / 5
                 att_eps=args.attack_eps
-                adv_input=adv_generator(args, input, target, model, att_eps, 8, att_step, random_start=True, use_best=False)
+                attack_steps = int(getattr(args, "attack_it", 8))
+                attack_restarts = int(getattr(args, "attack_restarts", 1))
+                # Validation defaults: deterministic init + keep best iterate.
+                attack_random_start = bool(getattr(args, "attack_random_start", False))
+                attack_use_best = bool(getattr(args, "attack_use_best", True))
+                attack_ce = torch.nn.CrossEntropyLoss(reduction='none')
+
+                best_adv_input = None
+                best_adv_loss = None
+                for _ in range(max(1, attack_restarts)):
+                    cand_adv = adv_generator(
+                        args,
+                        input,
+                        target,
+                        model,
+                        att_eps,
+                        attack_steps,
+                        att_step,
+                        random_start=attack_random_start,
+                        use_best=attack_use_best,
+                    )
+                    with torch.no_grad():
+                        with amp_autocast():
+                            cand_output = model(cand_adv)
+                        if isinstance(cand_output, (tuple, list)):
+                            cand_output = cand_output[0]
+                        cand_loss = attack_ce(cand_output, target)
+                    if best_adv_loss is None:
+                        best_adv_loss = cand_loss
+                        best_adv_input = cand_adv
+                    else:
+                        replace = cand_loss > best_adv_loss
+                        best_adv_input[replace] = cand_adv[replace]
+                        best_adv_loss[replace] = cand_loss[replace]
+
+                adv_input = best_adv_input
                 with torch.no_grad():
                     with amp_autocast():
                         adv_output = model(adv_input)
