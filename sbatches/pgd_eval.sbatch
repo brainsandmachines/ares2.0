@@ -1,11 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=PGD_eval_trades
 #SBATCH --time=7-00:00:00
-#SBATCH --partition=rtx_3090
+#SBATCH --partition=rtx6000
+#SBATCH --qos=golan-neuro
 #SBATCH --gpus=1
-#SBATCH --dependency=afterany:15253678
+#SBATCH --dependency=afterany:15306484
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
-#SBATCH --array=0-13%8
+#SBATCH --array=0-22%4
 #SBATCH --output=/home/ashtomer/projects/ares/outs/PGD_eval/%A/%a.out
 
 set -euo pipefail
@@ -22,19 +23,29 @@ cd /home/ashtomer/projects/ares
 # =========================
 MODELS_ROOT="/home/ashtomer/projects/ares/results/models"
 TARGET_MODELS=(
-  "convnext_small_l2trades_2_init1"
-  "convnext_small_l2trades_2_init2"
-  "convnext_small_l2trades_4_init1"
-  "convnext_small_l2trades_4_init2"
-  "convnext_small_l2trades_8_init1"
-  "convnext_small_l2trades_8_init2"
-  "convnext_small_linftrades_1_init1"
-  "convnext_small_linftrades_1_init2"
-  "convnext_small_linftrades_2_init1"
-  "convnext_small_linftrades_2_init2"
-  "convnext_small_linftrades_4_init1"
-  "convnext_small_linftrades_8_init1"
-  "convnext_small_linftrades_8_init2"
+  "convnext_small_linf_1_init2"
+  "convnext_small_linf_2_init1"
+  "convnext_small_linf_2_init2"
+  "convnext_small_linf_4_init1"
+  "convnext_small_linf_4_init2"
+  "convnext_small_linf_8_init1"
+  "convnext_small_linf_8_init2"
+  "convnext_small_linf_16_init1"
+  "convnext_small_linf_16_init2"
+  "convnext_small_l2_1_init1"
+  "convnext_small_l2_1_init2"
+  "convnext_small_l2_2_init1"
+  "convnext_small_l2_2_init2"
+  "convnext_small_l2_4_init1"
+  "convnext_small_l2_4_init2"
+  "convnext_small_l2_8_init1"
+  "convnext_small_l2_8_init2"
+  "convnext_small_l2_16_init1"
+  "convnext_small_l2_16_init2"
+  "convnext_small_l1_1_init1"
+  "convnext_small_l1_1_init2"
+  "convnext_small_l1_2_init1"
+  "convnext_small_l1_2_init2"
 )
 NUM_MODELS=${#TARGET_MODELS[@]}
 
@@ -75,5 +86,6 @@ python data_analysis/final_eval.py \
   --checkpoint "${CKPT}" \
   --val-dir "${VAL_DIR}" \
   --pgd --plots \
+  --pgd-batch-size 256 \
   --device cuda \
   --out-dir "${OUT_DIR}"
