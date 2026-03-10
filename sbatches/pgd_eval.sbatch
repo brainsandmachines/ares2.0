@@ -1,12 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=PGD_eval_trades
 #SBATCH --time=7-00:00:00
-#SBATCH --partition=rtx6000
-#SBATCH --qos=golan-neuro
+#SBATCH --partition=gpu
 #SBATCH --gpus=1
 #SBATCH --dependency=afterany:15306484
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
-#SBATCH --array=0-22%4
+#SBATCH --array=0-22%8
 #SBATCH --output=/home/ashtomer/projects/ares/outs/PGD_eval/%A/%a.out
 
 set -euo pipefail
@@ -86,6 +85,5 @@ python data_analysis/final_eval.py \
   --checkpoint "${CKPT}" \
   --val-dir "${VAL_DIR}" \
   --pgd --plots \
-  --pgd-batch-size 256 \
   --device cuda \
   --out-dir "${OUT_DIR}"

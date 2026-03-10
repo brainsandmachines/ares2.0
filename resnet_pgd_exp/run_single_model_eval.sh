@@ -8,7 +8,7 @@ MODELS_ROOT="${MODELS_ROOT:-/storage/test/bml_group/tomerash/madry_orig_robustmo
 VAL_DIR="${VAL_DIR:-/storage/test/bml_group/tomerash/datasets/imagenet/val}"
 OUT_ROOT="${OUT_ROOT:-${MODELS_ROOT}/pgd_eval_resnet50}"
 LOCAL_OUT_ROOT="${LOCAL_OUT_ROOT:-${REPO_ROOT}/resnet_pgd_exp/results}"
-INPUT_MODE="${INPUT_MODE:-auto}"
+INPUT_MODE="${INPUT_MODE:-normalized}"
 PGD_EPS="${PGD_EPS:-0,0.01,0.03,0.05,0.1,0.25,0.5,1,3,5}"
 PGD_NORMS="${PGD_NORMS:-linf,l2,l1}"
 PGD_ATTACK_STEPS="${PGD_ATTACK_STEPS:-10}"
@@ -64,24 +64,6 @@ echo "[INFO] val_dir=${VAL_DIR}"
 echo "[INFO] input_mode=${INPUT_MODE}"
 
 INPUT_MODE_EFFECTIVE="${INPUT_MODE}"
-if [[ "${INPUT_MODE}" == "auto" ]]; then
-  if command -v rg >/dev/null 2>&1; then
-    HAS_NORMALIZER_SIG=0
-    if strings -n 8 "${CKPT}" | rg -qi 'normalizer|attacker\.normalize|module\.normalizer'; then
-      HAS_NORMALIZER_SIG=1
-    fi
-  else
-    HAS_NORMALIZER_SIG=0
-    if strings -n 8 "${CKPT}" | grep -Eqi 'normalizer|attacker\.normalize|module\.normalizer'; then
-      HAS_NORMALIZER_SIG=1
-    fi
-  fi
-
-  if [[ "${HAS_NORMALIZER_SIG}" -eq 1 ]]; then
-    INPUT_MODE_EFFECTIVE="raw"
-    echo "[INFO] detected normalizer signature in checkpoint; forcing raw [0,1] loader and skipping probe"
-  fi
-fi
 echo "[INFO] input_mode_effective=${INPUT_MODE_EFFECTIVE}"
 
 cd "${REPO_ROOT}"

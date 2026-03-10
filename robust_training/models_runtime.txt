@@ -1,0 +1,20 @@
+  - madry PGD3 init1
+      - bsz=256: 9933s (~2h 46m)
+      - bsz=512: 6345s (~1h 46m)
+  - madry PGD3 init2
+      - bsz=256: 10162s (~2h 49m)
+      - bsz=512: 6508s (~1h 48m)
+  - madry PGD7 init3
+      - bsz=512: 10618.8s (~2h 57m)
+      - bsz=256: no run found
+  - trades
+      - bsz=192: 13400.2s (~3h 43m)
+      - bsz=384: 7950s (~2h 12m)
+  - gradnorm
+      - bsz=192: 11652s (~3h 14m)
+      - bsz=384: 8953s (~2h 29m)
+
+for lipshitz and jacobian methods, assume 3-4 h per epoch. it takes 25-33 days to train
+200 epochs on 256 bsz. on the 192 GB gpus i can probably run with 1024 bsz- which mean 
+10-15 days per model.
+
