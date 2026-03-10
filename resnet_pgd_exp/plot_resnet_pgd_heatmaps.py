@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 
 NORM_ORDER = ["linf", "l2", "l1"]
+LINF_DIVISOR = 255.0
+L1_MULTIPLIER = 255.0 / 2.0
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,6 +46,32 @@ def _format_tick_values(vals: List[float]) -> List[str]:
         else:
             labels.append(f"{v:g}")
     return labels
+
+
+def _compute_pgd_constrained_eps(eps_input: float, attack_norm: str) -> float:
+    n = str(attack_norm).lower()
+    e = float(eps_input)
+    if n == "linf":
+        return e / LINF_DIVISOR
+    if n == "l1":
+        return e * L1_MULTIPLIER
+    return e
+
+
+def _tick_label_for_norm(x: float, norm: str) -> str:
+    if abs(float(x)) < 1e-12:
+        return "0"
+    if str(norm).lower() == "linf":
+        num = float(x) * LINF_DIVISOR
+        rounded = round(num)
+        if abs(num - rounded) < 1e-8:
+            return f"{int(rounded)}/255"
+        return f"{num:g}/255"
+    return f"{float(x):g}"
+
+
+def _format_tick_values_by_norm(vals: List[float], norm: str) -> List[str]:
+    return [_tick_label_for_norm(float(v), norm) for v in vals]
 
 
 def _render_heatmap(ax, data: np.ndarray, xlabels: List[str], ylabels: List[str]):
@@ -96,17 +124,42 @@ def save_norm_heatmap(df: pd.DataFrame, norm: str, metric_col: str, out_dir: Pat
     if d.empty:
         raise RuntimeError(f"No rows found for attack_norm={norm}")
 
+    if "train_norm" in d.columns:
+        d["train_eps_plot"] = [
+            _compute_pgd_constrained_eps(eps_input=e, attack_norm=tnorm) if pd.notna(e) else float("nan")
+            for e, tnorm in zip(d["train_eps"], d["train_norm"])
+        ]
+        train_norm_for_ticks = str(d["train_norm"].dropna().astype(str).str.lower().iloc[0]) if not d["train_norm"].dropna().empty else "l2"
+    else:
+        d["train_eps_plot"] = d["train_eps"]
+        train_norm_for_ticks = "l2"
+
+    d["eval_eps_plot"] = [
+        _compute_pgd_constrained_eps(eps_input=e, attack_norm=norm) if pd.notna(e) else float("nan")
+        for e in d["epsilon_input"]
+    ]
+
     pivot = d.pivot_table(
-        index="epsilon_input",
-        columns="train_eps",
+        index="eval_eps_plot",
+        columns="train_eps_plot",
         values=metric_col,
         aggfunc="mean",
     )
     pivot = pivot.sort_index(axis=0).sort_index(axis=1)
+    # Keep only one clean representation: the explicit "clean" row.
+    if not pivot.empty:
+        pivot = pivot.loc[np.abs(pivot.index.to_numpy(dtype=float)) > 1e-12]
     if pivot.empty:
         raise RuntimeError(f"Pivot became empty for norm={norm}")
 
-    data = pivot.to_numpy(dtype=float)
+    clean_metric_col = metric_col.replace("adv_", "clean_") if metric_col.startswith("adv_") else metric_col
+    clean_by_train = (
+        d.groupby("train_eps_plot", dropna=True)[clean_metric_col]
+        .mean()
+        .reindex(pivot.columns)
+    )
+
+    data = np.vstack([clean_by_train.to_numpy(dtype=float), pivot.to_numpy(dtype=float)])
     xvals = [float(v) for v in pivot.columns.tolist()]
     yvals = [float(v) for v in pivot.index.tolist()]
 
@@ -114,12 +167,12 @@ def save_norm_heatmap(df: pd.DataFrame, norm: str, metric_col: str, out_dir: Pat
     im = _render_heatmap(
         ax=ax,
         data=data,
-        xlabels=_format_tick_values(xvals),
-        ylabels=_format_tick_values(yvals),
+        xlabels=_format_tick_values_by_norm(xvals, train_norm_for_ticks),
+        ylabels=["clean"] + _format_tick_values_by_norm(yvals, norm),
     )
     ax.set_title(f"Madry ResNet50 PGD Heatmap ({norm})")
-    ax.set_xlabel("Model eps")
-    ax.set_ylabel("Eval eps")
+    ax.set_xlabel("Trained constrained eps")
+    ax.set_ylabel("Evaluated constrained eps")
 
     cbar = fig.colorbar(im, ax=ax, shrink=0.92, pad=0.02)
     cbar.set_label("Top-1 Accuracy (%)" if metric_col == "adv_top1" else f"{metric_col} (%)")

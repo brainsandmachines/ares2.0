@@ -61,11 +61,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pgd-eps", default=DEFAULT_PGD_EPS)
     parser.add_argument("--pgd-norms", default=DEFAULT_PGD_NORMS)
     parser.add_argument("--pgd-attack-steps", type=int, default=DEFAULT_PGD_ATTACK_STEPS)
+    parser.add_argument("--pgd-attack-restarts", type=int, default=3)
     parser.add_argument("--pgd-batch-size", type=int, default=DEFAULT_PGD_BATCH_SIZE)
     parser.add_argument("--num-workers", type=int, default=DEFAULT_NUM_WORKERS)
     parser.add_argument("--pgd-max-batches", type=int, default=None)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--input-mode", choices=["auto", "normalized", "raw"], default="auto")
+    parser.add_argument("--input-mode", choices=["auto", "normalized", "raw"], default="normalized")
     parser.add_argument("--detect-batches", type=int, default=DEFAULT_DETECT_BATCHES)
     parser.add_argument(
         "--skip-auto-probe-if-normalizer",
@@ -149,10 +150,10 @@ def _extract_state_dict_payload(ckpt_obj) -> Dict[str, torch.Tensor]:
 
 def _remove_known_prefix(k: str) -> str:
     for prefix in (
-        "module.attacker.model.",
-        "attacker.model.",
         "module.model.",
         "model.",
+        "module.attacker.model.",
+        "attacker.model.",
         "module.attacker.",
         "attacker.",
         "module.",
@@ -162,8 +163,9 @@ def _remove_known_prefix(k: str) -> str:
     return k
 
 
-def sanitize_state_dict(raw_state_dict: Dict[str, torch.Tensor]) -> Tuple[Dict[str, torch.Tensor], bool]:
-    cleaned: Dict[str, torch.Tensor] = {}
+def sanitize_state_dict(raw_state_dict: Dict[str, torch.Tensor]) -> Tuple[Dict[str, torch.Tensor], bool, str]:
+    cleaned_original: Dict[str, torch.Tensor] = {}
+    cleaned_attacker: Dict[str, torch.Tensor] = {}
     normalizer_in_ckpt = False
 
     for k, v in raw_state_dict.items():
@@ -185,15 +187,21 @@ def sanitize_state_dict(raw_state_dict: Dict[str, torch.Tensor]) -> Tuple[Dict[s
             normalizer_in_ckpt = True
             continue
 
-        cleaned[ck] = v
+        low = k.lower()
+        if ".attacker.model." in low or low.startswith("attacker.model."):
+            cleaned_attacker[ck] = v
+        else:
+            cleaned_original[ck] = v
 
-    return cleaned, normalizer_in_ckpt
+    if cleaned_original:
+        return cleaned_original, normalizer_in_ckpt, "original_model"
+    return cleaned_attacker, normalizer_in_ckpt, "attacker_model"
 
 
-def load_model_from_ckpt(ckpt_path: Path, device: torch.device) -> Tuple[torch.nn.Module, bool]:
+def load_model_from_ckpt(ckpt_path: Path, device: torch.device) -> Tuple[torch.nn.Module, bool, str]:
     ckpt_obj = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
     state_payload = _extract_state_dict_payload(ckpt_obj)
-    state_dict, normalizer_in_ckpt = sanitize_state_dict(state_payload)
+    state_dict, normalizer_in_ckpt, state_source = sanitize_state_dict(state_payload)
 
     model = models.resnet50(weights=None, num_classes=1000)
     try:
@@ -202,7 +210,7 @@ def load_model_from_ckpt(ckpt_path: Path, device: torch.device) -> Tuple[torch.n
         raise RuntimeError(f"Strict state_dict load failed for {ckpt_path}: {exc}") from exc
 
     model = LogitsOnlyWrapper(model).to(device).eval()
-    return model, normalizer_in_ckpt
+    return model, normalizer_in_ckpt, state_source
 
 
 def build_loader(val_dir: str, batch_size: int, num_workers: int, normalized: bool) -> DataLoader:
@@ -306,7 +314,13 @@ def detect_input_mode(
     return selected, probe_scores
 
 
-def make_validate_args(norm: str, eps_eval: float, attack_steps: int, input_mode: str) -> SimpleNamespace:
+def make_validate_args(
+    norm: str,
+    eps_eval: float,
+    attack_steps: int,
+    attack_restarts: int,
+    input_mode: str,
+) -> SimpleNamespace:
     mean = IMAGENET_MEAN if input_mode == "normalized" else IDENTITY_MEAN
     std = IMAGENET_STD if input_mode == "normalized" else IDENTITY_STD
     attack_step = eps_eval / max(attack_steps / 2.0, 1.0)
@@ -320,7 +334,7 @@ def make_validate_args(norm: str, eps_eval: float, attack_steps: int, input_mode
         attack_step=attack_step,
         attack_eps=eps_eval,
         attack_it=attack_steps,
-        attack_restarts=3,
+        attack_restarts=attack_restarts,
         attack_use_best=True,
         attack_random_start=True,
         disable_attack_step_warmup=True,
@@ -355,6 +369,7 @@ def evaluate_pgd_sweep(
     eps_values: List[float],
     norms: List[str],
     attack_steps: int,
+    attack_restarts: int,
     max_batches: Optional[int],
     logger: logging.Logger,
 ) -> List[Dict[str, float]]:
@@ -378,7 +393,13 @@ def evaluate_pgd_sweep(
             else:
                 eps_eval = eps_input
 
-            v_args = make_validate_args(norm=norm, eps_eval=eps_eval, attack_steps=attack_steps, input_mode=input_mode)
+            v_args = make_validate_args(
+                norm=norm,
+                eps_eval=eps_eval,
+                attack_steps=attack_steps,
+                attack_restarts=attack_restarts,
+                input_mode=input_mode,
+            )
             metrics = validate(
                 model=model,
                 loader=eval_loader,
@@ -400,6 +421,7 @@ def evaluate_pgd_sweep(
                 "epsilon_input": float(eps_input),
                 "epsilon_eval": float(eps_eval),
                 "attack_steps": int(attack_steps),
+                "attack_restarts": int(attack_restarts),
                 "attack_step": float(v_args.attack_step),
                 "clean_top1": float(clean_metrics["clean_top1"]),
                 "clean_top5": float(clean_metrics["clean_top5"]),
@@ -443,7 +465,8 @@ def main() -> None:
     norms = parse_csv_list(args.pgd_norms)
 
     logger.info("Loading checkpoint: %s", ckpt_path)
-    model, normalizer_in_ckpt = load_model_from_ckpt(ckpt_path, device=torch.device(args.device))
+    model, normalizer_in_ckpt, state_source = load_model_from_ckpt(ckpt_path, device=torch.device(args.device))
+    logger.info("Loaded state source: %s", state_source)
     logger.info("Detected normalizer keys in ckpt: %s", normalizer_in_ckpt)
 
     if args.input_mode == "auto":
@@ -480,6 +503,7 @@ def main() -> None:
         eps_values=eps_values,
         norms=norms,
         attack_steps=args.pgd_attack_steps,
+        attack_restarts=args.pgd_attack_restarts,
         max_batches=args.pgd_max_batches,
         logger=logger,
     )
