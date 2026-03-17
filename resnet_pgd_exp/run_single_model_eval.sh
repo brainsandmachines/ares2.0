@@ -4,8 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-MODELS_ROOT="${MODELS_ROOT:-/storage/test/bml_group/tomerash/madry_orig_robustmodels}"
-VAL_DIR="${VAL_DIR:-/storage/test/bml_group/tomerash/datasets/imagenet/val}"
+MODELS_ROOT="${MODELS_ROOT:-/groups/golan_neurogroup/bml_group/tomerash/madry_orig_robustmodels}"
+VAL_DIR="${VAL_DIR:-/groups/golan_neurogroup/bml_group/tomerash/datasets/imagenet/val}"
 OUT_ROOT="${OUT_ROOT:-${MODELS_ROOT}/pgd_eval_resnet50}"
 LOCAL_OUT_ROOT="${LOCAL_OUT_ROOT:-${REPO_ROOT}/resnet_pgd_exp/results}"
 INPUT_MODE="${INPUT_MODE:-normalized}"
