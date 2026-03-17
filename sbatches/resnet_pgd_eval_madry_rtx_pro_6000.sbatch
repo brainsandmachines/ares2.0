@@ -18,8 +18,8 @@ source activate tomer_advtrain_pro
 REPO_ROOT="/home/ashtomer/projects/ares"
 cd "${REPO_ROOT}"
 
-export VAL_DIR="${VAL_DIR:-/storage/test/bml_group/tomerash/datasets/imagenet/val}"
-export MODELS_ROOT="${MODELS_ROOT:-/storage/test/bml_group/tomerash/madry_orig_robustmodels}"
+export VAL_DIR="${VAL_DIR:-/groups/golan_neurogroup/bml_group/tomerash/datasets/imagenet/val}"
+export MODELS_ROOT="${MODELS_ROOT:-/groups/golan_neurogroup/bml_group/tomerash/madry_orig_robustmodels}"
 export OUT_ROOT="${OUT_ROOT:-${MODELS_ROOT}/pgd_eval_resnet50}"
 export INPUT_MODE="${INPUT_MODE:-normalized}"
 

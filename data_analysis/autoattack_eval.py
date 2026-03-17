@@ -30,7 +30,7 @@ def save_csv(results_dict, filename):
         for model, (clean, robust) in results_dict.items():
             writer.writerow([model, clean, robust])
 
-def get_imagenet_raw_loader(batch_size=128, workers=4, path="/storage/test/bml_group/tomerash/datasets/imagenet/val/"):
+def get_imagenet_raw_loader(batch_size=128, workers=4, path="/groups/golan_neurogroup/bml_group/tomerash/datasets/imagenet/val/"):
     tf = transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(224),
