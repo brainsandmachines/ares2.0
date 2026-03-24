@@ -5,8 +5,8 @@ from torch.utils.data import Subset, DataLoader
 
 def test_build_dataset():
     args = argparse.Namespace(
-        train_dir="/groups/golan_neurogroup/bml_group/tomerash/datasets/imagenet_sample/train",
-        eval_dir="/groups/golan_neurogroup/bml_group/tomerash/datasets/imagenet_sample/val",
+        train_dir="/groups/golan_neurogroup/bml_group/datasets/imagenet/train",
+        eval_dir="/groups/golan_neurogroup/bml_group/datasets/imagenet/val",
         batch_size=8,
         workers=0,
         aug_splits=0,

@@ -5,7 +5,7 @@
 #SBATCH --qos=golan-neuro
 #SBATCH --gpus=1
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
-#SBATCH --array=0-8%7
+#SBATCH --array=0-15%3
 #SBATCH --output=/home/ashtomer/projects/ares/outs/PGD_eval/%A/%a.out
 
 set -euo pipefail
@@ -18,20 +18,27 @@ source activate tomer_train
 cd /home/ashtomer/projects/ares
 
 # =========================
-# Retry sweep: models that FAILED in array job 16042472
+# Models with >=199 epochs and missing PGD eval
 # =========================
 MODELS_ROOT="/home/ashtomer/projects/ares/results/models"
 TARGET_MODELS=(
-    "convnext_small_l2_2_init1"
-    "convnext_small_l2_8_init1"
-    "convnext_small_l2_8_init2"
-    "convnext_small_l2_16_init1"
-    "convnext_small_l2_16_init2"
-    "convnext_small_l1_1_init1"
-    "convnext_small_l1_1_init2"
-    "convnext_small_l1_2_init1"
-    "convnext_small_l1_2_init2"
-  )
+    "convnext_small_baseline_init1"
+    "convnext_small_baseline_init2"
+    "convnext_small_l2trades_2_init1"
+    "convnext_small_l2trades_2_init2"
+    "convnext_small_l2trades_4_init1"
+    "convnext_small_l2trades_4_init2"
+    "convnext_small_l2trades_8_init1"
+    "convnext_small_l2trades_8_init2"
+    "convnext_small_linftrades_1_init1"
+    "convnext_small_linftrades_1_init2"
+    "convnext_small_linftrades_2_init1"
+    "convnext_small_linftrades_2_init2"
+    "convnext_small_linftrades_4_init1"
+    "convnext_small_linftrades_4_init2"
+    "convnext_small_linftrades_8_init1"
+    "convnext_small_linftrades_8_init2"
+)
 NUM_MODELS=${#TARGET_MODELS[@]}
 
 if [[ ${SLURM_ARRAY_TASK_ID} -ge ${NUM_MODELS} ]]; then
