@@ -25,7 +25,7 @@ from ares.utils.validate import validate
 
 
 DEFAULT_MODELS_DIR = "/groups/golan_neurogroup/bml_group/tomerash/advmodels/results/models"
-DEFAULT_TRAIN_DIR = "/groups/golan_neurogroup/bml_group/tomerash/datasets/imagenet/train"
+DEFAULT_TRAIN_DIR = "/groups/golan_neurogroup/bml_group/datasets/imagenet/train"
 DEFAULT_OUT_CSV = "data_analysis/train_accuracy_eval/madry_train_accuracy.csv"
 DEFAULT_LOG_PATH = "data_analysis/train_accuracy_eval/madry_train_accuracy.log"
 DEFAULT_BATCH_SIZE = 128
