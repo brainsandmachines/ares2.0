@@ -52,7 +52,7 @@ CKPT="${MODEL_DIR}/model_best.pth.tar"
 if [[ ! -f "${CKPT}" ]]; then
   CKPT="${MODEL_DIR}/model_best.pth"
 fi
-VAL_DIR="/groups/golan_neurogroup/bml_group/tomerash/datasets/imagenet/val/"
+VAL_DIR="/groups/golan_neurogroup/bml_group/datasets/imagenet/val/"
 OUT_DIR="${MODEL_DIR}/pgd_eval"
 
 echo "[INFO] num_target_models=${NUM_MODELS}"

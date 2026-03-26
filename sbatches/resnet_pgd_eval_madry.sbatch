@@ -20,7 +20,7 @@ cd "${REPO_ROOT}"
 
 # Override these at submit time if needed, e.g.:
 # VAL_DIR=/some/imagenet/val MODELS_ROOT=/some/models sbatch sbatches/resnet_pgd_eval_madry.sbatch
-export VAL_DIR="${VAL_DIR:-/groups/golan_neurogroup/bml_group/tomerash/datasets/imagenet/val}"
+export VAL_DIR="${VAL_DIR:-/groups/golan_neurogroup/bml_group/datasets/imagenet/val}"
 export MODELS_ROOT="${MODELS_ROOT:-/groups/golan_neurogroup/bml_group/tomerash/madry_orig_robustmodels}"
 export OUT_ROOT="${OUT_ROOT:-${MODELS_ROOT}/pgd_eval_resnet50}"
 export INPUT_MODE="${INPUT_MODE:-auto}"
