@@ -128,6 +128,7 @@ python -m robust_training.adversarial_training \
     attacks.attack_eps="$attack_eps" \
     attacks.attack_norm="$attack_norm" \
     attacks.advtrain="$advtrain" \
+    attacks.l1_step_mode=l1_apgd \
     attacks.gradnorm="$gradnorm" \
     attacks.attack_criterion="$crit" \
     model.experiment_num="$experiment_num" \

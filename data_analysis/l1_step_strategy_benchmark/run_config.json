@@ -1,0 +1,66 @@
+{
+  "created_at": "2026-03-26T13:47:59",
+  "args": {
+    "models_dir": "/mnt/data/robustness_models/madry",
+    "model_names": "l1/init1/convnext_small_l1_2_init1,l2/init1/convnext_small_l2_2_init1,linf/init1/convnext_small_linf_2_init1",
+    "val_dir": "/mnt/data/datasets/imagenet/val",
+    "out_dir": "data_analysis/l1_step_strategy_benchmark",
+    "device": "cuda",
+    "batch_size": 64,
+    "num_batches": 5,
+    "num_workers": 8,
+    "attack_steps": 10,
+    "eps_list": "1,2,4,8,16",
+    "rho_list": "0.01,0.05,0.10",
+    "seed": 0,
+    "use_ema": true,
+    "self_test": false
+  },
+  "eps_inputs": [
+    1.0,
+    2.0,
+    4.0,
+    8.0,
+    16.0
+  ],
+  "rho_list": [
+    0.01,
+    0.05,
+    0.1
+  ],
+  "model_names": [
+    "l1/init1/convnext_small_l1_2_init1",
+    "l2/init1/convnext_small_l2_2_init1",
+    "linf/init1/convnext_small_linf_2_init1"
+  ],
+  "methods": [
+    {
+      "method": "baseline_l2norm",
+      "rho": null
+    },
+    {
+      "method": "l1norm_step",
+      "rho": null
+    },
+    {
+      "method": "raw_grad_step",
+      "rho": null
+    },
+    {
+      "method": "l1_apgd_topk",
+      "rho": 0.01
+    },
+    {
+      "method": "l1_apgd_topk",
+      "rho": 0.05
+    },
+    {
+      "method": "l1_apgd_topk",
+      "rho": 0.1
+    },
+    {
+      "method": "fw_onehot",
+      "rho": null
+    }
+  ]
+}

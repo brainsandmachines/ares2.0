@@ -12,6 +12,14 @@ bce_loss: False
 random_start: False
 random_start_eps_factor: 0.5
 
+# L1 attack step controls
+# - l2_norm: legacy baseline (g / ||g||2)
+# - l1_apgd: top-k sparse sign updates with L1 projection
+l1_step_mode: l2_norm
+l1_apgd_rho: 0.05
+l1_apgd_use_halving: True
+l1_apgd_min_step_scale: 0.01
+
 # TRADES related defaults
 trades_beta: 1.0
 

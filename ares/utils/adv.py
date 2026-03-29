@@ -203,17 +203,33 @@ class L1Step(AttackerStep):
 
     def step(self, x, g):
         """
-        L1 Gradient Update: Normalize gradient by L1 norm.
-        Do NOT use sign(g) for L1 attacks.
+        L1 step mode selector:
+        - l2_norm: legacy baseline direction g / ||g||_2
+        - l1_apgd: top-k sparse sign updates
         """
-        # Avoid division by zero
+        mode = str(getattr(self, "l1_step_mode", "l2_norm")).lower()
+
+        if mode == "l1_apgd":
+            g_flat = g.view(g.size(0), -1)
+            d = g_flat.size(1)
+            rho = float(getattr(self, "l1_apgd_rho", 0.05))
+            rho = max(0.0, min(1.0, rho))
+            k = max(1, int(rho * d))
+
+            _, topk_idx = torch.topk(torch.abs(g_flat), k=k, dim=1, largest=True, sorted=False)
+            u_flat = torch.zeros_like(g_flat)
+            u_flat.scatter_(1, topk_idx, torch.sign(g_flat.gather(1, topk_idx)))
+
+            u = u_flat.view_as(g)
+            return x + self.step_size * u
+
+        if mode != "l2_norm":
+            raise ValueError(f"Unsupported l1_step_mode: {mode}")
+
+        # Legacy baseline: L2-normalized direction
         g_flat = g.view(g.size(0), -1)
         l2_norm = torch.norm(g_flat, p=2, dim=1, keepdim=True).view(-1, 1, 1, 1)
-        
-        # Normalized Gradient Ascent
-        # This ensures the step size is effectively 'alpha'
         grad_normalized = g / (l2_norm + 1e-10)
-        
         return x + grad_normalized * self.step_size
 
     def random_perturb(self, x):
@@ -275,6 +291,9 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
         step = L2Step(eps=eps, orig_input=orig_input, step_size=attack_lr)
     elif args.attack_norm=='l1':
         step = L1Step(eps=eps, orig_input=orig_input, step_size=attack_lr)
+        l1_step_mode = str(getattr(args, 'l1_step_mode', 'l2_norm')).lower()
+        step.l1_step_mode = l1_step_mode
+        step.l1_apgd_rho = float(getattr(args, 'l1_apgd_rho', 0.05))
     elif args.attack_norm=='linf':
         step = LinfStep(eps=eps, orig_input=orig_input, step_size=attack_lr)
     else:
@@ -296,7 +315,15 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
         images = step.random_perturb(images)
     else:
         images = orig_input.clone().detach()
-    
+
+    l1_apgd_use_halving = bool(getattr(args, 'l1_apgd_use_halving', True))
+    l1_apgd_mode_active = bool(
+        args.attack_norm == 'l1' and str(getattr(args, 'l1_step_mode', 'l2_norm')).lower() == 'l1_apgd'
+    )
+    l1_cur_step = float(attack_lr)
+    l1_min_step = max(float(attack_lr) * float(getattr(args, 'l1_apgd_min_step_scale', 0.01)), 1e-12)
+    l1_prev_loss = None
+
     for _ in range(attack_steps):
         images = images.clone().detach().requires_grad_(True)
 
@@ -310,6 +337,13 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
         # update gradient
         grad = images.grad.detach()
         with torch.no_grad():
+            if l1_apgd_mode_active:
+                cur_loss = float(adv_losses.item())
+                if l1_apgd_use_halving and l1_prev_loss is not None and cur_loss <= l1_prev_loss + 1e-12:
+                    l1_cur_step = max(l1_cur_step / 2.0, l1_min_step)
+                step.step_size = l1_cur_step
+                l1_prev_loss = cur_loss
+
             varlist = [adv_losses, best_loss, images, best_x]
             best_loss, best_x = replace_best(*varlist) if use_best else (adv_losses, images)
 
@@ -341,6 +375,9 @@ def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, rand
         step = L2Step(eps=eps, orig_input=x_nat, step_size=attack_lr)
     elif args.attack_norm=='l1':
         step = L1Step(eps=eps, orig_input=x_nat, step_size=attack_lr)
+        l1_step_mode = str(getattr(args, 'l1_step_mode', 'l2_norm')).lower()
+        step.l1_step_mode = l1_step_mode
+        step.l1_apgd_rho = float(getattr(args, 'l1_apgd_rho', 0.05))
     elif args.attack_norm=='linf':
         step = LinfStep(eps=eps, orig_input=x_nat, step_size=attack_lr)
     else:
@@ -353,6 +390,14 @@ def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, rand
 
     best_loss = None
     best_x = None
+
+    l1_apgd_use_halving = bool(getattr(args, 'l1_apgd_use_halving', True))
+    l1_apgd_mode_active = bool(
+        args.attack_norm == 'l1' and str(getattr(args, 'l1_step_mode', 'l2_norm')).lower() == 'l1_apgd'
+    )
+    l1_cur_step = float(attack_lr)
+    l1_min_step = max(float(attack_lr) * float(getattr(args, 'l1_apgd_min_step_scale', 0.01)), 1e-12)
+    l1_prev_loss = None
 
     for _ in range(attack_steps):
         x_adv.requires_grad_()
@@ -367,6 +412,13 @@ def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, rand
         grad = torch.autograd.grad(kl.sum(), x_adv)[0]
 
         with torch.no_grad():
+            if l1_apgd_mode_active:
+                cur_loss = float(kl.mean().item())
+                if l1_apgd_use_halving and l1_prev_loss is not None and cur_loss <= l1_prev_loss + 1e-12:
+                    l1_cur_step = max(l1_cur_step / 2.0, l1_min_step)
+                step.step_size = l1_cur_step
+                l1_prev_loss = cur_loss
+
             best_loss, best_x = replace_best(kl, best_loss, x_adv, best_x) if use_best else (kl, x_adv)
             x_adv = step.step(x_adv, grad)
             x_adv = step.project(x_adv)

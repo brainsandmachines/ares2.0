@@ -1,0 +1,10 @@
+attack:
+  steps: 20
+  step_size: 0.005
+  lambda_v1: 2.0
+  random_start: true
+  random_start_eps: 0.01
+  pixel_guardrail_eps: 0.03
+  shrink_back_enabled: false
+  v1_budget: null
+  shrink_back_iters: 5
