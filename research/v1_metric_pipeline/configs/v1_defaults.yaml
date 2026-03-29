@@ -1,0 +1,57 @@
+extractor:
+  image_size_px: 224
+  field_of_view_degrees: 8.0
+  in_channels: 3
+  kernel_size: 25
+  stride: 4
+  num_orientations: 8
+  phases: [0.0, 1.57079632679]
+  aspect_ratio: 0.5
+  sigma_scale: 0.56
+  use_pooling: true
+  pooling_kernel: 2
+  pooling_stride: 2
+  num_simple_channels: null
+  num_complex_channels: null
+  use_channel_stats_norm: false
+  frequency_sampling:
+    policy: logspace
+    min_cpd: 0.5
+    max_cpd: 12.0
+    num_frequencies: 6
+    explicit_cpd: []
+
+metric:
+  alpha: 0.3
+  beta: 0.7
+  eps: 1.0e-8
+  apply_pooling_before_compare: false
+  use_normalized_l2: true
+
+attack:
+  steps: 20
+  step_size: 0.005
+  lambda_v1: 2.0
+  random_start: true
+  random_start_eps: 0.01
+  pixel_guardrail_eps: 0.03
+  shrink_back_enabled: false
+  v1_budget: null
+  shrink_back_iters: 5
+
+demo:
+  seed: 0
+  device: cpu
+  output_dir: research/v1_metric_pipeline/outputs/demo
+  model_num_classes: 10
+
+train:
+  seed: 0
+  device: cpu
+  batch_size: 8
+  image_size_px: 224
+  num_classes: 10
+  dataset_size: 128
+  epochs: 1
+  max_batches_per_epoch: 10
+  lr: 0.001
