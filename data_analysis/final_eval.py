@@ -32,10 +32,11 @@ except Exception:  # pragma: no cover - only needed when AA installed
 
 
 DEFAULT_OUT_DIR = "data_analysis/final_eval"
-DEFAULT_PGD_EPS = "0.5,1,2,4,8,16"
+DEFAULT_PGD_EPS = "1,2,4,8,16"
 DEFAULT_PGD_NORMS = "linf,l2,l1"
 DEFAULT_PGD_ATTACK_STEPS = 10
 DEFAULT_PGD_BATCH_SIZE = 32
+DEFAULT_PGD_OUTPUT_CSV = "pgd_validation_results.csv"
 DEFAULT_AA_BATCH_SIZE = 32
 DEFAULT_NUM_WORKERS = 8
 LINF_DIVISOR = 255.0
@@ -75,11 +76,17 @@ def parse_args() -> argparse.Namespace:
 
     # PGD sweep
     parser.add_argument("--pgd", action="store_true", help="Run PGD epsilon sweep")
-    parser.add_argument("--pgd-eps", default=DEFAULT_PGD_EPS, help="Comma list, e.g. '0.5,1,2,4,8,16'")
+    parser.add_argument("--pgd-eps", default=DEFAULT_PGD_EPS, help="Comma list, e.g. '1,2,4,8,16'")
     parser.add_argument("--pgd-norms", default=DEFAULT_PGD_NORMS, help="Comma list, e.g. 'linf,l2,l1'")
     parser.add_argument("--pgd-attack-steps", type=int, default=DEFAULT_PGD_ATTACK_STEPS)
     parser.add_argument("--pgd-batch-size", type=int, default=DEFAULT_PGD_BATCH_SIZE)
     parser.add_argument("--pgd-max-batches", type=int, default=None)
+    parser.add_argument("--pgd-output-csv", default=DEFAULT_PGD_OUTPUT_CSV, help="Filename for PGD CSV output")
+    parser.add_argument("--l1-step-mode", choices=["l2_norm", "l1_apgd"], default="l2_norm", help="Step rule for L1 PGD")
+    parser.add_argument("--l1-apgd-rho", type=float, default=0.05, help="Top-k rho used when --l1-step-mode=l1_apgd")
+    parser.add_argument("--l1-apgd-use-halving", dest="l1_apgd_use_halving", action="store_true", default=True, help="Halve L1 APGD step size when progress stalls")
+    parser.add_argument("--no-l1-apgd-use-halving", dest="l1_apgd_use_halving", action="store_false", help="Disable L1 APGD step-size halving")
+    parser.add_argument("--l1-apgd-min-step-scale", type=float, default=0.01, help="Minimum step-size multiplier for L1 APGD halving")
 
     parser.add_argument("--plots", action="store_true", help="Generate accuracy-vs-epsilon plots")
     parser.add_argument("--plot-x-col", default="pgd_constrained_eps", choices=["pgd_constrained_eps", "epsilon_input", "epsilon_eval"])
@@ -374,7 +381,16 @@ def _run_autoattack_with_fallback(adversary, x, y, logger):
         return torch.cat([adv1, adv2], dim=0)
 
 
-def make_validate_args(eval_cfg: SimpleNamespace, norm: str, eps_eval: float, attack_steps: int) -> SimpleNamespace:
+def make_validate_args(
+    eval_cfg: SimpleNamespace,
+    norm: str,
+    eps_eval: float,
+    attack_steps: int,
+    l1_step_mode: str,
+    l1_apgd_rho: float,
+    l1_apgd_use_halving: bool,
+    l1_apgd_min_step_scale: float,
+) -> SimpleNamespace:
     attack_step = eps_eval / max(attack_steps / 2.0, 1.0)
     return SimpleNamespace(
         channels_last=False,
@@ -391,6 +407,10 @@ def make_validate_args(eval_cfg: SimpleNamespace, norm: str, eps_eval: float, at
         attack_norm=norm,
         disable_attack_step_warmup=True,
         attack_criterion="regular",
+        l1_step_mode=l1_step_mode,
+        l1_apgd_rho=l1_apgd_rho,
+        l1_apgd_use_halving=l1_apgd_use_halving,
+        l1_apgd_min_step_scale=l1_apgd_min_step_scale,
         amp_version="",
         std=eval_cfg.std,
         mean=eval_cfg.mean,
@@ -408,6 +428,10 @@ def evaluate_pgd_sweep(
     norms: List[str],
     attack_steps: int,
     max_batches: Optional[int],
+    l1_step_mode: str,
+    l1_apgd_rho: float,
+    l1_apgd_use_halving: bool,
+    l1_apgd_min_step_scale: float,
     logger: logging.Logger,
 ) -> List[Dict[str, float]]:
     model, eval_cfg, state_key = load_model_from_ckpt(ckpt_path, device)
@@ -429,7 +453,16 @@ def evaluate_pgd_sweep(
                 eps_eval = float(eps_input) * L1_MULTIPLIER
             else:
                 eps_eval = float(eps_input)
-            v_args = make_validate_args(eval_cfg, norm, eps_eval, attack_steps)
+            v_args = make_validate_args(
+                eval_cfg,
+                norm,
+                eps_eval,
+                attack_steps,
+                l1_step_mode=l1_step_mode,
+                l1_apgd_rho=l1_apgd_rho,
+                l1_apgd_use_halving=l1_apgd_use_halving,
+                l1_apgd_min_step_scale=l1_apgd_min_step_scale,
+            )
 
             metrics = validate(
                 model=model,
@@ -453,6 +486,8 @@ def evaluate_pgd_sweep(
                 "epsilon_eval": float(eps_eval),
                 "attack_steps": int(attack_steps),
                 "attack_step": float(v_args.attack_step),
+                "l1_step_mode": str(v_args.l1_step_mode),
+                "l1_apgd_rho": float(v_args.l1_apgd_rho) if norm == "l1" and str(v_args.l1_step_mode).lower() == "l1_apgd" else "",
                 "clean_top1": float(clean_metrics["clean_top1"]),
                 "clean_top5": float(clean_metrics["clean_top5"]),
                 "adv_top1": float(metrics["advtop1"]),
@@ -542,6 +577,11 @@ def run_final_evaluation(
     pgd_norms: List[str],
     pgd_attack_steps: int,
     pgd_max_batches: Optional[int],
+    pgd_output_csv: str,
+    l1_step_mode: str,
+    l1_apgd_rho: float,
+    l1_apgd_use_halving: bool,
+    l1_apgd_min_step_scale: float,
     plots: bool,
     plot_x_col: str,
     num_workers: int = DEFAULT_NUM_WORKERS,
@@ -592,6 +632,10 @@ def run_final_evaluation(
                     norms=pgd_norms,
                     attack_steps=pgd_attack_steps,
                     max_batches=pgd_max_batches,
+                    l1_step_mode=l1_step_mode,
+                    l1_apgd_rho=l1_apgd_rho,
+                    l1_apgd_use_halving=l1_apgd_use_halving,
+                    l1_apgd_min_step_scale=l1_apgd_min_step_scale,
                     logger=logger,
                 )
             )
@@ -606,7 +650,7 @@ def run_final_evaluation(
         outputs["aa_csv"] = aa_csv
 
     if pgd_rows:
-        pgd_csv = os.path.join(out_dir, "pgd_validation_results.csv")
+        pgd_csv = os.path.join(out_dir, pgd_output_csv)
         save_csv(pgd_rows, pgd_csv)
         outputs["pgd_csv"] = pgd_csv
 
@@ -687,6 +731,11 @@ def main() -> None:
         pgd_norms=pgd_norms,
         pgd_attack_steps=args.pgd_attack_steps,
         pgd_max_batches=args.pgd_max_batches,
+        pgd_output_csv=args.pgd_output_csv,
+        l1_step_mode=args.l1_step_mode,
+        l1_apgd_rho=args.l1_apgd_rho,
+        l1_apgd_use_halving=args.l1_apgd_use_halving,
+        l1_apgd_min_step_scale=args.l1_apgd_min_step_scale,
         plots=args.plots,
         plot_x_col=args.plot_x_col,
         num_workers=args.num_workers,

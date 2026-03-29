@@ -36,7 +36,7 @@ DEFAULT_LOG_PATH = "data_analysis/pgd_validation.log"
 # ---------------------------
 # Experiment settings
 # ---------------------------
-EPS_VALUES = [0.5, 1, 2, 4, 8, 16]
+EPS_VALUES = [1, 2, 4, 8, 16]
 NORMS = ["linf", "l2", "l1"]
 LINF_DIVISOR = 255  # requested: linf eps = eps / 255
 L1_MULTIPLIER = 255 / 2  # requested: l1 eps = eps * (255/2)
