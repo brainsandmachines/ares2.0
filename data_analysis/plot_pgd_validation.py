@@ -12,7 +12,9 @@ DEFAULT_CSV = "data_analysis/pgd_validation_results.csv"
 DEFAULT_OUT_DIR = "data_analysis/plots"
 DEFAULT_MODELS_DIR = "/home/ashtomer/projects/ares/results/models"
 NORM_ORDER = ["linf", "l2", "l1"]
-EXCLUDED_NON_MADRY = ("gradnorm", "trades", "baseline")
+EXCLUDED_NON_MADRY = ("gradnorm", "trades")
+HEATMAP_EPS_ORDER = [1.0, 2.0, 4.0, 8.0, 16.0]
+HEATMAP_MODEL_ORDER = ["baseline", 1.0, 2.0, 4.0, 8.0, 16.0]
 LINF_DIVISOR = 255.0
 L1_MULTIPLIER = 255.0 / 2.0
 
@@ -44,7 +46,7 @@ def parse_args() -> argparse.Namespace:
         "--filter-madry-only",
         action="store_true",
         default=True,
-        help="Keep only madry-like model dirs (exclude gradnorm/trades/baseline)",
+        help="Keep only madry-like model dirs (exclude gradnorm/trades, keep baseline)",
     )
     parser.add_argument(
         "--no-filter-madry-only",
@@ -143,6 +145,7 @@ def _apply_x_scaling_and_ticks(ax, xticks: List[float], attack_norm: str) -> Non
 
 def _parse_meta_from_model_dir(model_dir_name: str) -> Dict[str, str]:
     low = (model_dir_name or "").lower()
+    is_baseline = "baseline" in low
     train_norm = "unknown"
     m_norm = re.search(r"(^|[_\-])(linf|l2|l1)($|[_\-])", low)
     if m_norm:
@@ -155,13 +158,14 @@ def _parse_meta_from_model_dir(model_dir_name: str) -> Dict[str, str]:
 
     train_eps = None
     m_eps = re.search(r"(?:linf|l2|l1)[_\-]?([0-9]*\.?[0-9]+)", low)
-    if m_eps:
+    if m_eps and not is_baseline:
         try:
             train_eps = float(m_eps.group(1))
         except ValueError:
             train_eps = None
 
     return {
+        "is_baseline": is_baseline,
         "train_norm": train_norm,
         "init": init,
         "train_eps": train_eps,
@@ -238,6 +242,7 @@ def _enrich_metadata(df: pd.DataFrame, filter_madry_only: bool) -> pd.DataFrame:
     df["model_dir"] = model_dirs
 
     parsed = [_parse_meta_from_model_dir(m) for m in model_dirs]
+    df["is_baseline"] = [bool(p["is_baseline"]) for p in parsed]
     df["_parsed_train_norm"] = [p["train_norm"] for p in parsed]
     df["_parsed_init"] = [p["init"] for p in parsed]
     df["train_eps"] = [p["train_eps"] for p in parsed]
@@ -248,6 +253,9 @@ def _enrich_metadata(df: pd.DataFrame, filter_madry_only: bool) -> pd.DataFrame:
         df["init"] = "unknown"
     if "category" not in df.columns:
         df["category"] = "unknown"
+
+    df["train_norm"] = df["train_norm"].astype("object")
+    df["init"] = df["init"].astype("object")
 
     bad_train_norm = ~df["train_norm"].astype(str).str.lower().isin(NORM_ORDER)
     df.loc[bad_train_norm, "train_norm"] = df.loc[bad_train_norm, "_parsed_train_norm"]
@@ -272,7 +280,10 @@ def _enrich_metadata(df: pd.DataFrame, filter_madry_only: bool) -> pd.DataFrame:
 
     df["model_id"] = df["model_dir"].astype(str)
     labels = []
-    for eps, init in zip(df["train_eps"], df["init"]):
+    for is_baseline, eps, init in zip(df["is_baseline"], df["train_eps"], df["init"]):
+        if is_baseline:
+            labels.append("baseline")
+            continue
         init_str = str(init)
         if init_str.lower() in ("unknown", "nan", "none", ""):
             labels.append(f"eps={_trim_float(eps)}")
@@ -280,6 +291,23 @@ def _enrich_metadata(df: pd.DataFrame, filter_madry_only: bool) -> pd.DataFrame:
             labels.append(f"eps={_trim_float(eps)} init {init_str}")
     df["model_label"] = labels
     return df
+
+
+def _expand_baseline_rows(df: pd.DataFrame) -> pd.DataFrame:
+    baseline_mask = df["is_baseline"].fillna(False)
+    if not baseline_mask.any():
+        return df
+
+    baseline = df[baseline_mask].copy()
+    non_baseline = df[~baseline_mask].copy()
+
+    expanded = []
+    for norm in NORM_ORDER:
+        dnorm = baseline.copy()
+        dnorm["train_norm"] = norm
+        expanded.append(dnorm)
+
+    return pd.concat([non_baseline, *expanded], ignore_index=True)
 
 
 def _build_norm_ticks(df: pd.DataFrame, x_col: str) -> Dict[str, List[float]]:
@@ -305,35 +333,59 @@ def _format_tick_labels(values: List[object], norm: str) -> List[str]:
     return labels
 
 
+def _heatmap_model_level(row: pd.Series):
+    if bool(row.get("is_baseline", False)):
+        return "baseline"
+
+    eps = pd.to_numeric(row.get("train_eps"), errors="coerce")
+    if pd.isna(eps):
+        return np.nan
+
+    eps = float(eps)
+    if eps in HEATMAP_EPS_ORDER:
+        return eps
+    return np.nan
+
+
 def _build_heatmap_pivot(dpair: pd.DataFrame) -> pd.DataFrame:
     pivot = dpair.pivot_table(
-        index="pgd_constrained_eps",
-        columns="train_eps_constrained",
+        index="epsilon_input",
+        columns="heatmap_model_level",
         values="adv_top1",
         aggfunc="mean",
     )
-    return pivot.sort_index(axis=0).sort_index(axis=1)
+    return pivot.reindex(index=HEATMAP_EPS_ORDER, columns=HEATMAP_MODEL_ORDER)
 
 
 def _build_heatmap_with_clean_row(dpair: pd.DataFrame, train_norm: str, attack_norm: str):
+    del train_norm, attack_norm
+
+    dpair = dpair.copy()
+    dpair["epsilon_input"] = pd.to_numeric(dpair["epsilon_input"], errors="coerce")
+    dpair["heatmap_model_level"] = dpair.apply(_heatmap_model_level, axis=1)
+    dpair = dpair[
+        dpair["heatmap_model_level"].notna()
+        & dpair["epsilon_input"].isin(HEATMAP_EPS_ORDER)
+    ]
+
     pivot = _build_heatmap_pivot(dpair)
-    if pivot.empty:
+    if pivot.empty or pivot.isna().all().all():
         return None, None, None
 
     clean_by_train = (
-        dpair.groupby("train_eps_constrained", dropna=True)["clean_top1"]
+        dpair.groupby("heatmap_model_level", dropna=True)["clean_top1"]
         .mean()
-        .reindex(pivot.columns)
+        .reindex(HEATMAP_MODEL_ORDER)
     )
 
     data = np.vstack([clean_by_train.to_numpy(dtype=float), pivot.to_numpy(dtype=float)])
-    xlabels = _format_tick_labels(pivot.columns.tolist(), train_norm)
-    ylabels = ["clean"] + _format_tick_labels([float(v) for v in pivot.index.tolist()], attack_norm)
+    xlabels = ["baseline", "1", "2", "4", "8", "16"]
+    ylabels = ["clean", "1", "2", "4", "8", "16"]
     return data, xlabels, ylabels
 
 
 def _render_heatmap(ax, data: np.ndarray, xlabels: List[str], ylabels: List[str]):
-    im = ax.imshow(data, origin="lower", aspect="auto", cmap="turbo", vmin=0, vmax=100)
+    im = ax.imshow(data, origin="lower", aspect="equal", cmap="turbo", vmin=0, vmax=100)
 
     xticks = list(range(len(xlabels)))
     yticks = list(range(len(ylabels)))
@@ -367,7 +419,7 @@ def save_heatmap_matrix_plot(df: pd.DataFrame, out_dir: str, madry_only: bool, s
         for e, n in zip(d["train_eps"], d["train_norm"])
     ]
 
-    fig, axes = plt.subplots(3, 3, figsize=(18, 14), sharex=False, sharey=False, constrained_layout=True)
+    fig, axes = plt.subplots(3, 3, figsize=(14, 14), sharex=False, sharey=False, constrained_layout=True)
     im = None
 
     for row, attack_norm in enumerate(NORM_ORDER):
@@ -614,9 +666,12 @@ def main() -> None:
         raise ValueError(f"Missing required columns: {sorted(missing)}")
 
     df = _enrich_metadata(df, filter_madry_only=args.filter_madry_only)
+    df = _expand_baseline_rows(df)
+    df["epsilon_input"] = pd.to_numeric(df["epsilon_input"], errors="coerce")
     if args.x_col not in df.columns:
         raise ValueError(f"Missing required x-axis column after enrichment: {args.x_col}")
     df = df[df["train_norm"].isin(NORM_ORDER) & df["attack_norm"].isin(NORM_ORDER)]
+    df = df[df["epsilon_input"].isin(HEATMAP_EPS_ORDER) | df["epsilon_input"].eq(0.0)]
     if df.empty:
         raise RuntimeError("No rows left after filtering to supported norms.")
 
