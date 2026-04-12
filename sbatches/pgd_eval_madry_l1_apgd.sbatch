@@ -28,7 +28,7 @@ cd "${REPO_ROOT}"
 
 mapfile -t TARGET_MODELS < <(
   find -L "${MODELS_ROOT}" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' \
-    | grep -Ev '(trades|gradnorm)' \
+    | grep -Ev '(^(__pycache__|old_models)$|trades|gradnorm)' \
     | sort
 )
 
