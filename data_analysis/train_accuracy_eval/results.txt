@@ -1,0 +1,12 @@
+  | Model | Clean Top1 | Adv Top1 |
+  |---|---:|---:|
+  | convnext_small_l2_2_init1 | 92.91 | 84.28 |
+  | convnext_small_l2_2_init2 | 91.53 | 81.88 |
+  | convnext_small_l2_4_init1 | 96.68 | 88.45 |
+  | convnext_small_l2_4_init2 | 94.05 | 87.14 |
+  | convnext_small_l2_8_init1 | 93.12 | 84.37 |
+  | convnext_small_l2_8_init2 | 94.03 | 86.45 |
+  | convnext_small_l2_8_init3 | 86.12 | 81.04 |
+  | convnext_small_l2_16_init1 | 94.82 | 86.97 |
+  | convnext_small_l2_16_init2 | 95.15 | 87.30 |
+  | convnext_small_l2_16_init3 | 90.30 | 82.78 |

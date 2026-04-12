@@ -12,6 +12,7 @@ DEFAULT_CSV = "data_analysis/pgd_validation_results.csv"
 DEFAULT_OUT_DIR = "data_analysis/plots"
 DEFAULT_MODELS_DIR = "/home/ashtomer/projects/ares/results/models"
 NORM_ORDER = ["linf", "l2", "l1"]
+HEATMAP_EVAL_ORDER = ["linf", "l2", "l1_apgd"]
 EXCLUDED_NON_MADRY = ("gradnorm", "trades")
 HEATMAP_EPS_ORDER = [1.0, 2.0, 4.0, 8.0, 16.0]
 HEATMAP_MODEL_ORDER = ["baseline", 1.0, 2.0, 4.0, 8.0, 16.0]
@@ -74,6 +75,12 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         dest="make_heatmap_grid",
         help="Disable 3x3 heatmap grid",
+    )
+    parser.add_argument(
+        "--include-inits",
+        nargs="+",
+        default=None,
+        help="Restrict aggregate plots/prepared CSV to these init values, e.g. --include-inits 1 2",
     )
     return parser.parse_args()
 
@@ -173,16 +180,16 @@ def _parse_meta_from_model_dir(model_dir_name: str) -> Dict[str, str]:
 
 
 def _extract_model_dir_from_row(row: pd.Series) -> str:
+    model_dir_name = row.get("_model_dir_name", "")
+    if isinstance(model_dir_name, str) and model_dir_name:
+        return model_dir_name
+
     cp = row.get("checkpoint_path", "")
     if isinstance(cp, str) and cp:
         try:
             return Path(cp).parent.name
         except Exception:
             pass
-
-    model_dir_name = row.get("_model_dir_name", "")
-    if isinstance(model_dir_name, str) and model_dir_name:
-        return model_dir_name
 
     model_name = row.get("model_name", "")
     if isinstance(model_name, str) and model_name:
@@ -194,8 +201,9 @@ def _extract_model_dir_from_row(row: pd.Series) -> str:
 def _model_dir_from_csv_path(csv_path: Path) -> str:
     # Supports both:
     # 1) <model_dir>/pgd_eval/pgd_validation_results.csv
-    # 2) <model_dir>/pgd_validation_results.csv
-    if csv_path.parent.name == "pgd_eval":
+    # 2) <model_dir>/pgd_eval_l1_apgd/pgd_validation_results_l1_apgd.csv
+    # 3) <model_dir>/pgd_validation_results.csv
+    if csv_path.parent.name in {"pgd_eval", "pgd_eval_l1_apgd"}:
         return csv_path.parent.parent.name
     return csv_path.parent.name
 
@@ -203,13 +211,60 @@ def _model_dir_from_csv_path(csv_path: Path) -> str:
 def _discover_csvs(models_dir: str, filter_madry_only: bool) -> List[Path]:
     root = Path(models_dir)
     csvs = list(root.glob("*/pgd_eval/pgd_validation_results.csv"))
+    csvs.extend(root.glob("*/pgd_eval/pgd_validation_results_l1_apgd.csv"))
+    csvs.extend(root.glob("*/pgd_eval_l1_apgd/pgd_validation_results_l1_apgd.csv"))
     csvs.extend(root.glob("*/pgd_validation_results.csv"))
+    csvs.extend(root.glob("*/pgd_validation_results_l1_apgd.csv"))
     # Deduplicate in case a model has both paths.
     csvs = sorted({p.resolve() for p in csvs})
     csvs = [Path(p) for p in csvs]
     if filter_madry_only:
         csvs = [p for p in csvs if _is_madry_dir(_model_dir_from_csv_path(p))]
     return csvs
+
+
+def _source_kind_from_path(source_csv: str) -> str:
+    p = Path(str(source_csv))
+    parent = p.parent.name
+    name = p.name
+    if parent == "pgd_eval_l1_apgd" or name == "pgd_validation_results_l1_apgd.csv":
+        return "l1_apgd"
+    return "standard"
+
+
+def _apply_per_model_attack_source_preference(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "_source_csv" not in df.columns or "_model_dir_name" not in df.columns:
+        return df
+
+    out_frames = []
+    for model_dir_name, dmodel in df.groupby("_model_dir_name", sort=False, dropna=False):
+        del model_dir_name
+        dmodel = dmodel.copy()
+        dmodel["_source_kind"] = dmodel["_source_csv"].map(_source_kind_from_path)
+        dmodel["attack_norm"] = dmodel["attack_norm"].astype(str).str.lower()
+
+        non_l1 = dmodel[dmodel["attack_norm"] != "l1"].copy()
+        l1_rows = dmodel[dmodel["attack_norm"] == "l1"].copy()
+
+        if l1_rows.empty:
+            out_frames.append(non_l1)
+            continue
+
+        l1_apgd_rows = l1_rows[l1_rows["_source_kind"] == "l1_apgd"].copy()
+        if not l1_apgd_rows.empty:
+            out_frames.append(pd.concat([non_l1, l1_apgd_rows], ignore_index=True))
+            continue
+
+        standard_l1_rows = l1_rows[l1_rows["_source_kind"] == "standard"].copy()
+        out_frames.append(pd.concat([non_l1, standard_l1_rows], ignore_index=True))
+
+    if not out_frames:
+        return df.iloc[0:0].copy()
+
+    out = pd.concat(out_frames, ignore_index=True)
+    if "_source_kind" in out.columns:
+        out = out.drop(columns=["_source_kind"])
+    return out
 
 
 def _load_dataframe(args: argparse.Namespace) -> pd.DataFrame:
@@ -230,7 +285,8 @@ def _load_dataframe(args: argparse.Namespace) -> pd.DataFrame:
         if not frames:
             raise RuntimeError("All discovered PGD CSV files were empty.")
 
-        return pd.concat(frames, ignore_index=True)
+        df = pd.concat(frames, ignore_index=True)
+        return _apply_per_model_attack_source_preference(df)
 
     return pd.read_csv(args.csv)
 
@@ -253,15 +309,19 @@ def _enrich_metadata(df: pd.DataFrame, filter_madry_only: bool) -> pd.DataFrame:
         df["init"] = "unknown"
     if "category" not in df.columns:
         df["category"] = "unknown"
+    if "l1_step_mode" not in df.columns:
+        df["l1_step_mode"] = ""
 
     df["train_norm"] = df["train_norm"].astype("object")
     df["init"] = df["init"].astype("object")
+    df["l1_step_mode"] = df["l1_step_mode"].fillna("").astype(str).str.lower()
 
     bad_train_norm = ~df["train_norm"].astype(str).str.lower().isin(NORM_ORDER)
     df.loc[bad_train_norm, "train_norm"] = df.loc[bad_train_norm, "_parsed_train_norm"]
 
-    bad_init = df["init"].astype(str).str.lower().isin(["unknown", "nan", "none", ""])
-    df.loc[bad_init, "init"] = df.loc[bad_init, "_parsed_init"]
+    parsed_init = df["_parsed_init"].astype(str)
+    parsed_init_known = ~parsed_init.str.lower().isin(["unknown", "nan", "none", ""])
+    df.loc[parsed_init_known, "init"] = df.loc[parsed_init_known, "_parsed_init"]
 
     if filter_madry_only:
         df["category"] = "madry"
@@ -279,6 +339,11 @@ def _enrich_metadata(df: pd.DataFrame, filter_madry_only: bool) -> pd.DataFrame:
     ]
 
     df["model_id"] = df["model_dir"].astype(str)
+    df["eval_variant"] = np.where(
+        (df["attack_norm"] == "l1") & (df["l1_step_mode"] == "l1_apgd"),
+        "l1_apgd",
+        df["attack_norm"],
+    )
     labels = []
     for is_baseline, eps, init in zip(df["is_baseline"], df["train_eps"], df["init"]):
         if is_baseline:
@@ -384,6 +449,25 @@ def _build_heatmap_with_clean_row(dpair: pd.DataFrame, train_norm: str, attack_n
     return data, xlabels, ylabels
 
 
+def _select_heatmap_pair_data(df: pd.DataFrame, train_norm: str, eval_variant: str) -> pd.DataFrame:
+    base = df[df["train_norm"] == train_norm].copy()
+    if eval_variant != "l1_apgd":
+        return base[base["eval_variant"] == eval_variant].copy()
+
+    apgd = base[base["eval_variant"] == "l1_apgd"].copy()
+    fallback = base[base["attack_norm"] == "l1"].copy()
+    if fallback.empty:
+        return apgd
+
+    apgd_model_ids = set(apgd["model_id"].astype(str).tolist())
+    fallback = fallback[~fallback["model_id"].astype(str).isin(apgd_model_ids)].copy()
+    if apgd.empty:
+        return fallback
+    if fallback.empty:
+        return apgd
+    return pd.concat([apgd, fallback], ignore_index=True)
+
+
 def _render_heatmap(ax, data: np.ndarray, xlabels: List[str], ylabels: List[str]):
     im = ax.imshow(data, origin="lower", aspect="equal", cmap="turbo", vmin=0, vmax=100)
 
@@ -419,14 +503,21 @@ def save_heatmap_matrix_plot(df: pd.DataFrame, out_dir: str, madry_only: bool, s
         for e, n in zip(d["train_eps"], d["train_norm"])
     ]
 
-    fig, axes = plt.subplots(3, 3, figsize=(14, 14), sharex=False, sharey=False, constrained_layout=True)
+    fig, axes = plt.subplots(
+        len(HEATMAP_EVAL_ORDER),
+        len(NORM_ORDER),
+        figsize=(14, 14),
+        sharex=False,
+        sharey=False,
+        constrained_layout=True,
+    )
     im = None
 
-    for row, attack_norm in enumerate(NORM_ORDER):
+    for row, eval_variant in enumerate(HEATMAP_EVAL_ORDER):
         for col, train_norm in enumerate(NORM_ORDER):
             ax = axes[row, col]
-            dpair = d[(d["train_norm"] == train_norm) & (d["attack_norm"] == attack_norm)].copy()
-            ax.set_title(f"trained on: {train_norm} eval on: {attack_norm}")
+            dpair = _select_heatmap_pair_data(d, train_norm, eval_variant)
+            ax.set_title(f"trained on: {train_norm} eval on: {eval_variant}")
 
             if dpair.empty:
                 ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
@@ -436,7 +527,7 @@ def save_heatmap_matrix_plot(df: pd.DataFrame, out_dir: str, madry_only: bool, s
                     ax.set_ylabel("Evaluated constrained eps")
                 continue
 
-            data, xlabels, ylabels = _build_heatmap_with_clean_row(dpair, train_norm, attack_norm)
+            data, xlabels, ylabels = _build_heatmap_with_clean_row(dpair, train_norm, eval_variant)
             if data is None:
                 ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
                 if row == len(NORM_ORDER) - 1:
@@ -456,7 +547,7 @@ def save_heatmap_matrix_plot(df: pd.DataFrame, out_dir: str, madry_only: bool, s
         cbar = fig.colorbar(im, ax=axes, location="right", shrink=0.92, pad=0.02)
         cbar.set_label("Adv Top-1 Accuracy (%)")
 
-    fig.suptitle("PGD Accuracy Heatmap Matrix (rows=eval norm, cols=train norm)", fontsize=14)
+    fig.suptitle("PGD Accuracy Heatmap Matrix (rows=eval variant, cols=train norm)", fontsize=14)
     fig.savefig(out_path)
     plt.close(fig)
     return str(out_path)
@@ -670,6 +761,9 @@ def main() -> None:
     df["epsilon_input"] = pd.to_numeric(df["epsilon_input"], errors="coerce")
     if args.x_col not in df.columns:
         raise ValueError(f"Missing required x-axis column after enrichment: {args.x_col}")
+    if args.include_inits:
+        allowed_inits = {str(v).strip() for v in args.include_inits if str(v).strip()}
+        df = df[df["init"].astype(str).isin(allowed_inits)]
     df = df[df["train_norm"].isin(NORM_ORDER) & df["attack_norm"].isin(NORM_ORDER)]
     df = df[df["epsilon_input"].isin(HEATMAP_EPS_ORDER) | df["epsilon_input"].eq(0.0)]
     if df.empty:
