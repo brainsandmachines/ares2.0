@@ -41,7 +41,8 @@ def main(args):
     args.distributed=float(args.world_size)>1
     distributed_init(args)
     
-    # normalize attack eps/step for linf (values historically stored as 0-255)
+    # Normalize attack eps for norms that use non-unit input conventions, then
+    # derive a default step size from the effective eps when none is provided.
     if getattr(args, 'attack_norm', None) == 'linf':
         if getattr(args, 'attack_eps', None) is not None:
             args.attack_eps = float(args.attack_eps) / 255.0
@@ -50,6 +51,10 @@ def main(args):
     elif getattr(args, 'attack_norm', None) == 'l1':
         if getattr(args, 'attack_eps', None) is not None:
             args.attack_eps = float(args.attack_eps) * 255.0 / 2
+        if getattr(args, 'attack_step', None) is not None:
+            args.attack_step = float(args.attack_step) * 255.0 / 2 
+    if getattr(args, 'attack_step', None) is None and getattr(args, 'attack_eps', None) is not None:
+        args.attack_step = float(args.attack_eps) / max(int(args.attack_it), 1)
     
     if args.rank == 0:
         experiment_name, group_name = _auto_experiment_name(args)
@@ -62,6 +67,9 @@ def main(args):
     _logger.info(f"Results directory: {args.output_dir}")
 
     # fix the seed for reproducibility
+    if args.seed is None:
+        args.seed = int(torch.randint(0, 2**32 - 1, ()).item())
+    _logger.info(f"Using seed: {args.seed}")
     random_seed(args.seed, args.rank)
     torch.backends.cudnn.deterministic=False
     torch.backends.cudnn.benchmark = True

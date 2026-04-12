@@ -4,7 +4,7 @@ attack_criterion: madry # madry / trades
 attack_norm: linf # l2 / linf / l1
 advprop: False
 attack_eps: 1.0
-attack_step: 1.0
+attack_step: null
 attack_it: 3
 attack_random_start: True # only used for validation
 bce_loss: False
