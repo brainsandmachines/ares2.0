@@ -1,0 +1,2 @@
+timestamp,model_name,checkpoint_path,state_dict_used,train_norm,train_eps_input,attack_norm,attack_eps,attack_step,attack_steps,init,clean_top1,clean_top5,adv_top1,adv_top5,clean_loss,adv_loss
+2026-04-05T18:25:31,convnext_small_linf_16_init2,/groups/golan_neurogroup/bml_group/tomerash/advmodels/results/models/convnext_small_linf_16_init2/model_best.pth.tar,state_dict_ema,linf,16.0,linf,0.06274509803921569,0.00392156862745098,3,2,97.11005669053148,99.73641219303529,88.6971019391808,98.66379636693588,0.13175594008223634,0.4180484462511826
