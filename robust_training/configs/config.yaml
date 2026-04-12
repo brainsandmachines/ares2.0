@@ -16,7 +16,7 @@ apex_amp: False
 native_amp: True
 
 # misc
-seed: 0
+seed: null
 log_interval: 50
 recovery_interval: 0
 num_workers: 6
