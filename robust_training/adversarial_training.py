@@ -42,19 +42,30 @@ def main(args):
     distributed_init(args)
     
     # Normalize attack eps for norms that use non-unit input conventions, then
-    # derive a default step size from the effective eps when none is provided.
+    # derive norm-specific default step sizes when none are provided.
     if getattr(args, 'attack_norm', None) == 'linf':
         if getattr(args, 'attack_eps', None) is not None:
             args.attack_eps = float(args.attack_eps) / 255.0
         if getattr(args, 'attack_step', None) is not None:
             args.attack_step = float(args.attack_step) / 255.0
     elif getattr(args, 'attack_norm', None) == 'l1':
+        if getattr(args, 'attack_step', None) is None:
+            args.attack_step = 1.0
         if getattr(args, 'attack_eps', None) is not None:
-            args.attack_eps = float(args.attack_eps) * 255.0 / 2
-        if getattr(args, 'attack_step', None) is not None:
-            args.attack_step = float(args.attack_step) * 255.0 / 2 
-    if getattr(args, 'attack_step', None) is None and getattr(args, 'attack_eps', None) is not None:
+            args.attack_eps = float(args.attack_eps) * 255.0 / 2.0
+
+    if (
+        getattr(args, 'attack_norm', None) == 'linf'
+        and getattr(args, 'attack_step', None) is None
+        and getattr(args, 'attack_eps', None) is not None
+    ):
         args.attack_step = float(args.attack_eps) / max(int(args.attack_it), 1)
+    elif (
+        getattr(args, 'attack_norm', None) == 'l2'
+        and getattr(args, 'attack_step', None) is None
+        and getattr(args, 'attack_eps', None) is not None
+    ):
+        args.attack_step = 2.0 * float(args.attack_eps) / max(int(args.attack_it), 1)
     
     if args.rank == 0:
         experiment_name, group_name = _auto_experiment_name(args)
