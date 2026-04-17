@@ -135,3 +135,13 @@ python -m robust_training.adversarial_training \
     model.resume="/home/ashtomer/projects/ares/results/models/$model_name/last.pth.tar" \
     training.batch_size=$BATCH_SIZE \
     hydra.run.dir="/home/ashtomer/projects/ares/results/models/$model_name/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+
+status=$?
+
+  if [ "$status" -eq 0 ]; then
+      python /home/ashtomer/projects/ares/results/models/prune_model_checkpoints.py \
+          "/home/ashtomer/projects/ares/results/models/$model_name" \
+          --keep-n 5
+  fi
+
+  exit "$status"
