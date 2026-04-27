@@ -125,7 +125,16 @@ def train_one_epoch(
                     getattr(args, 'alpha_scale_epochs', 9.0),
                     getattr(args, 'alpha_scale_init', 0.1),
                 )
-                loss_reg = reg_loss_fn(gradient, input) * alpha
+                max_ratio = getattr(args, 'gradnorm_max_reg_to_ce_ratio', 0.0)
+                raw_loss_reg = reg_loss_fn(gradient, input) * alpha
+
+                if max_ratio is not None and max_ratio > 0:
+                    reg_cap = max_ratio * ce_loss.detach()
+                    scale = (reg_cap / raw_loss_reg.detach().clamp_min(1e-12)).clamp(max=1.0)
+                    loss_reg = raw_loss_reg * scale
+                else:
+                    scale = raw_loss_reg.new_tensor(1.0)
+                    loss_reg = raw_loss_reg
 
                 loss = ce_loss + loss_reg
             else:
@@ -199,11 +208,16 @@ def train_one_epoch(
                 data_time=data_time_m))
             if args.gradnorm:
                 ce_val = ce_loss.detach().item()
+                raw_reg_val = raw_loss_reg.detach().item()
                 reg_val = loss_reg.detach().item()
+                scale_val = scale.detach().item()
                 ratio = reg_val / max(ce_val, 1e-12)
+                raw_ratio = raw_reg_val / max(ce_val, 1e-12)
+
                 _logger.info(
-                    'GradNorm: alpha={:.4f} ce={:.6g} reg={:.6g} reg/ce={:.4f}'.format(
-                        alpha, ce_val, reg_val, ratio
+                    'GradNorm: alpha={:.4f} ce={:.6g} raw_reg={:.6g} reg={:.6g} '
+                    'raw_reg/ce={:.4f} reg/ce={:.4f} scale={:.4f}'.format(
+                        alpha, ce_val, raw_reg_val, reg_val, raw_ratio, ratio, scale_val
                     )
                 )
 
