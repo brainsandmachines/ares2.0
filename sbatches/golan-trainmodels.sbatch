@@ -38,14 +38,19 @@ export MASTER_PORT=$((10000 + RANDOM % 50000))
 jobname="$SLURM_JOB_NAME"
 
 # -----------------------------
-# Parse attack_eps (number before init)
-# -----------------------------
-attack_eps=$(echo "$jobname" | sed -E 's/.*_([0-9]+)_init[0-9]+/\1/')
-
-# -----------------------------
 # Parse experiment_num (number after init)
 # -----------------------------
-experiment_num=$(echo "$jobname" | sed -E 's/.*_init([0-9]+)/\1/')
+attack_eps=""
+experiment_num=""
+if [[ "$jobname" =~ _([0-9]+)_init([0-9]+)$ ]]; then
+    attack_eps="${BASH_REMATCH[1]}"
+    experiment_num="${BASH_REMATCH[2]}"
+elif [[ "$jobname" =~ _init([0-9]+)$ ]]; then
+    experiment_num="${BASH_REMATCH[1]}"
+else
+    echo "[ERROR] Could not parse experiment_num from job name: $jobname"
+    exit 1
+fi
 
 # -----------------------------
 # Defaults
@@ -53,14 +58,32 @@ experiment_num=$(echo "$jobname" | sed -E 's/.*_init([0-9]+)/\1/')
 attack_norm="linf"
 advtrain=false
 gradnorm=false
+gradnorm_penalty_norm="l1"
 crit="madry"
+is_v1=false
+v1_noise_mode=""
+attack_domain="pixel"
+model_override=""
 
 # -----------------------------
 # -----------------------------
 # Rules based on job name
 # -----------------------------
+if [[ "$jobname" == v1clean* ]]; then
+    is_v1=true
+    v1_noise_mode="null"
+    model_override="model=convnext_small_v1"
+elif [[ "$jobname" == v1noise* ]]; then
+    is_v1=true
+    v1_noise_mode="neuronal"
+    model_override="model=convnext_small_v1"
+fi
+
 if [[ "$jobname" == *gradnorm* ]]; then
     gradnorm=true
+    if [[ "$jobname" == *gradnorm_l2* ]]; then
+        gradnorm_penalty_norm="l2"
+    fi
 elif [[ "$jobname" == *linf* ]]; then
     attack_norm="linf"
     advtrain=true
@@ -74,6 +97,33 @@ fi
 
 if [[ "$jobname" == *trades* ]]; then
     crit="trades"
+fi
+
+if [[ "$gradnorm" == "true" ]]; then
+    if [[ "$jobname" != *gradnorm_l1* && "$jobname" != *gradnorm_l2* ]]; then
+        echo "[ERROR] GradNorm job names must include gradnorm_l1 or gradnorm_l2: $jobname"
+        exit 1
+    fi
+fi
+
+if [[ "$advtrain" == "true" || "$gradnorm" == "true" ]]; then
+    if [[ -z "$attack_eps" ]]; then
+        echo "[ERROR] Could not parse attack epsilon from job name: $jobname"
+        exit 1
+    fi
+fi
+
+if [[ "$is_v1" == "true" && "$gradnorm" == "true" ]]; then
+    echo "[ERROR] V1 job names do not support gradnorm: $jobname"
+    exit 1
+fi
+
+if [[ "$is_v1" == "true" && "$advtrain" == "true" ]]; then
+    attack_domain="v1_feature"
+    if [[ "$v1_noise_mode" != "null" ]]; then
+        echo "[ERROR] V1 adversarial training with noise is not supported: $jobname"
+        exit 1
+    fi
 fi
 
 
@@ -112,7 +162,44 @@ BATCH_SIZE=$BATCH_PER_GPU
 # -----------------------------
 # Model name
 # -----------------------------
-model_name="convnext_small_${jobname}"
+
+if [[ "$is_v1" == "true" ]]; then
+      v1_tag="clean"
+      if [[ "$v1_noise_mode" != "null" ]]; then
+          v1_tag="noise"
+      fi
+
+      if [[ "$advtrain" == "true" ]]; then
+          if [[ "$crit" == "trades" ]]; then
+              if [[ "$attack_norm" == "linf" ]]; then
+                  model_name="convnext_small_v1_${v1_tag}_linftrades_${attack_eps}_init${experiment_num}"
+              elif [[ "$attack_norm" == "l2" ]]; then
+                  model_name="convnext_small_v1_${v1_tag}_l2trades_${attack_eps}_init${experiment_num}"
+              elif [[ "$attack_norm" == "l1" ]]; then
+                  model_name="convnext_small_v1_${v1_tag}_l1trades_${attack_eps}_init${experiment_num}"
+              else
+                  echo "[ERROR] Unsupported attack norm for V1 TRADES: $attack_norm"
+                  exit 1
+              fi
+          else
+              if [[ "$attack_norm" == "linf" ]]; then
+                  model_name="convnext_small_v1_${v1_tag}_linf_${attack_eps}_init${experiment_num}"
+              elif [[ "$attack_norm" == "l2" ]]; then
+                  model_name="convnext_small_v1_${v1_tag}_l2_${attack_eps}_init${experiment_num}"
+              elif [[ "$attack_norm" == "l1" ]]; then
+                  model_name="convnext_small_v1_${v1_tag}_l1_${attack_eps}_init${experiment_num}"
+              else
+                  echo "[ERROR] Unsupported attack norm for V1 Madry: $attack_norm"
+                  exit 1
+              fi
+          fi
+      else
+          model_name="convnext_small_v1_${v1_tag}_init${experiment_num}"
+      fi
+  else
+      model_name="convnext_small_${jobname}"
+  fi
+
 
 echo "JOB NAME        : $jobname"
 echo "attack_eps     : $attack_eps"
@@ -120,28 +207,48 @@ echo "experiment_num : $experiment_num"
 echo "attack_norm    : $attack_norm"
 echo "advtrain       : $advtrain"
 echo "gradnorm       : $gradnorm"
+echo "gradnorm_pen   : $gradnorm_penalty_norm"
+echo "is_v1          : $is_v1"
+echo "v1_noise_mode  : $v1_noise_mode"
+echo "attack_domain  : $attack_domain"
 echo "model_name     : $model_name"
 echo "Batch size     : $BATCH_SIZE"
 echo "attack_crit    : $crit"
 
-python -m robust_training.adversarial_training \
-    attacks.attack_eps="$attack_eps" \
-    attacks.attack_norm="$attack_norm" \
-    attacks.advtrain="$advtrain" \
-    attacks.l1_step_mode=l1_apgd \
-    attacks.gradnorm="$gradnorm" \
-    attacks.attack_criterion="$crit" \
-    model.experiment_num="$experiment_num" \
-    model.resume="/home/ashtomer/projects/ares/results/models/$model_name/last.pth.tar" \
-    training.batch_size=$BATCH_SIZE \
+cmd=(
+    python -m robust_training.adversarial_training
+    attacks.attack_norm="$attack_norm"
+    attacks.advtrain="$advtrain"
+    attacks.l1_step_mode=l1_apgd
+    attacks.gradnorm="$gradnorm"
+    attacks.gradnorm_penalty_norm="$gradnorm_penalty_norm"
+    attacks.attack_criterion="$crit"
+    attacks.attack_domain="$attack_domain"
+    model.experiment_num="$experiment_num"
+    model.resume="/home/ashtomer/projects/ares/results/models/$model_name/last.pth.tar"
+    training.batch_size=$BATCH_SIZE
     hydra.run.dir="/home/ashtomer/projects/ares/results/models/$model_name/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+)
+
+if [[ -n "$model_override" ]]; then
+    cmd+=("$model_override")
+    cmd+=("model.v1_noise_mode=$v1_noise_mode")
+fi
+
+if [[ "$is_v1" == "true" && "$advtrain" == "true" ]]; then
+    cmd+=("attacks.v1_attack_eps=$attack_eps")
+elif [[ -n "$attack_eps" ]]; then
+    cmd+=("attacks.attack_eps=$attack_eps")
+fi
+
+"${cmd[@]}"
 
 status=$?
 
   if [ "$status" -eq 0 ]; then
       python /home/ashtomer/projects/ares/results/models/prune_model_checkpoints.py \
           "/home/ashtomer/projects/ares/results/models/$model_name" \
-          --keep-n 5
+          --keep-n 10
   fi
 
   exit "$status"

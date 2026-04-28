@@ -2,12 +2,20 @@
 advtrain: True
 attack_criterion: madry # madry / trades
 attack_norm: linf # l2 / linf / l1
+attack_domain: pixel # pixel / v1_feature
 advprop: False
 attack_eps: 1.0
 attack_step: null
 attack_it: 3
 attack_random_start: True # only used for validation
+attack_use_best: True
 bce_loss: False
+
+v1_attack_eps: 1.0
+v1_attack_step: null
+v1_attack_it: 3
+v1_attack_random_start: False
+v1_attack_use_best: True
 
 random_start: False
 random_start_eps_factor: 0.5
@@ -29,8 +37,9 @@ gradnorm: False
 loss_fn: 'DBP'
 ce_weight: 0.8
 gradnorm_weight: 1.2
+gradnorm_penalty_norm: l1
 alpha: [0.0, 0.2, 1.0]
 alpha_start_epoch: 0
 alpha_scale_init: 0.1
 alpha_scale_epochs: 9
-gradnorm_max_reg_to_ce_ratio: 3.0
+gradnorm_max_reg_to_ce_ratio: 1.0

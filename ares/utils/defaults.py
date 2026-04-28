@@ -201,14 +201,29 @@ def get_args_parser():
     # advtrain
     parser.add_argument('--advtrain', default=False, help='if use advtrain')
     parser.add_argument('--attack-criterion', type=str, default='regular', choices=['regular', 'smooth', 'mixup'], help='default args for: adversarial training')
+    parser.add_argument('--attack-domain', type=str, default='pixel', choices=['pixel', 'v1_feature'],
+                        help='Attack domain for adversarial training.')
     parser.add_argument('--attack-eps', type=float, default=2.0, help='attack epsilon.')
     parser.add_argument('--attack-step', type=float, default=8.0/3, help='attack epsilon.')
     parser.add_argument('--attack-it', type=int, default=3, help='attack iteration')
+    parser.add_argument('--attack-random-start', action='store_true', default=False,
+                        help='Use random starts for validation-time PGD generation.')
+    parser.add_argument('--attack-use-best', action='store_true', default=False,
+                        help='Keep the best PGD iterate during validation-time attack generation.')
+    parser.add_argument('--v1-attack-eps', type=float, default=1.0, help='feature-space V1 attack epsilon.')
+    parser.add_argument('--v1-attack-step', type=float, default=None, help='feature-space V1 attack step size.')
+    parser.add_argument('--v1-attack-it', type=int, default=3, help='feature-space V1 attack iterations.')
+    parser.add_argument('--v1-attack-random-start', action='store_true', default=False,
+                        help='Use random starts for validation-time V1 feature PGD generation.')
+    parser.add_argument('--v1-attack-use-best', action='store_true', default=False,
+                        help='Keep the best V1 PGD iterate during validation-time attack generation.')
     parser.add_argument('--attack-norm',type=str, default='linf',choices=['linf','l2'], help='norm used for adversarial training step')
     parser.add_argument('--alpha-start-epoch', type=int, default=0, help='epoch to start gradnorm objective')
     parser.add_argument('--alpha-scale-init', type=float, default=0.1, help='initial gradnorm alpha during scaling phase')
     parser.add_argument('--alpha-scale-epochs', type=float, default=9.0, help='number of early epochs to scale gradnorm alpha before fixing alpha=1.0')
     parser.add_argument('--gradnorm-max-reg-to-ce-ratio', type=float, default=3.0, help='caps gradnorm regularization relative to CE loss; <=0 disables cap')
+    parser.add_argument('--gradnorm-penalty-norm', type=str, default='l1', choices=['l1', 'l2'],
+                        help='norm used inside the gradnorm double-backprop penalty')
     # advprop
     parser.add_argument('--advprop', default=False, help='if use advprop')
     parser.add_argument('--experiment', default='', type=str,

@@ -41,32 +41,66 @@ def main(args):
     args.distributed=float(args.world_size)>1
     distributed_init(args)
     
-    # Normalize attack eps for norms that use non-unit input conventions, then
-    # derive norm-specific default step sizes when none are provided.
-    if getattr(args, 'attack_norm', None) == 'linf':
-        if getattr(args, 'attack_eps', None) is not None:
-            args.attack_eps = float(args.attack_eps) / 255.0
-        if getattr(args, 'attack_step', None) is not None:
-            args.attack_step = float(args.attack_step) / 255.0
-    elif getattr(args, 'attack_norm', None) == 'l1':
-        if getattr(args, 'attack_step', None) is None:
-            args.attack_step = 1.0
-        if getattr(args, 'attack_eps', None) is not None:
-            args.attack_eps = float(args.attack_eps) * 255.0 / 2.0
+    attack_domain = getattr(args, 'attack_domain', 'pixel')
+    v1_noise_mode = getattr(args, 'v1_noise_mode', None)
 
     if (
-        getattr(args, 'attack_norm', None) == 'linf'
-        and getattr(args, 'attack_step', None) is None
-        and getattr(args, 'attack_eps', None) is not None
+        getattr(args, 'model', None) == 'convnext_small_v1'
+        and getattr(args, 'advtrain', False)
+        and getattr(args, 'attack_criterion', None) in {'madry', 'trades'}
+        and v1_noise_mode is not None
     ):
-        args.attack_step = float(args.attack_eps) / max(int(args.attack_it), 1)
-    elif (
-        getattr(args, 'attack_norm', None) == 'l2'
-        and getattr(args, 'attack_step', None) is None
-        and getattr(args, 'attack_eps', None) is not None
-    ):
-        args.attack_step = 2.0 * float(args.attack_eps) / max(int(args.attack_it), 1)
-    
+        raise ValueError('Adversarial training with V1 noise is not supported. Set v1_noise_mode=null.')
+
+    # Normalize pixel-space attack magnitudes and derive norm-specific defaults.
+    if attack_domain == 'pixel':
+        if getattr(args, 'attack_norm', None) == 'linf':
+            if getattr(args, 'attack_eps', None) is not None:
+                args.attack_eps = float(args.attack_eps) / 255.0
+            if getattr(args, 'attack_step', None) is not None:
+                args.attack_step = float(args.attack_step) / 255.0
+        elif getattr(args, 'attack_norm', None) == 'l1':
+            if getattr(args, 'attack_step', None) is None:
+                args.attack_step = 1.0
+            if getattr(args, 'attack_eps', None) is not None:
+                args.attack_eps = float(args.attack_eps) * 255.0 / 2.0
+
+        if (
+            getattr(args, 'attack_norm', None) == 'linf'
+            and getattr(args, 'attack_step', None) is None
+            and getattr(args, 'attack_eps', None) is not None
+        ):
+            args.attack_step = float(args.attack_eps) / max(int(args.attack_it), 1)
+        elif (
+            getattr(args, 'attack_norm', None) == 'l2'
+            and getattr(args, 'attack_step', None) is None
+            and getattr(args, 'attack_eps', None) is not None
+        ):
+            args.attack_step = 2.0 * float(args.attack_eps) / max(int(args.attack_it), 1)
+    else:
+        if getattr(args, 'attack_norm', None) == 'linf':
+            if getattr(args, 'v1_attack_eps', None) is not None:
+                args.v1_attack_eps = float(args.v1_attack_eps) / 255.0
+            if getattr(args, 'v1_attack_step', None) is not None:
+                args.v1_attack_step = float(args.v1_attack_step) / 255.0
+        elif getattr(args, 'attack_norm', None) == 'l1':
+            if getattr(args, 'v1_attack_step', None) is None:
+                args.v1_attack_step = 1.0
+            if getattr(args, 'v1_attack_eps', None) is not None:
+                args.v1_attack_eps = float(args.v1_attack_eps) * 255.0 / 2.0
+        if (
+            getattr(args, 'attack_norm', None) == 'linf'
+            and getattr(args, 'v1_attack_step', None) is None
+            and getattr(args, 'v1_attack_eps', None) is not None
+        ):
+            args.v1_attack_step = float(args.v1_attack_eps) / max(int(args.v1_attack_it), 1)
+        elif (
+            getattr(args, 'attack_norm', None) == 'l2'
+            and getattr(args, 'v1_attack_step', None) is None
+            and getattr(args, 'v1_attack_eps', None) is not None
+        ):
+            args.v1_attack_step = 2.0 * float(args.v1_attack_eps) / max(int(args.v1_attack_it), 1)
+
     if args.rank == 0:
         experiment_name, group_name = _auto_experiment_name(args)
         args.output_dir = os.path.join(args.output_dir,experiment_name)
@@ -151,10 +185,15 @@ def main(args):
     reg_loss_fn = None
     gradnorm_start_epoch = args.epochs  # default: never start
     if args.gradnorm:
-        reg_loss_fn = DBP(eps=args.attack_eps, std=0.225)
+        reg_loss_fn = DBP(
+            eps=args.attack_eps,
+            std=0.225,
+            penalty_norm=getattr(args, 'gradnorm_penalty_norm', 'l1'),
+        )
         gradnorm_start_epoch = args.alpha_start_epoch
     _logger.info(f'GradNorm start: {gradnorm_start_epoch}')
     _logger.info(
+        f"GradNorm penalty norm: {getattr(args, 'gradnorm_penalty_norm', 'l1')}, "
         f"GradNorm alpha scaling: init={getattr(args, 'alpha_scale_init', 0.1)}, "
         f"scale_epochs={getattr(args, 'alpha_scale_epochs', 9.0)}, "
         f"max_reg_to_ce_ratio={getattr(args, 'gradnorm_max_reg_to_ce_ratio', 3.0)}"

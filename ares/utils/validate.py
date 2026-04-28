@@ -8,7 +8,7 @@ import torch
 from timm.utils import  reduce_tensor
 
 # robust training functions
-from ares.utils.adv import adv_generator , trades_adv_generator
+from ares.utils.adv import adv_generator, trades_adv_generator, v1_adv_generator, v1_trades_adv_generator
 from ares.utils.metrics import AverageMeter, accuracy
 
 def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _logger=None, epoch=None):
@@ -19,7 +19,7 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
     adv_losses_m = AverageMeter()
     adv_top1_m = AverageMeter()
     adv_top5_m = AverageMeter()
-
+    attack_domain = getattr(args, 'attack_domain', 'pixel')
 
     model.eval()
 
@@ -61,35 +61,84 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
         if args.advtrain or args.gradnorm:
             if epoch > 0:
                 # Keep training-time warmup by default; allow eval callers to opt out.
-                if getattr(args, "disable_attack_step_warmup", False):
-                    att_step = args.attack_step
+                if attack_domain == 'pixel':
+                    base_attack_step = args.attack_step
+                    att_eps = args.attack_eps
+                    attack_steps = int(getattr(args, "attack_it", 8))
+                    attack_random_start = bool(getattr(args, "attack_random_start", False))
+                    attack_use_best = bool(getattr(args, "attack_use_best", True))
                 else:
-                    att_step = args.attack_step * min(epoch, 5) / 5
-                att_eps=args.attack_eps
-                attack_steps = int(getattr(args, "attack_it", 8))
+                    base_attack_step = args.v1_attack_step
+                    att_eps = args.v1_attack_eps
+                    attack_steps = int(getattr(args, "v1_attack_it", 8))
+                    attack_random_start = bool(getattr(args, "v1_attack_random_start", False))
+                    attack_use_best = bool(getattr(args, "v1_attack_use_best", True))
+                if getattr(args, "disable_attack_step_warmup", False):
+                    att_step = base_attack_step
+                else:
+                    att_step = base_attack_step * min(epoch, 5) / 5
                 attack_restarts = int(getattr(args, "attack_restarts", 1))
-                # Validation defaults: deterministic init + keep best iterate.
-                attack_random_start = bool(getattr(args, "attack_random_start", False))
-                attack_use_best = bool(getattr(args, "attack_use_best", True))
                 attack_ce = torch.nn.CrossEntropyLoss(reduction='none')
 
                 best_adv_input = None
                 best_adv_loss = None
                 for _ in range(max(1, attack_restarts)):
-                    cand_adv = adv_generator(
-                        args,
-                        input,
-                        target,
-                        model,
-                        att_eps,
-                        attack_steps,
-                        att_step,
-                        random_start=attack_random_start,
-                        use_best=attack_use_best,
-                    )
+                    if args.attack_criterion == 'trades':
+                        trades_random_start = args.attack_norm != 'l1'
+                        if attack_domain == 'pixel':
+                            cand_adv = trades_adv_generator(
+                                args,
+                                input,
+                                model,
+                                att_eps,
+                                attack_steps,
+                                att_step,
+                                random_start=trades_random_start,
+                                use_best=attack_use_best,
+                            )
+                        else:
+                            cand_adv = v1_trades_adv_generator(
+                                args,
+                                input,
+                                model,
+                                att_eps,
+                                attack_steps,
+                                att_step,
+                                random_start=trades_random_start,
+                                use_best=attack_use_best,
+                            )
+                    else:
+                        if attack_domain == 'pixel':
+                            cand_adv = adv_generator(
+                                args,
+                                input,
+                                target,
+                                model,
+                                att_eps,
+                                attack_steps,
+                                att_step,
+                                random_start=attack_random_start,
+                                use_best=attack_use_best,
+                            )
+                        else:
+                            cand_adv = v1_adv_generator(
+                                args,
+                                input,
+                                target,
+                                model,
+                                att_eps,
+                                attack_steps,
+                                att_step,
+                                random_start=attack_random_start,
+                                use_best=attack_use_best,
+                            )
                     with torch.no_grad():
                         with amp_autocast():
-                            cand_output = model(cand_adv)
+                            if attack_domain == 'pixel':
+                                cand_output = model(cand_adv)
+                            else:
+                                attack_model = model.module if hasattr(model, 'module') else model
+                                cand_output = attack_model.forward_from_v1_features(cand_adv)
                         if isinstance(cand_output, (tuple, list)):
                             cand_output = cand_output[0]
                         cand_loss = attack_ce(cand_output, target)
@@ -104,7 +153,11 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
                 adv_input = best_adv_input
                 with torch.no_grad():
                     with amp_autocast():
-                        adv_output = model(adv_input)
+                        if attack_domain == 'pixel':
+                            adv_output = model(adv_input)
+                        else:
+                            attack_model = model.module if hasattr(model, 'module') else model
+                            adv_output = attack_model.forward_from_v1_features(adv_input)
                     if isinstance(adv_output, (tuple, list)):
                         adv_output = adv_output[0]
                     

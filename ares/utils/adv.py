@@ -10,7 +10,7 @@ class AttackerStep:
     Must implement project, step, and random_perturb
     '''
 
-    def __init__(self, orig_input, eps, step_size, use_grad=True):
+    def __init__(self, orig_input, eps, step_size, use_grad=True, clamp_min=0.0, clamp_max=1.0):
         '''
         Initialize the attacker step with a given perturbation magnitude.
 
@@ -23,6 +23,13 @@ class AttackerStep:
         self.eps = eps
         self.step_size = step_size
         self.use_grad = use_grad
+        self.clamp_min = clamp_min
+        self.clamp_max = clamp_max
+
+    def apply_bounds(self, x):
+        if self.clamp_min is None or self.clamp_max is None:
+            return x
+        return torch.clamp(x, self.clamp_min, self.clamp_max)
 
     def project(self, x):
         '''
@@ -80,7 +87,7 @@ class LinfStep(AttackerStep):
         """
         diff = x - self.orig_input
         diff = torch.clamp(diff, -self.eps, self.eps)
-        return torch.clamp(diff + self.orig_input, 0, 1)
+        return self.apply_bounds(diff + self.orig_input)
 
     def step(self, x, g):
         """
@@ -92,13 +99,13 @@ class LinfStep(AttackerStep):
         """
         """
         new_x = x + 2 * (torch.rand_like(x) - 0.5) * self.eps
-        return torch.clamp(new_x, 0, 1)
+        return self.apply_bounds(new_x)
 
     def random_uniform(self, x):
         noise=torch.rand_like(x)
         noise.uniform_(-self.eps, self.eps)
 
-        return torch.clamp(x+noise, 0, 1)
+        return self.apply_bounds(x + noise)
 
 # L2 threat model
 class L2Step(AttackerStep):
@@ -114,7 +121,7 @@ class L2Step(AttackerStep):
         """
         diff = x - self.orig_input
         diff = diff.renorm(p=2, dim=0, maxnorm=self.eps)
-        return torch.clamp(self.orig_input + diff, 0, 1)
+        return self.apply_bounds(self.orig_input + diff)
 
     def step(self, x, g):
         """
@@ -132,7 +139,7 @@ class L2Step(AttackerStep):
         diff = diff / (diff.norm(p=2, dim=1, keepdim=True) + 1e-10)
         diff = diff.view_as(x)
         # scale by eps and clamp
-        return torch.clamp(x + diff * self.eps, 0, 1)
+        return self.apply_bounds(x + diff * self.eps)
     
     def random_uniform(self, x):
         return self.random_perturb(x)
@@ -157,13 +164,13 @@ class L1Step(AttackerStep):
         # This saves massive computation time for small perturbations
         current_l1 = torch.norm(diff_flat, p=1, dim=1, keepdim=True)
         if (current_l1 <= self.eps).all():
-            return torch.clamp(x, 0, 1)
+            return self.apply_bounds(x)
 
         # 3. Identify violators (batch-wise optimization)
         # We only project samples that violate the constraint
         mask_needs_proj = (current_l1 > self.eps).squeeze()
         if not mask_needs_proj.any():
-            return torch.clamp(x, 0, 1)
+            return self.apply_bounds(x)
         
         diff_to_proj = diff_flat[mask_needs_proj]
         
@@ -199,7 +206,7 @@ class L1Step(AttackerStep):
         
         # 7. Add back to original input and Box-Constraint [0, 1]
         x_out = self.orig_input + diff_flat_out.view_as(diff)
-        return torch.clamp(x_out, 0, 1)
+        return self.apply_bounds(x_out)
 
     def step(self, x, g):
         """
@@ -247,7 +254,7 @@ class L1Step(AttackerStep):
         diff = diff / (norm + 1e-10)
         diff = diff.view_as(x) * self.eps
         
-        return torch.clamp(x + diff, 0, 1)
+        return self.apply_bounds(x + diff)
 
     def random_uniform(self, x):
         return self.random_perturb(x)
@@ -277,6 +284,37 @@ def replace_best_reverse(loss, bloss, x, bx):
 
     return bloss, bx
 
+
+def _build_step(args, orig_input, eps, attack_lr, clamp_min=0.0, clamp_max=1.0):
+    if args.attack_norm == 'l2':
+        return L2Step(eps=eps, orig_input=orig_input, step_size=attack_lr, clamp_min=clamp_min, clamp_max=clamp_max)
+    if args.attack_norm == 'l1':
+        step = L1Step(eps=eps, orig_input=orig_input, step_size=attack_lr, clamp_min=clamp_min, clamp_max=clamp_max)
+        step.l1_step_mode = str(getattr(args, 'l1_step_mode', 'l2_norm')).lower()
+        step.l1_apgd_rho = float(getattr(args, 'l1_apgd_rho', 0.05))
+        return step
+    if args.attack_norm == 'linf':
+        return LinfStep(eps=eps, orig_input=orig_input, step_size=attack_lr, clamp_min=clamp_min, clamp_max=clamp_max)
+    raise NotImplementedError
+
+
+def _configure_l1_step_search(args, attack_lr):
+    return (
+        bool(getattr(args, 'l1_apgd_use_halving', True)),
+        bool(args.attack_norm == 'l1' and str(getattr(args, 'l1_step_mode', 'l2_norm')).lower() == 'l1_apgd'),
+        float(attack_lr),
+        max(float(attack_lr) * float(getattr(args, 'l1_apgd_min_step_scale', 0.01)), 1e-12),
+        None,
+    )
+
+
+def _unwrap_v1_attack_model(model):
+    base_model = model.module if hasattr(model, 'module') else model
+    required = ('forward_v1_features', 'forward_from_v1_features', 'forward_with_v1_override')
+    if not all(hasattr(base_model, attr) for attr in required):
+        raise ValueError('V1 feature-space attacks require a model with the V1 attack interface.')
+    return base_model
+
 def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, random_start, use_best=True):
     # denorm images to 0-1
     std_tensor=torch.Tensor(args.std).cuda(non_blocking=True)[None, :, None, None]
@@ -287,17 +325,7 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
     prev_training = bool(model.training)
     model.eval()
     orig_input = images.detach().cuda(non_blocking=True)
-    if args.attack_norm=='l2':
-        step = L2Step(eps=eps, orig_input=orig_input, step_size=attack_lr)
-    elif args.attack_norm=='l1':
-        step = L1Step(eps=eps, orig_input=orig_input, step_size=attack_lr)
-        l1_step_mode = str(getattr(args, 'l1_step_mode', 'l2_norm')).lower()
-        step.l1_step_mode = l1_step_mode
-        step.l1_apgd_rho = float(getattr(args, 'l1_apgd_rho', 0.05))
-    elif args.attack_norm=='linf':
-        step = LinfStep(eps=eps, orig_input=orig_input, step_size=attack_lr)
-    else:
-        raise NotImplementedError
+    step = _build_step(args, orig_input, eps, attack_lr)
 
 
     # define loss function
@@ -316,13 +344,7 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
     else:
         images = orig_input.clone().detach()
 
-    l1_apgd_use_halving = bool(getattr(args, 'l1_apgd_use_halving', True))
-    l1_apgd_mode_active = bool(
-        args.attack_norm == 'l1' and str(getattr(args, 'l1_step_mode', 'l2_norm')).lower() == 'l1_apgd'
-    )
-    l1_cur_step = float(attack_lr)
-    l1_min_step = max(float(attack_lr) * float(getattr(args, 'l1_apgd_min_step_scale', 0.01)), 1e-12)
-    l1_prev_loss = None
+    l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(args, attack_lr)
 
     for _ in range(attack_steps):
         images = images.clone().detach().requires_grad_(True)
@@ -359,7 +381,115 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
     best_x=(best_x-mean_tensor)/std_tensor
     return best_x
 
+
+def v1_adv_generator(args, images, target, model, eps, attack_steps, attack_lr, random_start, use_best=True):
+    prev_training = bool(model.training)
+    model.eval()
+    attack_model = _unwrap_v1_attack_model(model)
+    orig_features = attack_model.forward_v1_features(images, apply_noise=True).detach()
+    step = _build_step(args, orig_features, eps, attack_lr, clamp_min=None, clamp_max=None)
+    attack_criterion = torch.nn.CrossEntropyLoss()
+
+    amp_autocast = suppress
+    if args.amp_version == 'native':
+        amp_autocast = torch.cuda.amp.autocast
+
+    best_loss = None
+    best_x = None
+    if random_start:
+        adv_features = step.random_perturb(orig_features)
+    else:
+        adv_features = orig_features.clone().detach()
+
+    l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(args, attack_lr)
+
+    for _ in range(attack_steps):
+        adv_features = adv_features.clone().detach().requires_grad_(True)
+        with amp_autocast():
+            adv_losses = attack_criterion(attack_model.forward_from_v1_features(adv_features), target)
+
+        torch.mean(adv_losses).backward()
+        grad = adv_features.grad.detach()
+        with torch.no_grad():
+            if l1_apgd_mode_active:
+                cur_loss = float(adv_losses.item())
+                if l1_apgd_use_halving and l1_prev_loss is not None and cur_loss <= l1_prev_loss + 1e-12:
+                    l1_cur_step = max(l1_cur_step / 2.0, l1_min_step)
+                step.step_size = l1_cur_step
+                l1_prev_loss = cur_loss
+
+            best_loss, best_x = replace_best(adv_losses, best_loss, adv_features, best_x) if use_best else (adv_losses, adv_features)
+            adv_features = step.step(adv_features, grad)
+            adv_features = step.project(adv_features)
+
+    with torch.no_grad():
+        adv_losses = attack_criterion(attack_model.forward_from_v1_features(adv_features), target)
+    best_loss, best_x = replace_best(adv_losses, best_loss, adv_features, best_x) if use_best else (adv_losses, adv_features)
+    if prev_training:
+        model.train()
+    return best_x.detach()
+
+def v1_trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, random_start=True, use_best=True):
+    prev_training = bool(model.training)
+    model.eval()
+    attack_model = _unwrap_v1_attack_model(model)
+
+    with torch.no_grad():
+        nat_features = attack_model.forward_v1_features(images, apply_noise=False).detach()
+        nat_logits = attack_model.forward_from_v1_features(nat_features)
+        nat_probs = torch.softmax(nat_logits, dim=1).detach()
+
+    step = _build_step(args, nat_features, eps, attack_lr, clamp_min=None, clamp_max=None)
+
+    if random_start:
+        adv_features = step.random_perturb(nat_features)
+    else:
+        adv_features = nat_features.clone()
+
+    best_loss = None
+    best_x = None
+
+    l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(args, attack_lr)
+
+    for _ in range(attack_steps):
+        adv_features = adv_features.clone().detach().requires_grad_(True)
+        logits_adv = attack_model.forward_from_v1_features(adv_features)
+
+        kl = torch.nn.functional.kl_div(
+            torch.log_softmax(logits_adv, dim=1),
+            nat_probs,
+            reduction='none'
+        ).sum(dim=1)
+
+        grad = torch.autograd.grad(kl.sum(), adv_features)[0]
+
+        with torch.no_grad():
+            if l1_apgd_mode_active:
+                cur_loss = float(kl.mean().item())
+                if l1_apgd_use_halving and l1_prev_loss is not None and cur_loss <= l1_prev_loss + 1e-12:
+                    l1_cur_step = max(l1_cur_step / 2.0, l1_min_step)
+                step.step_size = l1_cur_step
+                l1_prev_loss = cur_loss
+
+            best_loss, best_x = replace_best(kl, best_loss, adv_features, best_x) if use_best else (kl, adv_features)
+            adv_features = step.step(adv_features, grad)
+            adv_features = step.project(adv_features)
+
+    with torch.no_grad():
+        logits_adv = attack_model.forward_from_v1_features(adv_features)
+        kl = torch.nn.functional.kl_div(
+            torch.log_softmax(logits_adv, dim=1),
+            nat_probs,
+            reduction='none'
+        ).sum(dim=1)
+        best_loss, best_x = replace_best(kl.detach(), best_loss, adv_features.detach(), best_x) if use_best else (kl, adv_features.detach())
+
+    if prev_training:
+        model.train()
+    return best_x.detach()
+
 def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, random_start=True, use_best=True):
+    prev_training = bool(model.training)
     std = torch.Tensor(args.std).cuda()[None,:,None,None]
     mean = torch.Tensor(args.mean).cuda()[None,:,None,None]
     images = images * std + mean
@@ -371,17 +501,7 @@ def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, rand
         nat_logits = model((x_nat - mean) / std)
         nat_probs = torch.softmax(nat_logits, dim=1).detach()
 
-    if args.attack_norm=='l2':
-        step = L2Step(eps=eps, orig_input=x_nat, step_size=attack_lr)
-    elif args.attack_norm=='l1':
-        step = L1Step(eps=eps, orig_input=x_nat, step_size=attack_lr)
-        l1_step_mode = str(getattr(args, 'l1_step_mode', 'l2_norm')).lower()
-        step.l1_step_mode = l1_step_mode
-        step.l1_apgd_rho = float(getattr(args, 'l1_apgd_rho', 0.05))
-    elif args.attack_norm=='linf':
-        step = LinfStep(eps=eps, orig_input=x_nat, step_size=attack_lr)
-    else:
-        raise NotImplementedError
+    step = _build_step(args, x_nat, eps, attack_lr)
 
     if random_start:
         x_adv = step.random_perturb(x_nat)
@@ -391,13 +511,7 @@ def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, rand
     best_loss = None
     best_x = None
 
-    l1_apgd_use_halving = bool(getattr(args, 'l1_apgd_use_halving', True))
-    l1_apgd_mode_active = bool(
-        args.attack_norm == 'l1' and str(getattr(args, 'l1_step_mode', 'l2_norm')).lower() == 'l1_apgd'
-    )
-    l1_cur_step = float(attack_lr)
-    l1_min_step = max(float(attack_lr) * float(getattr(args, 'l1_apgd_min_step_scale', 0.01)), 1e-12)
-    l1_prev_loss = None
+    l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(args, attack_lr)
 
     for _ in range(attack_steps):
         x_adv.requires_grad_()
@@ -432,8 +546,8 @@ def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, rand
         reduction='none'
     ).sum(dim=1)
         best_loss, best_x = replace_best(kl.detach(), best_loss, x_adv.detach(), best_x) if use_best else (kl, x_adv.detach())
-
-    model.train()
+    if prev_training:
+        model.train()
     best_x = torch.clamp(best_x, 0.0, 1.0)
     return (best_x - mean) / std
 

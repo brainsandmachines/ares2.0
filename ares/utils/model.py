@@ -97,7 +97,7 @@ def build_model(args, _logger, num_aug_splits):
     '''The function to build model for robust training.'''
     # creating model
     _logger.info(f"Creating model: {args.model}")
-    model_kwargs=dict({
+    model_kwargs = dict({
         'num_classes': args.num_classes,
         'drop_rate': args.drop,
         'drop_path_rate': args.drop_path,
@@ -106,7 +106,31 @@ def build_model(args, _logger, num_aug_splits):
         'bn_momentum': args.bn_momentum,
         'bn_eps': args.bn_eps,
     })
-    model = create_model(args.model, pretrained=False, **model_kwargs)
+    if args.model == 'convnext_small_v1':
+        from ares.model.v1_convnext import V1ConvNeXt
+
+        model = V1ConvNeXt(
+            backbone_name='convnext_small',
+            input_size=args.input_size,
+            v1_noise_train_only=getattr(args, 'v1_noise_train_only', True),
+            visual_degrees=getattr(args, 'v1_visual_degrees', 8),
+            stride=getattr(args, 'v1_stride', 4),
+            ksize=getattr(args, 'v1_ksize', 25),
+            sf_corr=getattr(args, 'v1_sf_corr', 0.75),
+            sf_max=getattr(args, 'v1_sf_max', 9),
+            sf_min=getattr(args, 'v1_sf_min', 0),
+            rand_param=getattr(args, 'v1_rand_param', False),
+            gabor_seed=getattr(args, 'v1_gabor_seed', 0),
+            simple_channels=getattr(args, 'v1_simple_channels', 256),
+            complex_channels=getattr(args, 'v1_complex_channels', 256),
+            noise_mode=getattr(args, 'v1_noise_mode', None),
+            noise_scale=getattr(args, 'v1_noise_scale', 0.35),
+            noise_level=getattr(args, 'v1_noise_level', 0.07),
+            k_exc=getattr(args, 'v1_k_exc', 25),
+            **model_kwargs,
+        )
+    else:
+        model = create_model(args.model, pretrained=False, **model_kwargs)
     if args.num_classes is None:
         assert hasattr(model, 'num_classes'), 'Model must have `num_classes` attr if not set on cmd line/config.'
         args.num_classes = model.num_classes

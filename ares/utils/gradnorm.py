@@ -37,13 +37,23 @@ class GradNorm_Loss(nn.Module):
     
     
 class DBP(nn.Module):
-    def __init__(self, eps=4./255., std=0.225) -> None:
+    def __init__(self, eps=4./255., std=0.225, penalty_norm='l1') -> None:
         super().__init__()
+        if penalty_norm not in {'l1', 'l2'}:
+            raise ValueError(f"Unsupported gradnorm penalty norm: {penalty_norm}")
         self.eps = eps/std
+        self.penalty_norm = penalty_norm
 
     def forward(self, gradients, inputs):
         batch_size = gradients.shape[0]
-        return self.eps*batch_size*gradients.abs().sum((-3, -2, -1)).mean()
+        per_sample = gradients.reshape(batch_size, -1)
+        if self.penalty_norm == 'l1':
+            penalty = per_sample.abs().sum(dim=1)
+        elif self.penalty_norm == 'l2':
+            penalty = per_sample.pow(2).sum(dim=1)
+        else:
+            raise ValueError(f"Unsupported gradnorm penalty norm: {self.penalty_norm}")
+        return self.eps * batch_size * penalty.mean()
     
 def compute_gradnorm_alpha(
     epoch,
