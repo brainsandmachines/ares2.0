@@ -41,6 +41,7 @@ experiment_num=$(echo "$jobname" | sed -E 's/.*_init([0-9]+)/\1/')
 attack_norm="linf"
 advtrain=false
 gradnorm=false
+gradnorm_penalty_norm="l1"
 crit="madry"
 
 # -----------------------------
@@ -48,6 +49,9 @@ crit="madry"
 # -----------------------------
 if [[ "$jobname" == *gradnorm* ]]; then
     gradnorm=true
+    if [[ "$jobname" == *gradnorm_l2* ]]; then
+        gradnorm_penalty_norm="l2"
+    fi
 elif [[ "$jobname" == *linf* ]]; then
     attack_norm="linf"
     advtrain=true
@@ -109,6 +113,7 @@ echo "experiment_num : $experiment_num"
 echo "attack_norm    : $attack_norm"
 echo "advtrain       : $advtrain"
 echo "gradnorm       : $gradnorm"
+echo "gradnorm_pen   : $gradnorm_penalty_norm"
 echo "model_name     : $model_name"
 echo "Batch size     : $BATCH_SIZE"
 echo "attack_crit    : $crit"
@@ -118,6 +123,7 @@ python -m robust_training.adversarial_training \
     attacks.attack_norm="$attack_norm" \
     attacks.advtrain="$advtrain" \
     attacks.gradnorm="$gradnorm" \
+    attacks.gradnorm_penalty_norm="$gradnorm_penalty_norm" \
     attacks.attack_criterion="$crit" \
     model.experiment_num="$experiment_num" \
     model.resume="/home/ashtomer/projects/ares/results/models/$model_name/last.pth.tar" \

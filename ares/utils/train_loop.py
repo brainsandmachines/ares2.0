@@ -9,7 +9,7 @@ from timm.models import model_parameters
 from timm.utils import  reduce_tensor, dispatch_clip_grad
 
 # robust training functions
-from ares.utils.adv import adv_generator, trades_adv_generator
+from ares.utils.adv import adv_generator, trades_adv_generator, v1_adv_generator, v1_trades_adv_generator
 from ares.utils.metrics import AverageMeter
 from ares.utils.gradnorm import compute_gradnorm_alpha
 
@@ -36,9 +36,17 @@ def train_one_epoch(
     last_idx = len(loader) - 1
     num_updates = epoch * len(loader)
     
-    att_step = args.attack_step * min(epoch, 5)/5
-    att_eps = args.attack_eps
-    att_it = args.attack_it
+    attack_domain = getattr(args, 'attack_domain', 'pixel')
+    if attack_domain == 'pixel':
+        att_step = args.attack_step * min(epoch, 5) / 5
+        att_eps = args.attack_eps
+        att_it = args.attack_it
+    elif attack_domain == 'v1_feature':
+        att_step = args.v1_attack_step * min(epoch, 5) / 5
+        att_eps = args.v1_attack_eps
+        att_it = args.v1_attack_it
+    else:
+        raise ValueError(f"Unsupported attack_domain: {attack_domain}")
 
     for batch_idx, (input, target) in enumerate(loader):
         # debugging NaN/Inf in input
@@ -54,12 +62,20 @@ def train_one_epoch(
         # generate adv input
         if args.advtrain:
             if args.attack_criterion == 'madry':
-                input_advtrain = adv_generator(args, input, target, model, att_eps, att_it, att_step, random_start=False)
+                if attack_domain == 'pixel':
+                    input_advtrain = adv_generator(args, input, target, model, att_eps, att_it, att_step, random_start=False)
+                else:
+                    input_advtrain = v1_adv_generator(args, input, target, model, att_eps, att_it, att_step, random_start=False)
             elif args.attack_criterion == 'trades': 
                 trades_random_start = args.attack_norm != 'l1'
-                input_advtrain = trades_adv_generator(
-                    args, input, model, att_eps, att_it, att_step, random_start=trades_random_start
-                )
+                if attack_domain == 'pixel':
+                    input_advtrain = trades_adv_generator(
+                        args, input, model, att_eps, att_it, att_step, random_start=trades_random_start
+                    )
+                else:
+                    input_advtrain = v1_trades_adv_generator(
+                        args, input, model, att_eps, att_it, att_step, random_start=trades_random_start
+                    )
 
         # generate advprop input
         if args.advprop:
@@ -76,12 +92,20 @@ def train_one_epoch(
                 loss = loss_fn(outputs, target) + adv_loss
             elif args.advtrain:
                 if args.attack_criterion == 'madry':
-                    output = model(input_advtrain)
+                    if attack_domain == 'pixel':
+                        output = model(input_advtrain)
+                    else:
+                        attack_model = model.module if hasattr(model, 'module') else model
+                        output = attack_model.forward_from_v1_features(input_advtrain)
                     loss = loss_fn(output, target)
                 elif args.attack_criterion == 'trades':
                     output = model(input)
                     ce_loss = loss_fn(output, target)
-                    output_adv = model(input_advtrain)
+                    if attack_domain == 'pixel':
+                        output_adv = model(input_advtrain)
+                    else:
+                        attack_model = model.module if hasattr(model, 'module') else model
+                        output_adv = attack_model.forward_from_v1_features(input_advtrain)
                     kl_loss = torch.nn.functional.kl_div(
                         torch.nn.functional.log_softmax(output_adv, dim=1),
                         torch.nn.functional.softmax(output, dim=1),

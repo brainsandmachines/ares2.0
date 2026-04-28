@@ -9,6 +9,7 @@ import torch
 from omegaconf import OmegaConf
 
 import robust_training.adversarial_training as advt
+from ares.utils.logger import _auto_experiment_name
 
 
 def _compose_base_cfg():
@@ -35,10 +36,13 @@ def _sbatch_mode_from_jobname(jobname):
     attack_norm = "linf"
     advtrain = False
     gradnorm = False
+    gradnorm_penalty_norm = "l1"
     criterion = "madry"
 
     if "gradnorm" in jobname:
         gradnorm = True
+        if "gradnorm_l2" in jobname:
+            gradnorm_penalty_norm = "l2"
     elif "linf" in jobname:
         attack_norm = "linf"
         advtrain = True
@@ -56,6 +60,7 @@ def _sbatch_mode_from_jobname(jobname):
         "attack_norm": attack_norm,
         "advtrain": advtrain,
         "gradnorm": gradnorm,
+        "gradnorm_penalty_norm": gradnorm_penalty_norm,
         "attack_criterion": criterion,
     }
 
@@ -67,25 +72,73 @@ def _sbatch_mode_from_jobname(jobname):
             "linf_16_init1",
             16,
             1,
-            {"attack_norm": "linf", "advtrain": True, "gradnorm": False, "attack_criterion": "madry"},
+            {
+                "attack_norm": "linf",
+                "advtrain": True,
+                "gradnorm": False,
+                "gradnorm_penalty_norm": "l1",
+                "attack_criterion": "madry",
+            },
         ),
         (
             "l2_16_trades_init2",
             16,
             2,
-            {"attack_norm": "l2", "advtrain": True, "gradnorm": False, "attack_criterion": "trades"},
+            {
+                "attack_norm": "l2",
+                "advtrain": True,
+                "gradnorm": False,
+                "gradnorm_penalty_norm": "l1",
+                "attack_criterion": "trades",
+            },
         ),
         (
             "l1_8_init3",
             8,
             3,
-            {"attack_norm": "l1", "advtrain": True, "gradnorm": False, "attack_criterion": "madry"},
+            {
+                "attack_norm": "l1",
+                "advtrain": True,
+                "gradnorm": False,
+                "gradnorm_penalty_norm": "l1",
+                "attack_criterion": "madry",
+            },
         ),
         (
             "gradnorm_16_init4",
             16,
             4,
-            {"attack_norm": "linf", "advtrain": False, "gradnorm": True, "attack_criterion": "madry"},
+            {
+                "attack_norm": "linf",
+                "advtrain": False,
+                "gradnorm": True,
+                "gradnorm_penalty_norm": "l1",
+                "attack_criterion": "madry",
+            },
+        ),
+        (
+            "gradnorm_l1_16_init4",
+            16,
+            4,
+            {
+                "attack_norm": "linf",
+                "advtrain": False,
+                "gradnorm": True,
+                "gradnorm_penalty_norm": "l1",
+                "attack_criterion": "madry",
+            },
+        ),
+        (
+            "gradnorm_l2_16_init4",
+            16,
+            4,
+            {
+                "attack_norm": "linf",
+                "advtrain": False,
+                "gradnorm": True,
+                "gradnorm_penalty_norm": "l2",
+                "attack_criterion": "madry",
+            },
         ),
     ],
 )
@@ -101,6 +154,7 @@ def test_sbatch_launch_modes_are_launchable(jobname, eps, exp_num, expected):
                     "attack_norm": parsed["attack_norm"],
                     "advtrain": parsed["advtrain"],
                     "gradnorm": parsed["gradnorm"],
+                    "gradnorm_penalty_norm": parsed["gradnorm_penalty_norm"],
                     "attack_criterion": parsed["attack_criterion"],
                 },
                 "model": {"experiment_num": int(exp_num)},
@@ -116,19 +170,30 @@ def test_sbatch_launch_modes_are_launchable(jobname, eps, exp_num, expected):
     assert args.attack_norm == expected["attack_norm"]
     assert args.advtrain is expected["advtrain"]
     assert args.gradnorm is expected["gradnorm"]
+    assert args.gradnorm_penalty_norm == expected["gradnorm_penalty_norm"]
     assert args.attack_criterion == expected["attack_criterion"]
 
 
 @pytest.mark.parametrize(
-    "mode,eps,criterion,expect_regnorm,expected_eps,expected_random_start",
+    "mode,eps,criterion,expect_regnorm,expected_eps,expected_random_start,gradnorm_penalty_norm",
     [
-        ("linf", 16.0, "madry", False, 16.0 / 255.0, False),
-        ("l1", 2.0, "madry", False, 2.0 * 255.0 / 2.0, False),
-        ("l2", 4.0, "trades", False, 4.0, True),
-        ("gradnorm", 8.0, "madry", True, 8.0 / 255.0, False),
+        ("linf", 16.0, "madry", False, 16.0 / 255.0, False, "l1"),
+        ("l1", 2.0, "madry", False, 2.0 * 255.0 / 2.0, False, "l1"),
+        ("l2", 4.0, "trades", False, 4.0, True, "l1"),
+        ("gradnorm", 8.0, "madry", True, 8.0 / 255.0, False, "l1"),
+        ("gradnorm", 8.0, "madry", True, 8.0 / 255.0, False, "l2"),
     ],
 )
-def test_main_one_epoch_modes(monkeypatch, mode, eps, criterion, expect_regnorm, expected_eps, expected_random_start):
+def test_main_one_epoch_modes(
+    monkeypatch,
+    mode,
+    eps,
+    criterion,
+    expect_regnorm,
+    expected_eps,
+    expected_random_start,
+    gradnorm_penalty_norm,
+):
     cfg = _compose_base_cfg()
     cfg = OmegaConf.merge(
         cfg,
@@ -140,6 +205,7 @@ def test_main_one_epoch_modes(monkeypatch, mode, eps, criterion, expect_regnorm,
                     "attack_norm": "linf" if mode == "gradnorm" else mode,
                     "advtrain": mode in {"linf", "l2", "l1"},
                     "gradnorm": mode == "gradnorm",
+                    "gradnorm_penalty_norm": gradnorm_penalty_norm,
                     "attack_criterion": criterion,
                 },
                 "model": {"experiment_num": 1, "resume": ""},
@@ -228,6 +294,7 @@ def test_main_one_epoch_modes(monkeypatch, mode, eps, criterion, expect_regnorm,
     assert train_call["random_start"] is expected_random_start
     if expect_regnorm:
         assert isinstance(train_call["reg_loss_fn"], advt.DBP)
+        assert train_call["reg_loss_fn"].penalty_norm == args.gradnorm_penalty_norm
         assert train_call["gradnorm_start_epoch"] == args.alpha_start_epoch
     else:
         assert train_call["reg_loss_fn"] is None
@@ -371,3 +438,327 @@ def test_maybe_run_final_eval_skips_when_pgd_csv_is_in_pgd_eval_subdir(monkeypat
     advt._maybe_run_final_eval(args, str(output_dir), _Logger())
 
     assert len(calls) == 0
+
+
+def test_main_v1_feature_attack_defaults(monkeypatch):
+    cfg = _compose_base_cfg()
+    cfg = OmegaConf.merge(
+        cfg,
+        OmegaConf.create(
+            {
+                "training": {"epochs": 1, "model_ema": False, "batch_size": 2},
+                "attacks": {
+                    "attack_domain": "v1_feature",
+                    "attack_norm": "linf",
+                    "advtrain": True,
+                    "attack_criterion": "madry",
+                    "v1_attack_eps": 9.0,
+                    "v1_attack_step": None,
+                    "v1_attack_it": 3,
+                },
+                "model": {"experiment_num": 1, "resume": "", "model": "convnext_small_v1"},
+            }
+        ),
+    )
+    args = argparse.Namespace(**advt._merge_groups_for_hydra(cfg))
+    args.train_dir = "/tmp/train"
+    args.eval_dir = "/tmp/val"
+    args.output_dir = "/tmp/out"
+    args.world_size = 1
+    args.rank = 0
+    args.local_rank = 0
+    args.device_id = 0
+    args.final_eval = False
+
+    class _Logger:
+        def info(self, *_a, **_k):
+            return None
+
+        def warning(self, *_a, **_k):
+            return None
+
+        def error(self, *_a, **_k):
+            return None
+
+        def exception(self, *_a, **_k):
+            return None
+
+    class _DummySched:
+        def step(self, *_a, **_k):
+            return None
+
+        def step_update(self, *_a, **_k):
+            return None
+
+    class _DummySaver:
+        def save_checkpoint(self, *_a, **_k):
+            return (0.9, 0)
+
+    train_call = {}
+
+    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_args, reg_loss_fn=None, **kwargs):
+        train_call["attack_domain"] = in_args.attack_domain
+        train_call["v1_attack_step"] = in_args.v1_attack_step
+        return {"loss": 0.1}
+
+    def _fake_loader():
+        x = torch.zeros(2, 3, 8, 8)
+        y = torch.zeros(2, dtype=torch.long)
+        return [(x, y)]
+
+    monkeypatch.setattr(advt, "distributed_init", lambda _args: None)
+    monkeypatch.setattr(advt, "random_seed", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "setup_logger", lambda *a, **k: _Logger())
+    monkeypatch.setattr(advt, "resolve_amp", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "build_model", lambda *_a, **_k: torch.nn.Linear(8, 3))
+    monkeypatch.setattr(advt, "optimizer_kwargs", lambda **_k: {})
+    monkeypatch.setattr(advt, "create_optimizer_v2", lambda model, **_k: torch.optim.SGD(model.parameters(), lr=0.01))
+    monkeypatch.setattr(advt, "build_loss_scaler", lambda *_a, **_k: (contextlib.nullcontext, None))
+    monkeypatch.setattr(advt, "build_dataset", lambda *_a, **_k: (_fake_loader(), _fake_loader()))
+    monkeypatch.setattr(advt, "build_loss", lambda *_a, **_k: (torch.nn.CrossEntropyLoss(), torch.nn.CrossEntropyLoss()))
+    monkeypatch.setattr(advt, "create_scheduler_v2", lambda *_a, **_k: (_DummySched(), 1))
+    monkeypatch.setattr(advt, "scheduler_kwargs", lambda *_a, **_k: {})
+    monkeypatch.setattr(advt, "CheckpointSaver", lambda *a, **k: _DummySaver())
+    monkeypatch.setattr(advt, "validate", lambda *_a, **_k: {"top1": 1.0, "loss": 0.1})
+    monkeypatch.setattr(advt, "update_summary", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "resume_checkpoint", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "load_checkpoint", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "distribute_bn", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "_maybe_run_final_eval", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "train_one_epoch", _train_one_epoch_stub)
+    monkeypatch.setattr(advt.wandb, "init", lambda **_k: None)
+    monkeypatch.setattr(advt.wandb, "log", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt.wandb.util, "generate_id", lambda: "test-run-id")
+
+    advt.main(args)
+
+    assert train_call["attack_domain"] == "v1_feature"
+    assert math.isclose(train_call["v1_attack_step"], (9.0 / 255.0) / 3.0, rel_tol=1e-8)
+
+
+@pytest.mark.parametrize("criterion", ["madry", "trades"])
+def test_main_rejects_v1_noise_with_advtrain(monkeypatch, criterion):
+    cfg = _compose_base_cfg()
+    cfg = OmegaConf.merge(
+        cfg,
+        OmegaConf.create(
+            {
+                "training": {"epochs": 1, "model_ema": False, "batch_size": 2},
+                "attacks": {
+                    "attack_domain": "v1_feature",
+                    "attack_norm": "linf",
+                    "advtrain": True,
+                    "attack_criterion": criterion,
+                    "v1_attack_eps": 6.0,
+                    "v1_attack_step": None,
+                    "v1_attack_it": 3,
+                },
+                "model": {
+                    "experiment_num": 1,
+                    "resume": "",
+                    "model": "convnext_small_v1",
+                    "v1_noise_mode": "neuronal",
+                },
+            }
+        ),
+    )
+    args = argparse.Namespace(**advt._merge_groups_for_hydra(cfg))
+    args.train_dir = "/tmp/train"
+    args.eval_dir = "/tmp/val"
+    args.output_dir = "/tmp/out"
+    args.world_size = 1
+    args.rank = 0
+    args.local_rank = 0
+    args.device_id = 0
+    args.final_eval = False
+
+    monkeypatch.setattr(advt, "distributed_init", lambda _args: None)
+
+    with pytest.raises(ValueError, match="Adversarial training with V1 noise is not supported"):
+        advt.main(args)
+
+
+def test_main_v1_feature_trades_defaults(monkeypatch):
+    cfg = _compose_base_cfg()
+    cfg = OmegaConf.merge(
+        cfg,
+        OmegaConf.create(
+            {
+                "training": {"epochs": 1, "model_ema": False, "batch_size": 2},
+                "attacks": {
+                    "attack_domain": "v1_feature",
+                    "attack_norm": "linf",
+                    "advtrain": True,
+                    "attack_criterion": "trades",
+                    "v1_attack_eps": 6.0,
+                    "v1_attack_step": None,
+                    "v1_attack_it": 3,
+                },
+                "model": {"experiment_num": 1, "resume": "", "model": "convnext_small_v1"},
+            }
+        ),
+    )
+    args = argparse.Namespace(**advt._merge_groups_for_hydra(cfg))
+    args.train_dir = "/tmp/train"
+    args.eval_dir = "/tmp/val"
+    args.output_dir = "/tmp/out"
+    args.world_size = 1
+    args.rank = 0
+    args.local_rank = 0
+    args.device_id = 0
+    args.final_eval = False
+
+    class _Logger:
+        def info(self, *_a, **_k):
+            return None
+
+        def warning(self, *_a, **_k):
+            return None
+
+        def error(self, *_a, **_k):
+            return None
+
+        def exception(self, *_a, **_k):
+            return None
+
+    class _DummySched:
+        def step(self, *_a, **_k):
+            return None
+
+        def step_update(self, *_a, **_k):
+            return None
+
+    class _DummySaver:
+        def save_checkpoint(self, *_a, **_k):
+            return (0.9, 0)
+
+    train_call = {}
+
+    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_args, reg_loss_fn=None, **kwargs):
+        train_call["attack_domain"] = in_args.attack_domain
+        train_call["attack_criterion"] = in_args.attack_criterion
+        train_call["v1_attack_step"] = in_args.v1_attack_step
+        train_call["random_start"] = getattr(in_args, "random_start", False)
+        return {"loss": 0.1}
+
+    def _fake_loader():
+        x = torch.zeros(2, 3, 8, 8)
+        y = torch.zeros(2, dtype=torch.long)
+        return [(x, y)]
+
+    monkeypatch.setattr(advt, "distributed_init", lambda _args: None)
+    monkeypatch.setattr(advt, "random_seed", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "setup_logger", lambda *a, **k: _Logger())
+    monkeypatch.setattr(advt, "resolve_amp", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "build_model", lambda *_a, **_k: torch.nn.Linear(8, 3))
+    monkeypatch.setattr(advt, "optimizer_kwargs", lambda **_k: {})
+    monkeypatch.setattr(advt, "create_optimizer_v2", lambda model, **_k: torch.optim.SGD(model.parameters(), lr=0.01))
+    monkeypatch.setattr(advt, "build_loss_scaler", lambda *_a, **_k: (contextlib.nullcontext, None))
+    monkeypatch.setattr(advt, "build_dataset", lambda *_a, **_k: (_fake_loader(), _fake_loader()))
+    monkeypatch.setattr(advt, "build_loss", lambda *_a, **_k: (torch.nn.CrossEntropyLoss(), torch.nn.CrossEntropyLoss()))
+    monkeypatch.setattr(advt, "create_scheduler_v2", lambda *_a, **_k: (_DummySched(), 1))
+    monkeypatch.setattr(advt, "scheduler_kwargs", lambda *_a, **_k: {})
+    monkeypatch.setattr(advt, "CheckpointSaver", lambda *a, **k: _DummySaver())
+    monkeypatch.setattr(advt, "validate", lambda *_a, **_k: {"top1": 1.0, "loss": 0.1})
+    monkeypatch.setattr(advt, "update_summary", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "resume_checkpoint", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "load_checkpoint", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "distribute_bn", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "_maybe_run_final_eval", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "train_one_epoch", _train_one_epoch_stub)
+    monkeypatch.setattr(advt.wandb, "init", lambda **_k: None)
+    monkeypatch.setattr(advt.wandb, "log", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt.wandb.util, "generate_id", lambda: "test-run-id")
+
+    advt.main(args)
+
+    assert train_call["attack_domain"] == "v1_feature"
+    assert train_call["attack_criterion"] == "trades"
+    assert math.isclose(train_call["v1_attack_step"], (6.0 / 255.0) / 3.0, rel_tol=1e-8)
+    assert train_call["random_start"] is True
+
+
+def test_convnext_small_v1_default_noise_mode_is_null():
+    cfg = _compose_base_cfg()
+    cfg = OmegaConf.merge(
+        cfg,
+        OmegaConf.create(
+            {
+                "model": OmegaConf.load("robust_training/configs/model/convnext_small_v1.yaml"),
+            }
+        ),
+    )
+    args = argparse.Namespace(**advt._merge_groups_for_hydra(cfg))
+
+    assert args.model == "convnext_small_v1"
+    assert args.v1_noise_mode is None
+
+
+def test_auto_experiment_name_uses_v1_attack_eps_for_feature_domain():
+    args = argparse.Namespace(
+        model="convnext_small_v1",
+        advtrain=True,
+        attack_domain="v1_feature",
+        attack_norm="linf",
+        attack_criterion="madry",
+        attack_eps=1.0,
+        v1_attack_eps=16.0 / 255.0,
+        v1_noise_mode=None,
+        gradnorm=False,
+        experiment_num=1,
+    )
+
+    experiment_name, group_name = _auto_experiment_name(args)
+
+    assert experiment_name == "convnext_small_v1_clean_linf_16_init1"
+    assert group_name == "v1feat_linf_madry"
+
+
+def test_auto_experiment_name_marks_v1_noise_runs():
+    args = argparse.Namespace(
+        model="convnext_small_v1",
+        advtrain=False,
+        attack_domain="pixel",
+        attack_norm="linf",
+        attack_criterion="madry",
+        attack_eps=1.0,
+        v1_attack_eps=16.0 / 255.0,
+        v1_noise_mode="neuronal",
+        gradnorm=False,
+        experiment_num=1,
+    )
+
+    experiment_name, group_name = _auto_experiment_name(args)
+
+    assert experiment_name == "convnext_small_v1_noise_init1"
+    assert group_name == "default"
+
+
+@pytest.mark.parametrize(
+    "penalty_norm,expected_name,expected_group",
+    [
+        ("l1", "convnext_small_gradnorm_l1_8_init2", "gradnorm_l1"),
+        ("l2", "convnext_small_gradnorm_l2_8_init2", "gradnorm_l2"),
+    ],
+)
+def test_auto_experiment_name_includes_gradnorm_penalty_norm(
+    penalty_norm, expected_name, expected_group
+):
+    args = argparse.Namespace(
+        model="convnext_small",
+        advtrain=False,
+        attack_domain="pixel",
+        attack_norm="linf",
+        attack_criterion="madry",
+        attack_eps=8.0 / 255.0,
+        v1_attack_eps=1.0,
+        v1_noise_mode=None,
+        gradnorm=True,
+        gradnorm_penalty_norm=penalty_norm,
+        experiment_num=2,
+    )
+
+    experiment_name, group_name = _auto_experiment_name(args)
+
+    assert experiment_name == expected_name
+    assert group_name == expected_group

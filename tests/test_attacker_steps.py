@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from types import SimpleNamespace
 
-from ares.utils.adv import L2Step, LinfStep, adv_generator
+from ares.utils.adv import L2Step, LinfStep, adv_generator, v1_adv_generator, v1_trades_adv_generator
 
 torch.manual_seed(0)
 
@@ -124,7 +124,7 @@ def _run_adv_generator_test(args, images_norm, target, model, eps, attack_steps,
         target = target.cuda()
         adv = adv_generator(args, images, target, model,
                             eps=eps, attack_steps=attack_steps, attack_lr=attack_lr,
-                            random_start=random_start, attack_criterion='regular', use_best=True)
+                            random_start=random_start, use_best=True)
         # ensure adv is on CPU for downstream checks if caller wants that
         return adv.cpu()
     else:
@@ -135,7 +135,7 @@ def _run_adv_generator_test(args, images_norm, target, model, eps, attack_steps,
             # keep model, images, target on CPU
             adv = adv_generator(args, images_norm, target, model,
                                 eps=eps, attack_steps=attack_steps, attack_lr=attack_lr,
-                                random_start=random_start, attack_criterion='regular', use_best=True)
+                                random_start=random_start, use_best=True)
             return adv  # already on CPU
         finally:
             # restore
@@ -234,6 +234,133 @@ def test_adv_generator_linf_respects_eps_and_shape():
 
     linf_per_sample = per_sample_linf_norm(adv_denorm, orig_denorm)
     assert torch.all(linf_per_sample <= eps + 1e-6), f"adv_generator Linf produced norms {linf_per_sample} > {eps}"
+
+
+def test_v1_adv_generator_linf_respects_eps_and_shape():
+    class DummyV1Model(nn.Module):
+        def __init__(self, feature_shape=(8, 4, 4), num_classes=5):
+            super().__init__()
+            self.feature_shape = feature_shape
+            self.classifier = nn.Linear(feature_shape[0] * feature_shape[1] * feature_shape[2], num_classes)
+
+        def forward_v1_features(self, x, apply_noise=None):
+            base = x.mean(dim=1, keepdim=True)
+            return base.repeat(1, self.feature_shape[0], 1, 1)
+
+        def forward_from_v1_features(self, v1_features):
+            return self.classifier(v1_features.view(v1_features.size(0), -1))
+
+        def forward_with_v1_override(self, x, v1_features_override):
+            return self.forward_from_v1_features(v1_features_override)
+
+        def forward_with_v1_override(self, x, v1_features_override):
+            return self.forward_from_v1_features(v1_features_override)
+
+        def forward_with_v1_override(self, x, v1_features_override):
+            return self.forward_from_v1_features(v1_features_override)
+
+    args = SimpleNamespace()
+    args.attack_norm = 'linf'
+    args.amp_version = 'none'
+    args.l1_step_mode = 'l2_norm'
+    args.l1_apgd_rho = 0.05
+    args.l1_apgd_use_halving = True
+    args.l1_apgd_min_step_scale = 0.01
+
+    B, C, H, W = 2, 3, 4, 4
+    images = torch.rand(B, C, H, W)
+    target = torch.randint(0, 5, (B,))
+    eps = 0.2
+    attack_steps = 3
+    attack_lr = 0.05
+
+    model = DummyV1Model()
+    orig = model.forward_v1_features(images, apply_noise=True).detach()
+    adv = v1_adv_generator(args, images, target, model, eps, attack_steps, attack_lr, random_start=True)
+
+    assert adv.shape == orig.shape
+    norms = per_sample_linf_norm(adv, orig)
+    assert torch.all(norms <= eps + 1e-6), f"v1_adv_generator Linf produced norms {norms} > {eps}"
+
+
+def test_v1_adv_generator_requires_v1_interface():
+    args = SimpleNamespace(
+        attack_norm='linf',
+        amp_version='none',
+        l1_step_mode='l2_norm',
+        l1_apgd_rho=0.05,
+        l1_apgd_use_halving=True,
+        l1_apgd_min_step_scale=0.01,
+    )
+    model = nn.Linear(16, 4)
+    images = torch.rand(1, 3, 4, 4)
+    target = torch.zeros(1, dtype=torch.long)
+
+    with pytest.raises(ValueError, match="V1 feature-space attacks require a model with the V1 attack interface"):
+        v1_adv_generator(args, images, target, model, eps=0.1, attack_steps=2, attack_lr=0.05, random_start=False)
+
+
+def test_v1_trades_adv_generator_is_deterministic_and_respects_eps():
+    class DummyV1Model(nn.Module):
+        def __init__(self, feature_shape=(8, 4, 4), num_classes=5):
+            super().__init__()
+            self.feature_shape = feature_shape
+            self.classifier = nn.Linear(feature_shape[0] * feature_shape[1] * feature_shape[2], num_classes)
+            self.apply_noise_calls = []
+
+        def forward_v1_features(self, x, apply_noise=None):
+            self.apply_noise_calls.append(apply_noise)
+            base = x.mean(dim=1, keepdim=True)
+            features = base.repeat(1, self.feature_shape[0], 1, 1)
+            if apply_noise:
+                features = features + 10.0
+            return features
+
+        def forward_from_v1_features(self, v1_features):
+            return self.classifier(v1_features.view(v1_features.size(0), -1))
+
+        def forward_with_v1_override(self, x, v1_features_override):
+            return self.forward_from_v1_features(v1_features_override)
+
+    args = SimpleNamespace(
+        attack_norm='linf',
+        amp_version='none',
+        l1_step_mode='l2_norm',
+        l1_apgd_rho=0.05,
+        l1_apgd_use_halving=True,
+        l1_apgd_min_step_scale=0.01,
+    )
+
+    B, C, H, W = 2, 3, 4, 4
+    images = torch.rand(B, C, H, W)
+    eps = 0.2
+    attack_steps = 3
+    attack_lr = 0.05
+
+    model = DummyV1Model()
+    orig = model.forward_v1_features(images, apply_noise=False).detach()
+    adv = v1_trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, random_start=True)
+
+    assert adv.shape == orig.shape
+    norms = per_sample_linf_norm(adv, orig)
+    assert torch.all(norms <= eps + 1e-6), f"v1_trades_adv_generator Linf produced norms {norms} > {eps}"
+    assert model.apply_noise_calls[-1] is False
+
+
+def test_v1_trades_adv_generator_requires_v1_interface():
+    args = SimpleNamespace(
+        attack_norm='linf',
+        amp_version='none',
+        l1_step_mode='l2_norm',
+        l1_apgd_rho=0.05,
+        l1_apgd_use_halving=True,
+        l1_apgd_min_step_scale=0.01,
+    )
+    model = nn.Linear(16, 4)
+    images = torch.rand(1, 3, 4, 4)
+
+    with pytest.raises(ValueError, match="V1 feature-space attacks require a model with the V1 attack interface"):
+        v1_trades_adv_generator(args, images, model, eps=0.1, attack_steps=2, attack_lr=0.05, random_start=False)
 
 
 if __name__ == "__main__":

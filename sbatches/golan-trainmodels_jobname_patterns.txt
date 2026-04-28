@@ -1,0 +1,49 @@
+Supported job-name patterns for `sbatches/golan-trainmodels.sbatch`
+
+Legacy standard training
+- `baseline_init<INIT>`
+
+Legacy Madry adversarial training
+- `linf_<EPS>_init<INIT>`
+- `l2_<EPS>_init<INIT>`
+- `l1_<EPS>_init<INIT>`
+
+Legacy TRADES adversarial training
+- `linftrades_<EPS>_init<INIT>`
+- `l2trades_<EPS>_init<INIT>`
+- `l1trades_<EPS>_init<INIT>`
+
+GradNorm
+- `gradnorm_l1_<EPS>_init<INIT>`
+- `gradnorm_l2_<EPS>_init<INIT>`
+
+V1 standard training
+- `v1clean_init<INIT>`
+- `v1noise_init<INIT>`
+
+V1 Madry adversarial training on V1 features
+- `v1clean_linf_<EPS>_init<INIT>`
+- `v1clean_l2_<EPS>_init<INIT>`
+- `v1clean_l1_<EPS>_init<INIT>`
+
+V1 TRADES adversarial training on V1 features
+- `v1clean_linftrades_<EPS>_init<INIT>`
+- `v1clean_l2trades_<EPS>_init<INIT>`
+- `v1clean_l1trades_<EPS>_init<INIT>`
+
+Rejected / unsupported job names
+- `gradnorm_<EPS>_init<INIT>`  (must specify `gradnorm_l1` or `gradnorm_l2`)
+- `v1clean_gradnorm_*`
+- `v1noise_gradnorm_*`
+- `v1noise_linf_*`
+- `v1noise_l2_*`
+- `v1noise_l1_*`
+- `v1noise_linftrades_*`
+- `v1noise_l2trades_*`
+- `v1noise_l1trades_*`
+
+Notes
+- `<EPS>` is the configured epsilon value encoded in the job name.
+- `<INIT>` is the experiment/init id encoded after `init`.
+- V1 adversarial jobs launch with `attack_domain=v1_feature`.
+- V1 noisy adversarial jobs are intentionally blocked.

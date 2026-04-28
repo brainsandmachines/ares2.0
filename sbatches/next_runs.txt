@@ -1,0 +1,4 @@
+1. gradnorm with l1,l2 peanalty for the duble backprop loss
+2. v1 block network, with or without the noise
+3. v1 block with adv_training using madry
+4. v1 block with trades
