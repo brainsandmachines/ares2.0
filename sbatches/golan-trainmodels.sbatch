@@ -219,7 +219,6 @@ cmd=(
     python -m robust_training.adversarial_training
     attacks.attack_norm="$attack_norm"
     attacks.advtrain="$advtrain"
-    attacks.l1_step_mode=l1_apgd
     attacks.gradnorm="$gradnorm"
     attacks.gradnorm_penalty_norm="$gradnorm_penalty_norm"
     attacks.attack_criterion="$crit"
@@ -244,11 +243,16 @@ fi
 "${cmd[@]}"
 
 status=$?
+echo "[INFO] Training exit status: $status"
 
-  if [ "$status" -eq 0 ]; then
-      python /home/ashtomer/projects/ares/results/models/prune_model_checkpoints.py \
-          "/home/ashtomer/projects/ares/results/models/$model_name" \
-          --keep-n 10
-  fi
+if [ "$status" -eq 0 ]; then
+    echo "[INFO] Running checkpoint pruning for $model_name"
+    python /home/ashtomer/projects/ares/results/models/prune_model_checkpoints.py \
+        "/home/ashtomer/projects/ares/results/models/$model_name" \
+        --keep-n 10
+    echo "[INFO] Checkpoint pruning finished with status $?"
+else
+    echo "[INFO] Skipping checkpoint pruning because training failed or was killed"
+fi
 
-  exit "$status"
+exit "$status"

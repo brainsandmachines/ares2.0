@@ -163,12 +163,12 @@ def parse_model_meta(checkpoint_name: str) -> Dict[str, str]:
 
 def infer_eval_args(ckpt: Dict) -> SimpleNamespace:
     ckpt_args = ckpt.get("args", None)
-    mean = tuple(getattr(ckpt_args, "mean", (0.485, 0.456, 0.406)))
-    std = tuple(getattr(ckpt_args, "std", (0.229, 0.224, 0.225)))
-    input_size = int(getattr(ckpt_args, "input_size", 224))
-    interpolation = str(getattr(ckpt_args, "interpolation", "bicubic"))
-    crop_pct = float(getattr(ckpt_args, "crop_pct", 0.875))
-    num_classes = int(getattr(ckpt_args, "num_classes", 1000))
+    mean = tuple(get_ckpt_arg(ckpt_args, "mean", (0.485, 0.456, 0.406)))
+    std = tuple(get_ckpt_arg(ckpt_args, "std", (0.229, 0.224, 0.225)))
+    input_size = int(get_ckpt_arg(ckpt_args, "input_size", 224))
+    interpolation = str(get_ckpt_arg(ckpt_args, "interpolation", "bicubic"))
+    crop_pct = float(get_ckpt_arg(ckpt_args, "crop_pct", 0.875))
+    num_classes = int(get_ckpt_arg(ckpt_args, "num_classes", 1000))
 
     return SimpleNamespace(
         mean=mean,
@@ -177,6 +177,55 @@ def infer_eval_args(ckpt: Dict) -> SimpleNamespace:
         interpolation=interpolation,
         crop_pct=crop_pct,
         num_classes=num_classes,
+    )
+
+
+def get_ckpt_arg(ckpt_args, key: str, default=None):
+    if ckpt_args is None:
+        return default
+    if isinstance(ckpt_args, dict):
+        return ckpt_args.get(key, default)
+    return getattr(ckpt_args, key, default)
+
+
+def resolve_v1_gabor_seed(ckpt_args):
+    gabor_seed = get_ckpt_arg(ckpt_args, "v1_gabor_seed", None)
+    if gabor_seed is None:
+        gabor_seed = get_ckpt_arg(ckpt_args, "seed", 0)
+    return gabor_seed
+
+
+def create_model_from_checkpoint(arch: str, ckpt_args, eval_cfg: SimpleNamespace) -> torch.nn.Module:
+    if arch != "convnext_small_v1":
+        return create_model(arch, pretrained=False, num_classes=eval_cfg.num_classes)
+
+    from ares.model.v1_convnext import V1ConvNeXt
+
+    return V1ConvNeXt(
+        backbone_name="convnext_small",
+        input_size=eval_cfg.input_size,
+        num_classes=eval_cfg.num_classes,
+        drop_rate=get_ckpt_arg(ckpt_args, "drop", 0.0),
+        drop_path_rate=get_ckpt_arg(ckpt_args, "drop_path", 0.0),
+        drop_block_rate=get_ckpt_arg(ckpt_args, "drop_block", None),
+        global_pool=get_ckpt_arg(ckpt_args, "gp", None),
+        bn_momentum=get_ckpt_arg(ckpt_args, "bn_momentum", None),
+        bn_eps=get_ckpt_arg(ckpt_args, "bn_eps", None),
+        v1_noise_train_only=get_ckpt_arg(ckpt_args, "v1_noise_train_only", True),
+        visual_degrees=get_ckpt_arg(ckpt_args, "v1_visual_degrees", 8),
+        stride=get_ckpt_arg(ckpt_args, "v1_stride", 4),
+        ksize=get_ckpt_arg(ckpt_args, "v1_ksize", 25),
+        sf_corr=get_ckpt_arg(ckpt_args, "v1_sf_corr", 0.75),
+        sf_max=get_ckpt_arg(ckpt_args, "v1_sf_max", 9),
+        sf_min=get_ckpt_arg(ckpt_args, "v1_sf_min", 0),
+        rand_param=get_ckpt_arg(ckpt_args, "v1_rand_param", False),
+        gabor_seed=resolve_v1_gabor_seed(ckpt_args),
+        simple_channels=get_ckpt_arg(ckpt_args, "v1_simple_channels", 256),
+        complex_channels=get_ckpt_arg(ckpt_args, "v1_complex_channels", 256),
+        noise_mode=get_ckpt_arg(ckpt_args, "v1_noise_mode", None),
+        noise_scale=get_ckpt_arg(ckpt_args, "v1_noise_scale", 0.35),
+        noise_level=get_ckpt_arg(ckpt_args, "v1_noise_level", 0.07),
+        k_exc=get_ckpt_arg(ckpt_args, "v1_k_exc", 25),
     )
 
 
@@ -273,11 +322,12 @@ def parse_attack_from_path(checkpoint_path: str) -> Tuple[bool, Optional[str], O
 def load_model_from_ckpt(ckpt_path: Path, device: torch.device, use_ema: bool = True) -> Tuple[torch.nn.Module, SimpleNamespace, str]:
     ckpt = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
     eval_cfg = infer_eval_args(ckpt)
+    ckpt_args = ckpt.get("args", None)
     arch = ckpt.get("arch")
     if arch is None:
         raise ValueError(f"Missing 'arch' in checkpoint {ckpt_path}")
 
-    model = create_model(arch, pretrained=False, num_classes=eval_cfg.num_classes)
+    model = create_model_from_checkpoint(arch, ckpt_args, eval_cfg)
     state_key = "state_dict_ema" if use_ema and "state_dict_ema" in ckpt else "state_dict"
     if state_key not in ckpt:
         raise ValueError(f"Missing {state_key} in checkpoint {ckpt_path}")

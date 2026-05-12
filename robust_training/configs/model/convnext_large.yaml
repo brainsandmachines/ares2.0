@@ -1,0 +1,18 @@
+# Model-specific settings
+model: convnext_large
+num_classes: 1000
+resume: ''
+gp: null
+channels_last: False
+max_history: 10
+
+# Batch norm parameters
+bn_momentum: null
+bn_eps: null
+sync_bn: False
+dist_bn: reduce
+split_bn: False
+
+experiment_num: 1
+experiment_name: null
+model_id: null

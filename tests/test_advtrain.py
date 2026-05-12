@@ -10,6 +10,7 @@ from omegaconf import OmegaConf
 
 import robust_training.adversarial_training as advt
 from ares.utils.logger import _auto_experiment_name
+from ares.utils.model import resolve_v1_gabor_seed
 
 
 def _compose_base_cfg():
@@ -692,6 +693,19 @@ def test_convnext_small_v1_default_noise_mode_is_null():
 
     assert args.model == "convnext_small_v1"
     assert args.v1_noise_mode is None
+    assert args.v1_gabor_seed is None
+
+
+def test_v1_gabor_seed_defaults_to_run_seed():
+    args = argparse.Namespace(seed=123456, v1_gabor_seed=None)
+
+    assert resolve_v1_gabor_seed(args) == 123456
+
+
+def test_v1_gabor_seed_explicit_override_is_preserved():
+    args = argparse.Namespace(seed=123456, v1_gabor_seed=7)
+
+    assert resolve_v1_gabor_seed(args) == 7
 
 
 def test_auto_experiment_name_uses_v1_attack_eps_for_feature_domain():
