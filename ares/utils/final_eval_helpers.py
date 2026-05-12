@@ -1,5 +1,6 @@
 import csv
 import os
+from pathlib import Path
 
 import torch
 
@@ -194,60 +195,100 @@ def _maybe_run_final_eval(args, output_dir, _logger, did_train_this_run=True):
         return
 
     try:
-        from data_analysis.final_eval import run_final_evaluation
-    except Exception as exc:
-        _logger.exception("Failed to import final evaluation runner: %s", exc)
-        return
-    try:
-        from data_analysis.final_eval import parse_attack_from_path
-    except Exception:
-        parse_attack_from_path = None
-
-    try:
-        aa_bs = getattr(args, "final_eval_aa_batch_size", None) or getattr(args, "batch_size", 64)
+        aa_bs = getattr(args, "final_eval_aa_batch_size", None) or 64
+        aa_num_batches = getattr(args, "final_eval_aa_max_batches", None) or 2
+        aa_csv_name = getattr(args, "final_eval_aa_completion_csv", "autoattack_sweep_results.csv")
         pgd_bs = getattr(args, "final_eval_pgd_batch_size", None) or getattr(args, "batch_size", 64)
-        run_aa = bool(getattr(args, "final_eval_autoattack", False))
+        run_aa_sweep = bool(getattr(args, "final_eval_autoattack", False))
         run_pgd = bool(getattr(args, "final_eval_pgd", False))
+        aa_runner = None
+        aa_import_failed = False
 
         if getattr(args, "final_eval_require_train_this_run", False) and not did_train_this_run:
             _logger.info("No epochs trained in this run; skipping final eval due to final_eval_require_train_this_run=true.")
             return
 
+        if run_aa_sweep:
+            if getattr(args, "final_eval_aa_norm", None) is not None or getattr(args, "final_eval_aa_eps", None) is not None:
+                _logger.warning(
+                    "final_eval_aa_norm/final_eval_aa_eps are ignored for final AutoAttack sweep; "
+                    "running linf,l2,l1 x eps 1,2,4,8,16."
+                )
+            try:
+                from data_analysis.autoattack_array_eval import is_complete_output, run_autoattack_sweep_for_checkpoint
+
+                aa_runner = run_autoattack_sweep_for_checkpoint
+            except Exception as exc:
+                _logger.exception("Failed to import AutoAttack sweep runner: %s", exc)
+                aa_import_failed = True
+                run_aa_sweep = False
+
         if getattr(args, "final_eval_skip_if_complete", True):
             if run_pgd and _is_pgd_eval_complete(args, out_dir, ckpt_path, _logger):
                 run_pgd = False
-            if run_aa and parse_attack_from_path is not None and _is_aa_eval_complete(args, out_dir, ckpt_path, parse_attack_from_path, _logger):
-                run_aa = False
+            if run_aa_sweep and is_complete_output(
+                Path(output_dir) / aa_csv_name,
+                max_settings=None,
+                checkpoint_path=ckpt_path,
+                model_name=os.path.basename(output_dir),
+            ):
+                _logger.info("AutoAttack sweep already complete for %s. Skipping AutoAttack.", ckpt_path)
+                run_aa_sweep = False
 
-        if not run_aa and not run_pgd:
+        if not run_aa_sweep and not run_pgd:
+            if aa_import_failed:
+                _logger.error("No final AutoAttack sweep ran because the AutoAttack sweep runner failed to import.")
+                return
             _logger.info("All requested final eval outputs already complete for %s. Skipping final eval.", ckpt_path)
             return
 
-        run_final_evaluation(
-            checkpoint_path=ckpt_path,
-            models_dir=None,
-            val_dir=val_dir,
-            device=device,
-            out_dir=out_dir,
-            aa=run_aa,
-            pgd=run_pgd,
-            aa_batch_size=int(aa_bs),
-            aa_norm=getattr(args, "final_eval_aa_norm", None),
-            aa_eps=getattr(args, "final_eval_aa_eps", None),
-            aa_max_batches=getattr(args, "final_eval_aa_max_batches", None),
-            pgd_batch_size=int(pgd_bs),
-            pgd_eps=_parse_float_list(getattr(args, "final_eval_pgd_eps", "0.5,1,2,4,8,16")),
-            pgd_norms=_parse_csv_list(getattr(args, "final_eval_pgd_norms", "linf,l2,l1")),
-            pgd_attack_steps=int(getattr(args, "final_eval_pgd_attack_steps", 10)),
-            pgd_max_batches=getattr(args, "final_eval_pgd_max_batches", None),
-            pgd_output_csv=getattr(args, "final_eval_pgd_completion_csv", "pgd_validation_results.csv"),
-            l1_step_mode="l1_apgd",
-            l1_apgd_rho=float(getattr(args, "l1_apgd_rho", 0.05)),
-            l1_apgd_use_halving=bool(getattr(args, "l1_apgd_use_halving", True)),
-            l1_apgd_min_step_scale=float(getattr(args, "l1_apgd_min_step_scale", 0.01)),
-            plots=bool(getattr(args, "final_eval_plots", False)),
-            plot_x_col=getattr(args, "final_eval_plot_x_col", "pgd_constrained_eps"),
-            num_workers=int(getattr(args, "final_eval_num_workers", 8)),
-        )
+        if run_pgd:
+            try:
+                from data_analysis.final_eval import run_final_evaluation
+            except Exception as exc:
+                _logger.exception("Failed to import final evaluation runner: %s", exc)
+                run_pgd = False
+            else:
+                run_final_evaluation(
+                    checkpoint_path=ckpt_path,
+                    models_dir=None,
+                    val_dir=val_dir,
+                    device=device,
+                    out_dir=out_dir,
+                    aa=False,
+                    pgd=True,
+                    aa_batch_size=int(aa_bs),
+                    aa_norm=None,
+                    aa_eps=None,
+                    aa_max_batches=None,
+                    pgd_batch_size=int(pgd_bs),
+                    pgd_eps=_parse_float_list(getattr(args, "final_eval_pgd_eps", "0.5,1,2,4,8,16")),
+                    pgd_norms=_parse_csv_list(getattr(args, "final_eval_pgd_norms", "linf,l2,l1")),
+                    pgd_attack_steps=int(getattr(args, "final_eval_pgd_attack_steps", 10)),
+                    pgd_max_batches=getattr(args, "final_eval_pgd_max_batches", None),
+                    pgd_output_csv=getattr(args, "final_eval_pgd_completion_csv", "pgd_validation_results.csv"),
+                    l1_step_mode="l1_apgd",
+                    l1_apgd_rho=float(getattr(args, "l1_apgd_rho", 0.05)),
+                    l1_apgd_use_halving=bool(getattr(args, "l1_apgd_use_halving", True)),
+                    l1_apgd_min_step_scale=float(getattr(args, "l1_apgd_min_step_scale", 0.01)),
+                    plots=bool(getattr(args, "final_eval_plots", False)),
+                    plot_x_col=getattr(args, "final_eval_plot_x_col", "pgd_constrained_eps"),
+                    num_workers=int(getattr(args, "final_eval_num_workers", 8)),
+                )
+
+        if run_aa_sweep and aa_runner is not None:
+            aa_runner(
+                checkpoint_path=ckpt_path,
+                model_dir=output_dir,
+                val_dir=val_dir,
+                device=device,
+                batch_size=int(aa_bs),
+                num_batches=int(aa_num_batches),
+                num_workers=int(getattr(args, "final_eval_num_workers", 8)),
+                seed=int(getattr(args, "seed", 0) or 0),
+                output_csv=aa_csv_name,
+                force=not bool(getattr(args, "final_eval_skip_if_complete", True)),
+                logger=_logger,
+            )
     except Exception as exc:
         _logger.exception("Final eval failed: %s", exc)

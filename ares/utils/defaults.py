@@ -236,15 +236,17 @@ def get_args_parser():
     parser.add_argument('--final-eval-ckpt-name', default='model_best.pth.tar',
                         help='Checkpoint filename under output_dir to evaluate')
     parser.add_argument('--final-eval-autoattack', action='store_true', default=False,
-                        help='Run AutoAttack in final evaluation')
-    parser.add_argument('--final-eval-aa-batch-size', type=int, default=None,
-                        help='Batch size for AutoAttack evaluation (default: training batch_size)')
+                        help='Run the 15-setting AutoAttack sweep in final evaluation')
+    parser.add_argument('--final-eval-aa-batch-size', type=int, default=64,
+                        help='Batch size for final AutoAttack sweep')
     parser.add_argument('--final-eval-aa-norm', default=None, choices=['Linf', 'L2'],
-                        help='Override AutoAttack norm (requires --final-eval-aa-eps)')
+                        help='Deprecated for final AutoAttack sweep; ignored')
     parser.add_argument('--final-eval-aa-eps', type=float, default=None,
-                        help='Override AutoAttack epsilon (requires --final-eval-aa-norm)')
-    parser.add_argument('--final-eval-aa-max-batches', type=int, default=None,
-                        help='Limit AutoAttack to N batches (debug)')
+                        help='Deprecated for final AutoAttack sweep; ignored')
+    parser.add_argument('--final-eval-aa-max-batches', type=int, default=2,
+                        help='Number of batches for final AutoAttack sweep')
+    parser.add_argument('--final-eval-aa-completion-csv', default='autoattack_sweep_results.csv',
+                        help='Filename for final AutoAttack sweep CSV in the model directory')
     parser.add_argument('--final-eval-pgd', action='store_true', default=False,
                         help='Run PGD epsilon sweep in final evaluation')
     parser.add_argument('--final-eval-pgd-eps', default='0.5,1,2,4,8,16',
@@ -257,10 +259,18 @@ def get_args_parser():
                         help='Batch size for PGD sweep evaluation (default: training batch_size)')
     parser.add_argument('--final-eval-pgd-max-batches', type=int, default=None,
                         help='Limit PGD sweep to N batches (debug)')
+    parser.add_argument('--final-eval-pgd-completion-csv', default='pgd_validation_results.csv',
+                        help='Filename for PGD final eval CSV')
+    parser.add_argument('--final-eval-skip-if-complete', dest='final_eval_skip_if_complete',
+                        action='store_true', default=True,
+                        help='Skip final eval outputs that already have complete CSVs')
+    parser.add_argument('--no-final-eval-skip-if-complete', dest='final_eval_skip_if_complete',
+                        action='store_false',
+                        help='Force final eval even when completion CSVs exist')
     parser.add_argument('--final-eval-plots', action='store_true', default=False,
                         help='Generate accuracy-vs-epsilon plots for PGD sweep')
     parser.add_argument('--final-eval-plot-x-col', default='epsilon_input',
-                        choices=['epsilon_input', 'epsilon_eval'],
+                        choices=['pgd_constrained_eps', 'epsilon_input', 'epsilon_eval'],
                         help='X-axis column for PGD plots')
     parser.add_argument('--final-eval-out-dir', default='',
                         help='Output directory for final evaluation (default: <output_dir>)')

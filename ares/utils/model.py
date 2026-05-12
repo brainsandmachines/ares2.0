@@ -20,6 +20,13 @@ def denormalize(tensor, mean, std):
     '''
     return tensor*std[None]+mean[None]
 
+
+def resolve_v1_gabor_seed(args):
+    gabor_seed = getattr(args, 'v1_gabor_seed', None)
+    if gabor_seed is None:
+        gabor_seed = getattr(args, 'seed', 0)
+    return gabor_seed
+
 class NormalizeByChannelMeanStd(nn.Module):
     '''The class of a normalization layer.'''
     def __init__(self, mean, std):
@@ -120,7 +127,7 @@ def build_model(args, _logger, num_aug_splits):
             sf_max=getattr(args, 'v1_sf_max', 9),
             sf_min=getattr(args, 'v1_sf_min', 0),
             rand_param=getattr(args, 'v1_rand_param', False),
-            gabor_seed=getattr(args, 'v1_gabor_seed', 0),
+            gabor_seed=resolve_v1_gabor_seed(args),
             simple_channels=getattr(args, 'v1_simple_channels', 256),
             complex_channels=getattr(args, 'v1_complex_channels', 256),
             noise_mode=getattr(args, 'v1_noise_mode', None),

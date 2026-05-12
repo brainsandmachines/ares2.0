@@ -25,7 +25,7 @@ v1_sf_corr: 0.75
 v1_sf_max: 9
 v1_sf_min: 0
 v1_rand_param: False
-v1_gabor_seed: 0
+v1_gabor_seed: null
 v1_simple_channels: 256
 v1_complex_channels: 256
 v1_noise_mode: null
