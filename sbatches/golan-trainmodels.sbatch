@@ -12,6 +12,7 @@
 
 
 nvidia-smi
+source /home/ashtomer/projects/ares/sbatches/train_launcher_lib.sh
 # -----------------------------
 # 1. Get GPU Memory (in MB)
 # -----------------------------
@@ -19,13 +20,8 @@ nvidia-smi
 GPU_TOTAL=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n 1)
 echo "[INFO] Detected GPU Memory: ${GPU_TOTAL} MB"
 # ---- Env once ----
-if [ "$GPU_TOTAL" -ge 90000 ]; then
-    module load anaconda
-    source activate tomer_advtrain_pro
-else
-    module load anaconda
-    source activate tomer_advtrain  
-fi
+module load anaconda
+source activate "$(select_train_env "$GPU_TOTAL")"
 # ------------------
 
 
@@ -37,171 +33,12 @@ export MASTER_PORT=$((10000 + RANDOM % 50000))
 
 jobname="$SLURM_JOB_NAME"
 
-# -----------------------------
-# Parse experiment_num (number after init)
-# -----------------------------
-attack_eps=""
-experiment_num=""
-if [[ "$jobname" =~ _([0-9]+)_init([0-9]+)$ ]]; then
-    attack_eps="${BASH_REMATCH[1]}"
-    experiment_num="${BASH_REMATCH[2]}"
-elif [[ "$jobname" =~ _init([0-9]+)$ ]]; then
-    experiment_num="${BASH_REMATCH[1]}"
-else
-    echo "[ERROR] Could not parse experiment_num from job name: $jobname"
-    exit 1
-fi
-
-# -----------------------------
-# Defaults
-# -----------------------------
-attack_norm="linf"
-advtrain=false
-gradnorm=false
-gradnorm_penalty_norm="l1"
-crit="madry"
-is_v1=false
-v1_noise_mode=""
-attack_domain="pixel"
-model_override=""
-
-# -----------------------------
-# -----------------------------
-# Rules based on job name
-# -----------------------------
-if [[ "$jobname" == v1clean* ]]; then
-    is_v1=true
-    v1_noise_mode="null"
-    model_override="model=convnext_small_v1"
-elif [[ "$jobname" == v1noise* ]]; then
-    is_v1=true
-    v1_noise_mode="neuronal"
-    model_override="model=convnext_small_v1"
-fi
-
-if [[ "$jobname" == *gradnorm* ]]; then
-    gradnorm=true
-    if [[ "$jobname" == *gradnorm_l2* ]]; then
-        gradnorm_penalty_norm="l2"
-    fi
-elif [[ "$jobname" == *linf* ]]; then
-    attack_norm="linf"
-    advtrain=true
-elif [[ "$jobname" == *l2* ]]; then
-    attack_norm="l2"
-    advtrain=true
-elif [[ "$jobname" == *l1* ]]; then
-    attack_norm="l1"
-    advtrain=true
-fi
-
-if [[ "$jobname" == *trades* ]]; then
-    crit="trades"
-fi
-
-if [[ "$gradnorm" == "true" ]]; then
-    if [[ "$jobname" != *gradnorm_l1* && "$jobname" != *gradnorm_l2* ]]; then
-        echo "[ERROR] GradNorm job names must include gradnorm_l1 or gradnorm_l2: $jobname"
-        exit 1
-    fi
-fi
-
-if [[ "$advtrain" == "true" || "$gradnorm" == "true" ]]; then
-    if [[ -z "$attack_eps" ]]; then
-        echo "[ERROR] Could not parse attack epsilon from job name: $jobname"
-        exit 1
-    fi
-fi
-
-if [[ "$is_v1" == "true" && "$gradnorm" == "true" ]]; then
-    echo "[ERROR] V1 job names do not support gradnorm: $jobname"
-    exit 1
-fi
-
-if [[ "$is_v1" == "true" && "$advtrain" == "true" ]]; then
-    attack_domain="v1_feature"
-    if [[ "$v1_noise_mode" != "null" ]]; then
-        echo "[ERROR] V1 adversarial training with noise is not supported: $jobname"
-        exit 1
-    fi
-fi
-
-
-
-# -----------------------------
-# 2. Set Batch Size
-# -----------------------------
-if [ "$GPU_TOTAL" -ge 90000 ]; then
-    # A100 (80GB) range
-    if [ "$gradnorm" = "true" ] || [ "$crit" = "trades" ]; then
-        BATCH_PER_GPU=384
-    else
-        BATCH_PER_GPU=512
-    fi
-elif [ "$GPU_TOTAL" -ge 45000 ]; then
-    # RTX 6000 / A6000 (48GB) range
-    if [ "$gradnorm" = "true" ] || [ "$crit" = "trades" ]; then
-        BATCH_PER_GPU=192
-    else
-        BATCH_PER_GPU=256
-    fi
-elif [ "$GPU_TOTAL" -ge 22000 ]; then
-    # 3090 / 4090 / A10 (24GB) range
-    if [ "$gradnorm" = "true" ] || [ "$crit" = "trades" ]; then
-        BATCH_PER_GPU=96
-    else
-        BATCH_PER_GPU=128
-    fi
-else
-    echo "[ERROR] GPU total memory too small (< 22 GB). Detected: $GPU_TOTAL"
-    exit 1
-fi
-
-BATCH_SIZE=$BATCH_PER_GPU
-
-# -----------------------------
-# Model name
-# -----------------------------
-
-if [[ "$is_v1" == "true" ]]; then
-      v1_tag="clean"
-      if [[ "$v1_noise_mode" != "null" ]]; then
-          v1_tag="noise"
-      fi
-
-      if [[ "$advtrain" == "true" ]]; then
-          if [[ "$crit" == "trades" ]]; then
-              if [[ "$attack_norm" == "linf" ]]; then
-                  model_name="convnext_small_v1_${v1_tag}_linftrades_${attack_eps}_init${experiment_num}"
-              elif [[ "$attack_norm" == "l2" ]]; then
-                  model_name="convnext_small_v1_${v1_tag}_l2trades_${attack_eps}_init${experiment_num}"
-              elif [[ "$attack_norm" == "l1" ]]; then
-                  model_name="convnext_small_v1_${v1_tag}_l1trades_${attack_eps}_init${experiment_num}"
-              else
-                  echo "[ERROR] Unsupported attack norm for V1 TRADES: $attack_norm"
-                  exit 1
-              fi
-          else
-              if [[ "$attack_norm" == "linf" ]]; then
-                  model_name="convnext_small_v1_${v1_tag}_linf_${attack_eps}_init${experiment_num}"
-              elif [[ "$attack_norm" == "l2" ]]; then
-                  model_name="convnext_small_v1_${v1_tag}_l2_${attack_eps}_init${experiment_num}"
-              elif [[ "$attack_norm" == "l1" ]]; then
-                  model_name="convnext_small_v1_${v1_tag}_l1_${attack_eps}_init${experiment_num}"
-              else
-                  echo "[ERROR] Unsupported attack norm for V1 Madry: $attack_norm"
-                  exit 1
-              fi
-          fi
-      else
-          model_name="convnext_small_v1_${v1_tag}_init${experiment_num}"
-      fi
-  else
-      model_name="convnext_small_${jobname}"
-  fi
+parse_train_job "$jobname" "$GPU_TOTAL" || exit 1
 
 
 echo "JOB NAME        : $jobname"
+echo "job_core        : $job_core"
+echo "model_size      : $model_size"
 echo "attack_eps     : $attack_eps"
 echo "experiment_num : $experiment_num"
 echo "attack_norm    : $attack_norm"

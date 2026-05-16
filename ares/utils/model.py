@@ -27,6 +27,11 @@ def resolve_v1_gabor_seed(args):
         gabor_seed = getattr(args, 'seed', 0)
     return gabor_seed
 
+def resolve_convnext_v1_backbone(model_name):
+    if not model_name.startswith('convnext_') or not model_name.endswith('_v1'):
+        return None
+    return model_name[:-3]
+
 class NormalizeByChannelMeanStd(nn.Module):
     '''The class of a normalization layer.'''
     def __init__(self, mean, std):
@@ -113,11 +118,12 @@ def build_model(args, _logger, num_aug_splits):
         'bn_momentum': args.bn_momentum,
         'bn_eps': args.bn_eps,
     })
-    if args.model == 'convnext_small_v1':
+    v1_backbone_name = resolve_convnext_v1_backbone(args.model)
+    if v1_backbone_name is not None:
         from ares.model.v1_convnext import V1ConvNeXt
 
         model = V1ConvNeXt(
-            backbone_name='convnext_small',
+            backbone_name=v1_backbone_name,
             input_size=args.input_size,
             v1_noise_train_only=getattr(args, 'v1_noise_train_only', True),
             visual_degrees=getattr(args, 'v1_visual_degrees', 8),

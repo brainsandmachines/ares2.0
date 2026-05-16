@@ -213,13 +213,14 @@ def get_ckpt_arg(ckpt_args, key: str, default=None):
 
 
 def create_model_from_checkpoint(arch: str, ckpt_args, eval_cfg: SimpleNamespace) -> torch.nn.Module:
-    if arch != "convnext_small_v1":
+    is_convnext_v1 = arch.startswith("convnext_") and arch.endswith("_v1")
+    if not is_convnext_v1:
         return create_model(arch, pretrained=False, num_classes=eval_cfg.num_classes)
 
     from ares.model.v1_convnext import V1ConvNeXt
 
     return V1ConvNeXt(
-        backbone_name="convnext_small",
+        backbone_name=arch[:-3],
         input_size=eval_cfg.input_size,
         num_classes=eval_cfg.num_classes,
         drop_rate=get_ckpt_arg(ckpt_args, "drop", 0.0),
@@ -246,6 +247,12 @@ def create_model_from_checkpoint(arch: str, ckpt_args, eval_cfg: SimpleNamespace
     )
 
 
+def disable_inplace_relu(module: torch.nn.Module) -> None:
+    for child in module.modules():
+        if isinstance(child, torch.nn.ReLU):
+            child.inplace = False
+
+
 def load_model(ckpt_path: Path, device: torch.device) -> tuple[torch.nn.Module, SimpleNamespace, str]:
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     eval_cfg = infer_eval_cfg(ckpt)
@@ -258,6 +265,7 @@ def load_model(ckpt_path: Path, device: torch.device) -> tuple[torch.nn.Module, 
     if state_key not in ckpt:
         raise ValueError(f"Missing {state_key} in checkpoint: {ckpt_path}")
     model.load_state_dict(strip_module_prefix(ckpt[state_key]), strict=True)
+    disable_inplace_relu(model)
     model = NormalizeWrapper(model, eval_cfg.mean, eval_cfg.std).to(device).eval()
     return model, eval_cfg, state_key
 
