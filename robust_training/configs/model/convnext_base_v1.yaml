@@ -1,0 +1,35 @@
+# Model-specific settings for ConvNeXt-B with a V1Block front-end
+model: convnext_base_v1
+num_classes: 1000
+resume: ''
+gp: null
+channels_last: False
+max_history: 10
+
+# Batch norm parameters
+bn_momentum: null
+bn_eps: null
+sync_bn: False
+dist_bn: reduce
+split_bn: False
+
+experiment_num: 1
+experiment_name: null
+model_id: null
+
+# V1 front-end settings
+v1_visual_degrees: 8
+v1_stride: 4
+v1_ksize: 25
+v1_sf_corr: 0.75
+v1_sf_max: 9
+v1_sf_min: 0
+v1_rand_param: False
+v1_gabor_seed: null
+v1_simple_channels: 256
+v1_complex_channels: 256
+v1_noise_mode: null
+v1_noise_train_only: true
+v1_noise_scale: 0.35
+v1_noise_level: 0.07
+v1_k_exc: 25

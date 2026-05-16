@@ -62,7 +62,7 @@ class PrintFormatter:
 def _auto_experiment_name(args):
     group_name = "default"  # Initialize group_name with a default value
     parts = [f"{args.model}"]
-    if args.model == "convnext_small_v1":
+    if str(args.model).startswith("convnext_") and str(args.model).endswith("_v1"):
         v1_noise_mode = getattr(args, "v1_noise_mode", None)
         parts.append("noise" if v1_noise_mode is not None else "clean")
     if args.advtrain:

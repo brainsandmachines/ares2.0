@@ -17,9 +17,22 @@ source activate tomer_advtrain
 
 cd /home/ashtomer/projects/ares
 
+MODELS_ROOT=/groups/golan_neurogroup/bml_group/tomerash/advmodels/results/models
+VAL_DIR=/groups/golan_neurogroup/bml_group/datasets/imagenet/val
+
+if [[ ! -d "${MODELS_ROOT}" ]]; then
+  echo "[ERROR] Models root is not available on host $(hostname): ${MODELS_ROOT}" >&2
+  exit 1
+fi
+
+if [[ ! -d "${VAL_DIR}" ]]; then
+  echo "[ERROR] ImageNet val dir is not available on host $(hostname): ${VAL_DIR}" >&2
+  exit 1
+fi
+
 python data_analysis/autoattack_array_eval.py \
-  --models-root /groups/golan_neurogroup/bml_group/tomerash/advmodels/results/models \
-  --val-dir /groups/golan_neurogroup/bml_group/datasets/imagenet/val \
+  --models-root "${MODELS_ROOT}" \
+  --val-dir "${VAL_DIR}" \
   --array-index "${SLURM_ARRAY_TASK_ID}" \
   --batch-size 128 \
   --num-batches 8 \

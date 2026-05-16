@@ -43,9 +43,10 @@ def main(args):
     
     attack_domain = getattr(args, 'attack_domain', 'pixel')
     v1_noise_mode = getattr(args, 'v1_noise_mode', None)
+    is_convnext_v1 = str(getattr(args, 'model', '')).startswith('convnext_') and str(getattr(args, 'model', '')).endswith('_v1')
 
     if (
-        getattr(args, 'model', None) == 'convnext_small_v1'
+        is_convnext_v1
         and getattr(args, 'advtrain', False)
         and getattr(args, 'attack_criterion', None) in {'madry', 'trades'}
         and v1_noise_mode is not None

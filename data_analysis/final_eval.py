@@ -196,13 +196,14 @@ def resolve_v1_gabor_seed(ckpt_args):
 
 
 def create_model_from_checkpoint(arch: str, ckpt_args, eval_cfg: SimpleNamespace) -> torch.nn.Module:
-    if arch != "convnext_small_v1":
+    is_convnext_v1 = arch.startswith("convnext_") and arch.endswith("_v1")
+    if not is_convnext_v1:
         return create_model(arch, pretrained=False, num_classes=eval_cfg.num_classes)
 
     from ares.model.v1_convnext import V1ConvNeXt
 
     return V1ConvNeXt(
-        backbone_name="convnext_small",
+        backbone_name=arch[:-3],
         input_size=eval_cfg.input_size,
         num_classes=eval_cfg.num_classes,
         drop_rate=get_ckpt_arg(ckpt_args, "drop", 0.0),
@@ -227,6 +228,12 @@ def create_model_from_checkpoint(arch: str, ckpt_args, eval_cfg: SimpleNamespace
         noise_level=get_ckpt_arg(ckpt_args, "v1_noise_level", 0.07),
         k_exc=get_ckpt_arg(ckpt_args, "v1_k_exc", 25),
     )
+
+
+def disable_inplace_relu(module: torch.nn.Module) -> None:
+    for child in module.modules():
+        if isinstance(child, torch.nn.ReLU):
+            child.inplace = False
 
 
 def get_eval_resize(eval_cfg: SimpleNamespace) -> int:
@@ -334,6 +341,7 @@ def load_model_from_ckpt(ckpt_path: Path, device: torch.device, use_ema: bool = 
 
     state_dict = strip_module_prefix(ckpt[state_key])
     model.load_state_dict(state_dict, strict=True)
+    disable_inplace_relu(model)
     model = model.to(device).eval()
     return model, eval_cfg, state_key
 

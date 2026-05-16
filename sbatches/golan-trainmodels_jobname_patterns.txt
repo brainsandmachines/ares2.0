@@ -1,5 +1,17 @@
 Supported job-name patterns for `sbatches/golan-trainmodels.sbatch`
 
+Backbone prefix
+- Default backbone is ConvNeXt Small: use the patterns below as-is.
+- Prefix any supported pattern with `convnext_base_` to launch ConvNeXt Base.
+- Prefix any supported pattern with `convnext_large_` to launch ConvNeXt Large.
+- Examples:
+  - `l2_16_init1` -> `convnext_small_l2_16_init1`
+  - `convnext_base_l2_16_init1` -> `convnext_base_l2_16_init1`
+  - `convnext_large_l2_16_init1` -> `convnext_large_l2_16_init1`
+  - `v1clean_linf_8_init1` -> `convnext_small_v1_clean_linf_8_init1`
+  - `convnext_base_v1clean_linf_8_init1` -> `convnext_base_v1_clean_linf_8_init1`
+  - `convnext_large_v1clean_linf_8_init1` -> `convnext_large_v1_clean_linf_8_init1`
+
 Legacy standard training
 - `baseline_init<INIT>`
 
@@ -45,5 +57,8 @@ Rejected / unsupported job names
 Notes
 - `<EPS>` is the configured epsilon value encoded in the job name.
 - `<INIT>` is the experiment/init id encoded after `init`.
+- Backbone prefixes are optional and only recognized at the start of the job name.
+- Base uses the same batch-size policy as Small.
+- Large uses 3/4 of the selected Small/Base batch size.
 - V1 adversarial jobs launch with `attack_domain=v1_feature`.
 - V1 noisy adversarial jobs are intentionally blocked.
