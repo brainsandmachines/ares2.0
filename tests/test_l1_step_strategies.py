@@ -1,6 +1,6 @@
 import torch
 
-from data_analysis.l1_step_methods import (
+from data_analysis.l1_step_strategy_benchmark.l1_step_methods import (
     attack_success_from_preds,
     fw_onehot_update,
     gather_best_per_sample,

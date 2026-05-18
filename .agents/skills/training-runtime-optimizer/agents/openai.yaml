@@ -1,0 +1,3 @@
+display_name: Training Runtime Optimizer
+short_description: Explore and track additive runtime ideas for ares training without changing protocol semantics.
+default_prompt: Optimize ares training runtime safely: check tested-idea history, preserve attack and data semantics, baseline freshly, run contract tests, benchmark one additive idea locally, then generate Slurm timing sbatches only for local winners.

@@ -307,7 +307,7 @@ def test_final_eval_defaults_are_pgd_without_autoattack_with_plots():
 
     assert merged["final_eval"] is True
     assert merged["final_eval_pgd"] is True
-    assert merged["final_eval_autoattack"] is False
+    assert merged["final_eval_autoattack"] is True
     assert merged["final_eval_plots"] is True
 
 
@@ -677,6 +677,220 @@ def test_main_v1_feature_trades_defaults(monkeypatch):
     assert train_call["attack_criterion"] == "trades"
     assert math.isclose(train_call["v1_attack_step"], (6.0 / 255.0) / 3.0, rel_tol=1e-8)
     assert train_call["random_start"] is True
+
+
+@pytest.mark.parametrize(
+    "criterion,expected_random_start",
+    [("madry", False), ("trades", True)],
+)
+def test_main_v1_feature_l2_defaults(monkeypatch, criterion, expected_random_start):
+    cfg = _compose_base_cfg()
+    cfg = OmegaConf.merge(
+        cfg,
+        OmegaConf.create(
+            {
+                "training": {"epochs": 1, "model_ema": False, "batch_size": 2},
+                "attacks": {
+                    "attack_domain": "v1_feature",
+                    "attack_norm": "l2",
+                    "advtrain": True,
+                    "attack_criterion": criterion,
+                    "v1_attack_eps": 6.0,
+                    "v1_attack_step": None,
+                    "v1_attack_it": 3,
+                },
+                "model": {"experiment_num": 1, "resume": "", "model": "convnext_small_v1"},
+            }
+        ),
+    )
+    args = argparse.Namespace(**advt._merge_groups_for_hydra(cfg))
+    args.train_dir = "/tmp/train"
+    args.eval_dir = "/tmp/val"
+    args.output_dir = "/tmp/out"
+    args.world_size = 1
+    args.rank = 0
+    args.local_rank = 0
+    args.device_id = 0
+    args.final_eval = False
+
+    class _Logger:
+        def info(self, *_a, **_k):
+            return None
+
+        def warning(self, *_a, **_k):
+            return None
+
+        def error(self, *_a, **_k):
+            return None
+
+        def exception(self, *_a, **_k):
+            return None
+
+    class _DummySched:
+        def step(self, *_a, **_k):
+            return None
+
+        def step_update(self, *_a, **_k):
+            return None
+
+    class _DummySaver:
+        def save_checkpoint(self, *_a, **_k):
+            return (0.9, 0)
+
+    train_call = {}
+
+    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_args, reg_loss_fn=None, **kwargs):
+        train_call["attack_domain"] = in_args.attack_domain
+        train_call["attack_criterion"] = in_args.attack_criterion
+        train_call["v1_attack_step"] = in_args.v1_attack_step
+        train_call["random_start"] = getattr(in_args, "random_start", False)
+        return {"loss": 0.1}
+
+    def _fake_loader():
+        x = torch.zeros(2, 3, 8, 8)
+        y = torch.zeros(2, dtype=torch.long)
+        return [(x, y)]
+
+    monkeypatch.setattr(advt, "distributed_init", lambda _args: None)
+    monkeypatch.setattr(advt, "random_seed", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "setup_logger", lambda *a, **k: _Logger())
+    monkeypatch.setattr(advt, "resolve_amp", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "build_model", lambda *_a, **_k: torch.nn.Linear(8, 3))
+    monkeypatch.setattr(advt, "optimizer_kwargs", lambda **_k: {})
+    monkeypatch.setattr(advt, "create_optimizer_v2", lambda model, **_k: torch.optim.SGD(model.parameters(), lr=0.01))
+    monkeypatch.setattr(advt, "build_loss_scaler", lambda *_a, **_k: (contextlib.nullcontext, None))
+    monkeypatch.setattr(advt, "build_dataset", lambda *_a, **_k: (_fake_loader(), _fake_loader()))
+    monkeypatch.setattr(advt, "build_loss", lambda *_a, **_k: (torch.nn.CrossEntropyLoss(), torch.nn.CrossEntropyLoss()))
+    monkeypatch.setattr(advt, "create_scheduler_v2", lambda *_a, **_k: (_DummySched(), 1))
+    monkeypatch.setattr(advt, "scheduler_kwargs", lambda *_a, **_k: {})
+    monkeypatch.setattr(advt, "CheckpointSaver", lambda *a, **k: _DummySaver())
+    monkeypatch.setattr(advt, "validate", lambda *_a, **_k: {"top1": 1.0, "loss": 0.1})
+    monkeypatch.setattr(advt, "update_summary", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "resume_checkpoint", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "load_checkpoint", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "distribute_bn", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "_maybe_run_final_eval", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "train_one_epoch", _train_one_epoch_stub)
+    monkeypatch.setattr(advt.wandb, "init", lambda **_k: None)
+    monkeypatch.setattr(advt.wandb, "log", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt.wandb.util, "generate_id", lambda: "test-run-id")
+
+    advt.main(args)
+
+    assert train_call["attack_domain"] == "v1_feature"
+    assert train_call["attack_criterion"] == criterion
+    assert math.isclose(train_call["v1_attack_step"], 4.0, rel_tol=1e-8)
+    assert train_call["random_start"] is expected_random_start
+
+
+def test_mixup_turns_off_and_rebuilds_loader(monkeypatch):
+    cfg = _compose_base_cfg()
+    cfg = OmegaConf.merge(
+        cfg,
+        OmegaConf.create(
+            {
+                "training": {"epochs": 2, "model_ema": False, "batch_size": 2},
+                "dataset": {
+                    "mixup_active": True,
+                    "mixup_off_epoch": 1,
+                },
+                "attacks": {
+                    "advtrain": False,
+                    "gradnorm": False,
+                },
+                "model": {"experiment_num": 1, "resume": ""},
+            }
+        ),
+    )
+    args = argparse.Namespace(**advt._merge_groups_for_hydra(cfg))
+    args.train_dir = "/tmp/train"
+    args.eval_dir = "/tmp/val"
+    args.output_dir = "/tmp/out"
+    args.world_size = 1
+    args.rank = 0
+    args.local_rank = 0
+    args.device_id = 0
+    args.final_eval = False
+
+    class _Logger:
+        def info(self, *_a, **_k):
+            return None
+
+        def warning(self, *_a, **_k):
+            return None
+
+        def error(self, *_a, **_k):
+            return None
+
+        def exception(self, *_a, **_k):
+            return None
+
+    class _DummySched:
+        def step(self, *_a, **_k):
+            return None
+
+        def step_update(self, *_a, **_k):
+            return None
+
+    class _DummySaver:
+        def save_checkpoint(self, *_a, **_k):
+            return (0.9, 0)
+
+    class _FakeSampler:
+        def set_epoch(self, *_a, **_k):
+            return None
+
+    class _FakeLoader:
+        def __init__(self):
+            self.sampler = _FakeSampler()
+
+        def __iter__(self):
+            x = torch.zeros(2, 3, 8, 8)
+            y = torch.zeros(2, dtype=torch.long)
+            yield x, y
+
+        def __len__(self):
+            return 1
+
+    build_states = []
+    epoch_mixup_states = []
+
+    def _build_dataset_stub(in_args, *_a, **_k):
+        build_states.append(bool(in_args.mixup_active))
+        return _FakeLoader(), _FakeLoader()
+
+    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_args, reg_loss_fn=None, **kwargs):
+        epoch_mixup_states.append((epoch, bool(in_args.mixup_active)))
+        return {"loss": 0.1}
+
+    monkeypatch.setattr(advt, "distributed_init", lambda _args: None)
+    monkeypatch.setattr(advt, "random_seed", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "setup_logger", lambda *a, **k: _Logger())
+    monkeypatch.setattr(advt, "resolve_amp", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "build_model", lambda *_a, **_k: torch.nn.Linear(8, 3))
+    monkeypatch.setattr(advt, "optimizer_kwargs", lambda **_k: {})
+    monkeypatch.setattr(advt, "create_optimizer_v2", lambda model, **_k: torch.optim.SGD(model.parameters(), lr=0.01))
+    monkeypatch.setattr(advt, "build_loss_scaler", lambda *_a, **_k: (contextlib.nullcontext, None))
+    monkeypatch.setattr(advt, "build_dataset", _build_dataset_stub)
+    monkeypatch.setattr(advt, "build_loss", lambda *_a, **_k: (torch.nn.CrossEntropyLoss(), torch.nn.CrossEntropyLoss()))
+    monkeypatch.setattr(advt, "create_scheduler_v2", lambda *_a, **_k: (_DummySched(), 2))
+    monkeypatch.setattr(advt, "scheduler_kwargs", lambda *_a, **_k: {})
+    monkeypatch.setattr(advt, "CheckpointSaver", lambda *a, **k: _DummySaver())
+    monkeypatch.setattr(advt, "validate", lambda *_a, **_k: {"top1": 1.0, "loss": 0.1})
+    monkeypatch.setattr(advt, "update_summary", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "resume_checkpoint", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "load_checkpoint", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "distribute_bn", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "_maybe_run_final_eval", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt, "train_one_epoch", _train_one_epoch_stub)
+    monkeypatch.setattr(advt.wandb, "init", lambda **_k: None)
+    monkeypatch.setattr(advt.wandb, "log", lambda *_a, **_k: None)
+    monkeypatch.setattr(advt.wandb.util, "generate_id", lambda: "test-run-id")
+
+    advt.main(args)
+
+    assert build_states == [True, False]
+    assert epoch_mixup_states == [(0, True), (1, False)]
 
 
 def test_convnext_small_v1_default_noise_mode_is_null():
