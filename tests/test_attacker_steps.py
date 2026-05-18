@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from types import SimpleNamespace
 
-from ares.utils.adv import L2Step, LinfStep, adv_generator, v1_adv_generator, v1_trades_adv_generator
+from ares.utils.adv import L1Step, L2Step, LinfStep, adv_generator, v1_adv_generator, v1_trades_adv_generator
 
 torch.manual_seed(0)
 
@@ -19,6 +19,11 @@ def per_sample_linf_norm(x, y):
     """Compute per-sample L-inf norm of (x - y). Returns tensor shape [B]."""
     diff = (x - y).view(x.shape[0], -1)
     return torch.max(torch.abs(diff), dim=1).values
+
+
+def per_sample_l1_norm(x, y):
+    diff = (x - y).view(x.shape[0], -1)
+    return torch.norm(diff, p=1, dim=1)
 
 
 @pytest.mark.parametrize("B,C,H,W", [(1, 3, 32, 32), (4, 3, 16, 16)])
@@ -236,6 +241,32 @@ def test_adv_generator_linf_respects_eps_and_shape():
     assert torch.all(linf_per_sample <= eps + 1e-6), f"adv_generator Linf produced norms {linf_per_sample} > {eps}"
 
 
+def test_l1_step_l2_norm_direction_matches_formula():
+    orig = torch.rand(2, 3, 4, 4)
+    grad = torch.randn_like(orig)
+    step_size = 0.75
+    step = L1Step(orig_input=orig, eps=5.0, step_size=step_size)
+    step.l1_step_mode = "l2_norm"
+
+    out = step.step(orig.clone(), grad)
+
+    grad_flat = grad.view(grad.shape[0], -1)
+    grad_norm = torch.norm(grad_flat, p=2, dim=1, keepdim=True).view(-1, 1, 1, 1)
+    expected = orig + grad / (grad_norm + 1e-10) * step_size
+    assert torch.allclose(out, expected, atol=1e-6)
+
+
+def test_l1_project_respects_eps():
+    orig = torch.rand(3, 3, 8, 8)
+    step = L1Step(orig_input=orig, eps=6.0, step_size=1.0)
+    candidate = orig + 5.0 * torch.randn_like(orig)
+
+    projected = step.project(candidate)
+    norms = per_sample_l1_norm(projected, orig)
+
+    assert torch.all(norms <= 6.0 + 1e-5), f"L1 project allowed norms {norms} > 6.0"
+
+
 def test_v1_adv_generator_linf_respects_eps_and_shape():
     class DummyV1Model(nn.Module):
         def __init__(self, feature_shape=(8, 4, 4), num_classes=5):
@@ -281,6 +312,47 @@ def test_v1_adv_generator_linf_respects_eps_and_shape():
     assert adv.shape == orig.shape
     norms = per_sample_linf_norm(adv, orig)
     assert torch.all(norms <= eps + 1e-6), f"v1_adv_generator Linf produced norms {norms} > {eps}"
+
+
+def test_v1_adv_generator_l2_respects_eps_and_shape():
+    class DummyV1Model(nn.Module):
+        def __init__(self, feature_shape=(8, 4, 4), num_classes=5):
+            super().__init__()
+            self.feature_shape = feature_shape
+            self.classifier = nn.Linear(feature_shape[0] * feature_shape[1] * feature_shape[2], num_classes)
+
+        def forward_v1_features(self, x, apply_noise=None):
+            base = x.mean(dim=1, keepdim=True)
+            return base.repeat(1, self.feature_shape[0], 1, 1)
+
+        def forward_from_v1_features(self, v1_features):
+            return self.classifier(v1_features.view(v1_features.size(0), -1))
+
+        def forward_with_v1_override(self, x, v1_features_override):
+            return self.forward_from_v1_features(v1_features_override)
+
+    args = SimpleNamespace(
+        attack_norm="l2",
+        amp_version="none",
+        l1_step_mode="l2_norm",
+        l1_apgd_rho=0.05,
+        l1_apgd_use_halving=True,
+        l1_apgd_min_step_scale=0.01,
+    )
+
+    images = torch.rand(2, 3, 4, 4)
+    target = torch.randint(0, 5, (2,))
+    eps = 1.0
+    attack_steps = 3
+    attack_lr = 0.25
+
+    model = DummyV1Model()
+    orig = model.forward_v1_features(images, apply_noise=True).detach()
+    adv = v1_adv_generator(args, images, target, model, eps, attack_steps, attack_lr, random_start=True)
+
+    assert adv.shape == orig.shape
+    norms = per_sample_l2_norm(adv, orig)
+    assert torch.all(norms <= eps + 1e-5), f"v1_adv_generator L2 produced norms {norms} > {eps}"
 
 
 def test_v1_adv_generator_requires_v1_interface():
@@ -344,6 +416,49 @@ def test_v1_trades_adv_generator_is_deterministic_and_respects_eps():
     assert adv.shape == orig.shape
     norms = per_sample_linf_norm(adv, orig)
     assert torch.all(norms <= eps + 1e-6), f"v1_trades_adv_generator Linf produced norms {norms} > {eps}"
+    assert model.apply_noise_calls[-1] is False
+
+
+def test_v1_trades_adv_generator_l2_respects_eps():
+    class DummyV1Model(nn.Module):
+        def __init__(self, feature_shape=(8, 4, 4), num_classes=5):
+            super().__init__()
+            self.feature_shape = feature_shape
+            self.classifier = nn.Linear(feature_shape[0] * feature_shape[1] * feature_shape[2], num_classes)
+            self.apply_noise_calls = []
+
+        def forward_v1_features(self, x, apply_noise=None):
+            self.apply_noise_calls.append(apply_noise)
+            base = x.mean(dim=1, keepdim=True)
+            return base.repeat(1, self.feature_shape[0], 1, 1)
+
+        def forward_from_v1_features(self, v1_features):
+            return self.classifier(v1_features.view(v1_features.size(0), -1))
+
+        def forward_with_v1_override(self, x, v1_features_override):
+            return self.forward_from_v1_features(v1_features_override)
+
+    args = SimpleNamespace(
+        attack_norm="l2",
+        amp_version="none",
+        l1_step_mode="l2_norm",
+        l1_apgd_rho=0.05,
+        l1_apgd_use_halving=True,
+        l1_apgd_min_step_scale=0.01,
+    )
+
+    images = torch.rand(2, 3, 4, 4)
+    eps = 1.0
+    attack_steps = 3
+    attack_lr = 0.25
+
+    model = DummyV1Model()
+    orig = model.forward_v1_features(images, apply_noise=False).detach()
+    adv = v1_trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, random_start=True)
+
+    assert adv.shape == orig.shape
+    norms = per_sample_l2_norm(adv, orig)
+    assert torch.all(norms <= eps + 1e-5), f"v1_trades_adv_generator L2 produced norms {norms} > {eps}"
     assert model.apply_noise_calls[-1] is False
 
 

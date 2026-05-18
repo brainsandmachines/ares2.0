@@ -19,7 +19,7 @@ native_amp: True
 seed: null
 log_interval: 50
 recovery_interval: 0
-num_workers: 6
+num_workers: 8
 output_dir: 'results/models'
 save_log: save_log.txt
 eval_metric: top1
