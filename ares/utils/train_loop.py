@@ -206,7 +206,7 @@ def train_one_epoch(
                 rate_avg=input.size(0) * args.world_size / batch_time_m.avg,
                 lr=lr,
                 data_time=data_time_m))
-            if args.gradnorm:
+            if args.gradnorm and batch_idx % (args.log_interval * 20) == 0:
                 ce_val = ce_loss.detach().item()
                 raw_reg_val = raw_loss_reg.detach().item()
                 reg_val = loss_reg.detach().item()
