@@ -5,8 +5,7 @@
 #SBATCH --qos=golan-neuro
 #SBATCH --gpus=1
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
-#SBATCH --array=9-77%10
-#SBATCH --output=/home/ashtomer/projects/ares/outs/autoattack_eval/%A_%a.out
+#SBATCH --output=/home/ashtomer/projects/ares/outs/autoattack_eval/%j.out
 
 set -euo pipefail
 
@@ -33,7 +32,7 @@ fi
 python data_analysis/autoattack_array_eval.py \
   --models-root "${MODELS_ROOT}" \
   --val-dir "${VAL_DIR}" \
-  --array-index "${SLURM_ARRAY_TASK_ID}" \
+  --model-name convnext_small_linftrades_8_init2 \
   --batch-size 128 \
   --num-batches 8 \
   --num-workers 6 \
