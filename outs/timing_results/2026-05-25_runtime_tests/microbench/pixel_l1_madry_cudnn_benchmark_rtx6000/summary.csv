@@ -1,0 +1,2 @@
+protocol,candidate,batch_size,status,result_json
+pixel_l1_madry,cudnn_benchmark,256,ok,/home/ashtomer/projects/ares/outs/timing_testing/pixel_l1_madry_cudnn_benchmark_rtx6000/pixel_l1_madry/cudnn_benchmark/bsz_256/result.json

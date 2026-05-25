@@ -1,0 +1,2 @@
+protocol,candidate,batch_size,status,result_json
+pixel_l1_madry,zero_grad_set_to_none,512,ok,/home/ashtomer/projects/ares/outs/timing_testing/pixel_l1_madry_zero_grad_set_to_none_rtx_pro_6000/pixel_l1_madry/zero_grad_set_to_none/bsz_512/result.json

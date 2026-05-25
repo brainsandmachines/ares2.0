@@ -1,0 +1,2 @@
+protocol,candidate,batch_size,status,result_json
+pixel_linf_madry,madry_attack_autograd_grad,512,ok,/home/ashtomer/projects/ares/outs/timing_testing/pixel_linf_madry_madry_attack_autograd_grad_rtx_pro_6000/pixel_linf_madry/madry_attack_autograd_grad/bsz_512/result.json

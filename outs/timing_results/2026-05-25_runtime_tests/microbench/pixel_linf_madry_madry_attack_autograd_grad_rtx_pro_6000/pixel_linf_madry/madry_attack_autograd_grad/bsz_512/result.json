@@ -1,0 +1,17 @@
+{
+  "avg_data_seconds": 0.00023169255000539125,
+  "avg_iter_seconds": 1.6499703305482398,
+  "batch_size": 512,
+  "candidate": "madry_attack_autograd_grad",
+  "elapsed_seconds": 89.68591408594511,
+  "error": "",
+  "final_loss": 7.049220085144043,
+  "gpu_name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+  "images_per_sec": 310.30861011293246,
+  "max_memory_bytes": 53414777856,
+  "measured_iters": 20,
+  "num_workers": 6,
+  "protocol": "pixel_linf_madry",
+  "status": "ok",
+  "warmup_iters": 1
+}

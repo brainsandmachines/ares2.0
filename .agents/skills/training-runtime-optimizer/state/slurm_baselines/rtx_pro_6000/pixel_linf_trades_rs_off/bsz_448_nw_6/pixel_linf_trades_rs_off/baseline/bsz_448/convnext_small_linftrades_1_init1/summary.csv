@@ -1,0 +1,2 @@
+epoch,train_loss,train_avg_iter_seconds,eval_top1,eval_loss,lr
+0,7.059927940368652,2.379367887513945,0.0,0.0,1e-06

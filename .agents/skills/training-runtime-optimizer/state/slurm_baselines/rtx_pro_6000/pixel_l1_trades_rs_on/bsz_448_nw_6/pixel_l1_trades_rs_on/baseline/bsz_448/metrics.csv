@@ -1,0 +1,2 @@
+protocol,candidate,batch_size,status,avg_iter_seconds,avg_data_seconds,images_per_sec,final_loss,max_memory_bytes,elapsed_seconds
+pixel_l1_trades_rs_on,baseline,448,ok,2.384002,0.000266,187.9193,7.062613,88182340608,105.479273

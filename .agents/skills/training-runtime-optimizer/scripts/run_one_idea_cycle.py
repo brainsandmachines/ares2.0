@@ -20,6 +20,7 @@ LOCK_FILE = SKILL_DIR / "state" / "run.lock"
 OUTPUT_ROOT = SKILL_DIR / "outputs" / "runs"
 BENCHMARK_SCRIPT = SKILL_DIR / "scripts" / "benchmark_local.sh"
 CONTRACT_SCRIPT = SKILL_DIR / "scripts" / "run_contract_tests.sh"
+CANDIDATE_CONTRACT_SCRIPT = SKILL_DIR / "scripts" / "run_candidate_contract_tests.sh"
 COMPARE_SCRIPT = SKILL_DIR / "scripts" / "compare_benchmarks.py"
 SLURM_SCRIPT = SKILL_DIR / "scripts" / "make_slurm_benchmarks.py"
 IDEA_STATE_SCRIPT = SKILL_DIR / "scripts" / "idea_state.py"
@@ -44,6 +45,12 @@ GLOBAL_RUNTIME_CANDIDATES = {
     "dataloader_tuned",
     "torch_compile",
     "zero_grad_set_to_none",
+}
+
+RECOMMENDATIONS = {
+    "recommend_code_change",
+    "run_full_epoch_validation",
+    "reject_candidate",
 }
 
 
@@ -182,6 +189,68 @@ def record_state(
         decision,
         label,
     )
+
+
+def candidate_contract_cmd(protocol: str, candidate: str) -> list[str]:
+    return [
+        "bash",
+        str(CANDIDATE_CONTRACT_SCRIPT),
+        "--protocol",
+        protocol,
+        "--candidate",
+        candidate,
+    ]
+
+
+def candidate_needs_full_epoch(candidate: str) -> bool:
+    return "torch_compile" in candidate
+
+
+def make_recommendation(
+    *,
+    stage: str,
+    status: str,
+    candidate: str,
+    reason: str,
+    evidence_paths: list[str],
+    speedup: float | None = None,
+) -> dict[str, Any]:
+    if status != "won":
+        recommendation = "reject_candidate"
+        required_next_validation = ""
+        proposed_code_change = ""
+        decision_reason = reason or "candidate did not produce enough valid evidence for a code change"
+    elif candidate_needs_full_epoch(candidate):
+        recommendation = "run_full_epoch_validation"
+        required_next_validation = (
+            "run Slurm verification first, then full-epoch compile-vs-no-compile validation if the Slurm result wins"
+        )
+        proposed_code_change = ""
+        decision_reason = "compile candidates need full-epoch evidence before changing training code"
+    else:
+        recommendation = "recommend_code_change"
+        required_next_validation = (
+            "run generated Slurm verification sbatches and compare against the matching Slurm baseline"
+            if stage == "local_botero"
+            else ""
+        )
+        proposed_code_change = (
+            f"after required validation, enable candidate '{candidate}' for the protocol(s) where measured speedup is above baseline"
+        )
+        decision_reason = reason or "candidate beat the fresh baseline and passed validation"
+
+    payload: dict[str, Any] = {
+        "stage": stage,
+        "recommendation": recommendation,
+        "reason": decision_reason,
+        "required_next_validation": required_next_validation,
+        "proposed_code_change": proposed_code_change,
+        "evidence_paths": evidence_paths,
+    }
+    if speedup is not None:
+        payload["speedup_over_baseline"] = speedup
+    assert recommendation in RECOMMENDATIONS
+    return payload
 
 
 def acquire_lock() -> bool:
@@ -357,11 +426,18 @@ def main() -> int:
                 decision["speedup_over_baseline"] = speedup
                 comparison_paths = [comparison_csv]
                 if speedup > 1.0:
-                    decision["status"] = "won"
+                    if not args.skip_contract_tests and run_cmd(
+                        candidate_contract_cmd(args.protocol, args.candidate_name),
+                        decision,
+                        "candidate_contract_primary",
+                    ) != 0:
+                        decision.update({"status": "failed", "reason": "candidate contract tests failed"})
+                    else:
+                        decision["status"] = "won"
                     related = related_protocols(args.protocol, args.candidate_name, args.related_protocols)
                     decision["related_protocols"] = related
                     related_results: list[dict[str, Any]] = []
-                    for related_protocol in related:
+                    for related_protocol in related if decision.get("status") == "won" else []:
                         related_idea_id = protocol_idea_id(args.idea_id, related_protocol)
                         related_run_dir = run_dir / "related" / related_protocol
                         related_baseline_dir = related_run_dir / "baseline"
@@ -494,6 +570,13 @@ def main() -> int:
                                 related_status = "won" if related_speedup > 1.0 else "neutral"
                                 if related_status == "neutral":
                                     related_reason = "candidate did not beat related baseline"
+                                elif not args.skip_contract_tests and run_cmd(
+                                    candidate_contract_cmd(related_protocol, args.candidate_name),
+                                    decision,
+                                    f"candidate_contract_related_{related_protocol}",
+                                ) != 0:
+                                    related_status = "failed"
+                                    related_reason = "candidate contract tests failed"
                                 related_results.append(
                                     {
                                         "protocol": related_protocol,
@@ -506,7 +589,8 @@ def main() -> int:
                                     }
                                 )
                                 related_result_appended = True
-                                comparison_paths.append(related_comparison_csv)
+                                if related_status in {"won", "neutral"}:
+                                    comparison_paths.append(related_comparison_csv)
                             else:
                                 related_reason = "missing successful related baseline or candidate result"
 
@@ -537,7 +621,7 @@ def main() -> int:
                     combine_comparisons(comparison_paths, all_comparison_csv)
                     slurm_comparison_csv = all_comparison_csv if all_comparison_csv.exists() else comparison_csv
                     decision["all_comparisons_csv"] = str(slurm_comparison_csv)
-                    if not args.no_slurm:
+                    if decision.get("status") == "won" and not args.no_slurm:
                         run_cmd(
                             [
                                 sys.executable,
@@ -562,6 +646,21 @@ def main() -> int:
             "candidate_dir": str(run_dir / "candidate"),
             "comparison_csv": str(run_dir / "comparison.csv"),
         }
+        evidence_paths = [
+            artifacts["baseline_dir"],
+            artifacts["candidate_dir"],
+            artifacts["comparison_csv"],
+        ]
+        if decision.get("all_comparisons_csv"):
+            evidence_paths.append(str(decision["all_comparisons_csv"]))
+        decision["recommendation"] = make_recommendation(
+            stage="local_botero",
+            status=str(decision.get("status", "failed")),
+            candidate=args.candidate_name,
+            reason=str(decision.get("reason", "")),
+            evidence_paths=evidence_paths,
+            speedup=decision.get("speedup_over_baseline"),
+        )
         run_cmd(
             [
                 sys.executable,

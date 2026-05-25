@@ -137,10 +137,16 @@ def render_sbatch(protocol: str, candidate: str, gpu_key: str, batch_sizes: str,
     job_name = sanitize_job_name(f"{protocol}_{candidate}_{gpu['label']}")
     output_root = f"/home/ashtomer/projects/ares/outs/timing_testing/{job_name}"
     slurm_batch_sizes = scale_batch_sizes(batch_sizes, int(gpu["batch_size_multiplier"]))
+    next_step = (
+        "If this compile candidate wins, run full-epoch compile validation before changing training code."
+        if "torch_compile" in candidate
+        else "If this candidate wins against the matching Slurm baseline, it is eligible for a protocol-specific code/config change."
+    )
     return f"""#!/bin/bash
 # Runtime-idea verification sbatch: emitted only after a local win for this protocol.
 # This verifies {measured_iters} measured forward/backward training iterations on the target Slurm GPU.
 # Batch size is {gpu['batch_size_multiplier']}x the local RTX 4090 batch size used for this protocol.
+# Decision rule: {next_step}
 #SBATCH --job-name={job_name}
 #SBATCH --time=14-00:00:00
 #SBATCH --partition={gpu['partition']}

@@ -1,0 +1,2 @@
+protocol,candidate,batch_size,status,result_json
+pixel_l2_trades_rs_on,zero_grad_set_to_none,224,ok,/home/ashtomer/projects/ares/outs/timing_testing/pixel_l2_trades_rs_on_zero_grad_set_to_none_rtx6000/pixel_l2_trades_rs_on/zero_grad_set_to_none/bsz_224/result.json

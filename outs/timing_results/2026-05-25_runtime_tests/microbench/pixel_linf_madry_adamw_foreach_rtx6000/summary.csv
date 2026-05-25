@@ -1,0 +1,2 @@
+protocol,candidate,batch_size,status,result_json
+pixel_linf_madry,adamw_foreach,256,ok,/home/ashtomer/projects/ares/outs/timing_testing/pixel_linf_madry_adamw_foreach_rtx6000/pixel_linf_madry/adamw_foreach/bsz_256/result.json

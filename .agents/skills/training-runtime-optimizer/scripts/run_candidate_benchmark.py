@@ -144,6 +144,11 @@ EXAMPLE_HARNESS_BEHAVIORS = {
     "cached_attack_criterion",
     "attack_freeze_model_params",
     "attack_pre_zero_grad",
+    "adamw_fused_channels_last",
+    "adamw_fused_cudnn_benchmark",
+    "channels_last_cudnn_benchmark",
+    "adamw_fused_channels_last_cudnn_benchmark",
+    "madry_attack_autograd_grad_attack_freeze_model_params",
 }
 
 
@@ -167,6 +172,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-workers", type=int, default=6)
     parser.add_argument("--seed", type=int, default=0)
     return parser.parse_args()
+
+
+def candidate_includes(candidate: str, behavior: str) -> bool:
+    return candidate == behavior or behavior in candidate
 
 
 def compose_args(protocol_name: str, cli_args: argparse.Namespace) -> argparse.Namespace:
@@ -312,7 +321,7 @@ def rebuild_loader(loader, persistent_workers: bool, prefetch_factor: int):
 
 
 def apply_candidate_args(args: argparse.Namespace, candidate: str) -> None:
-    if candidate in {"channels_last", "channels_last_reshape_attack_flatten"}:
+    if candidate in {"channels_last", "channels_last_reshape_attack_flatten"} or candidate_includes(candidate, "channels_last"):
         args.channels_last = True
     elif candidate == "dataloader_tuned":
         args.pin_mem = True
@@ -328,7 +337,7 @@ def apply_backend_candidate(candidate: str):
         "benchmark": torch.backends.cudnn.benchmark,
         "deterministic": torch.backends.cudnn.deterministic,
     }
-    if candidate == "cudnn_benchmark":
+    if candidate == "cudnn_benchmark" or candidate_includes(candidate, "cudnn_benchmark"):
         torch.backends.cudnn.benchmark = True
     return previous
 
@@ -777,15 +786,19 @@ def cached_criterion_v1_adv_generator(args, images, target, model, eps, attack_s
     return best_x.detach()
 
 
-def patch_build_model(candidate: str):
+def patch_build_model(candidate: str, compile_state: Dict[str, bool] | None = None):
     real_build_model = advt.build_model
 
     def _wrapped(*inner_args, **inner_kwargs):
         model = real_build_model(*inner_args, **inner_kwargs)
         if candidate in {"torch_compile", "torch_compile_no_channels_last"} and hasattr(torch, "compile"):
             model = torch.compile(model)
+            if compile_state is not None:
+                compile_state["applied"] = True
         elif candidate == "torch_compile_reduce_overhead_no_channels_last" and hasattr(torch, "compile"):
             model = torch.compile(model, mode="reduce-overhead")
+            if compile_state is not None:
+                compile_state["applied"] = True
         return model
 
     return _wrapped
@@ -795,7 +808,7 @@ def patch_create_optimizer(candidate: str):
     real_create_optimizer = advt.create_optimizer_v2
 
     def _wrapped(model, **kwargs):
-        if candidate == "adamw_fused":
+        if candidate == "adamw_fused" or candidate_includes(candidate, "adamw_fused"):
             kwargs = dict(kwargs)
             kwargs["fused"] = True
         elif candidate == "adamw_foreach":
@@ -854,7 +867,7 @@ def patch_train_one_epoch(timer: TimerCollector, candidate: str):
         else trades_adv_generator
     )
     v1_madry_adv_generator = v1_adv_generator
-    if candidate == "madry_attack_autograd_grad":
+    if candidate == "madry_attack_autograd_grad" or candidate_includes(candidate, "madry_attack_autograd_grad"):
         pixel_adv_generator = madry_autograd_pixel_adv_generator
         v1_madry_adv_generator = madry_autograd_v1_adv_generator
     elif candidate == "cached_attack_criterion":
@@ -863,7 +876,7 @@ def patch_train_one_epoch(timer: TimerCollector, candidate: str):
 
     @contextlib.contextmanager
     def maybe_freeze_attack_params(model):
-        if candidate != "attack_freeze_model_params":
+        if candidate != "attack_freeze_model_params" and not candidate_includes(candidate, "attack_freeze_model_params"):
             yield
             return
 
@@ -1055,6 +1068,9 @@ def main() -> int:
     apply_candidate_args(args, cli_args.candidate)
     previous_backend = apply_backend_candidate(cli_args.candidate)
     attack_flatten_originals = patch_attack_flatten_methods(cli_args.candidate)
+    compile_requested = candidate_includes(cli_args.candidate, "torch_compile")
+    compile_available = hasattr(torch, "compile")
+    compile_state = {"applied": False}
 
     total_iters = cli_args.warmup_iters + cli_args.measured_iters
     timer = TimerCollector(cli_args.warmup_iters, cli_args.measured_iters)
@@ -1070,7 +1086,7 @@ def main() -> int:
     patch_wandb()
     advt.distributed_init = lambda _args: None
     advt.build_dataset = patch_build_dataset(cli_args.candidate, total_iters)
-    advt.build_model = patch_build_model(cli_args.candidate)
+    advt.build_model = patch_build_model(cli_args.candidate, compile_state)
     advt.create_optimizer_v2 = patch_create_optimizer(cli_args.candidate)
     advt.validate = patch_validate()
     advt._maybe_run_final_eval = patch_final_eval()
@@ -1132,6 +1148,13 @@ def main() -> int:
             "gpu_name": torch.cuda.get_device_name(0),
             "max_memory_bytes": int(max_memory),
             "elapsed_seconds": elapsed,
+            "checkpoint_saving_disabled": True,
+            "validation_disabled": True,
+            "final_eval_disabled": True,
+            "external_logging_disabled": True,
+            "compile_requested": compile_requested,
+            "compile_available": compile_available,
+            "compile_applied": compile_state["applied"],
         }
         if summary is not None:
             payload.update(summary)

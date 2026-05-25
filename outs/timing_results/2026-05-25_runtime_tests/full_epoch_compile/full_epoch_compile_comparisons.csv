@@ -1,0 +1,6 @@
+protocol,gpu,no_compile_job,compile_job,no_compile_seconds,compile_seconds,seconds_saved,speedup,decision,note
+pixel_l2_madry,rtx6000,17802548,17802548,8611,7547,1064,1.140983,enable,Full epoch compile saved 1064s on rtx6000.
+pixel_l2_madry,rtx_pro_6000,17802549,17803143,4792,4070,722,1.177396,enable,Compile rerun succeeded after reshape fix and saved 722s.
+v1_l2_madry,rtx_pro_6000,17827212,17827212,5785,5778,7,1.001211,do_not_enable,"Neutral full-epoch result, only 7s faster."
+pixel_l2_trades,rtx_pro_6000,17827282,17827282,7276,10425,-3149,0.697938,do_not_enable,Compile was substantially slower.
+v1_l2_trades,rtx_pro_6000,17827309,17827309,8459,8236,223,1.027076,enable_rtx_pro_6000_only,Compile saved 223s total and improved training phase.

@@ -1,0 +1,17 @@
+{
+  "avg_data_seconds": 0.0003592802444472909,
+  "avg_iter_seconds": 1.5502150801068637,
+  "batch_size": 256,
+  "candidate": "madry_attack_autograd_grad",
+  "elapsed_seconds": 84.94720532698557,
+  "error": "",
+  "final_loss": 7.043616771697998,
+  "gpu_name": "NVIDIA RTX 6000 Ada Generation",
+  "images_per_sec": 165.13837549712954,
+  "max_memory_bytes": 36926437888,
+  "measured_iters": 20,
+  "num_workers": 6,
+  "protocol": "v1_l2_madry",
+  "status": "ok",
+  "warmup_iters": 1
+}
