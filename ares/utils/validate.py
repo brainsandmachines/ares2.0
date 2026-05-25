@@ -8,7 +8,7 @@ import torch
 from timm.utils import  reduce_tensor
 
 # robust training functions
-from ares.utils.adv import adv_generator, trades_adv_generator, v1_adv_generator, v1_trades_adv_generator
+from ares.utils.adv import adv_generator, v1_adv_generator
 from ares.utils.metrics import AverageMeter, accuracy
 
 def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _logger=None, epoch=None):
@@ -83,55 +83,30 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
                 best_adv_input = None
                 best_adv_loss = None
                 for _ in range(max(1, attack_restarts)):
-                    if args.attack_criterion == 'trades':
-                        trades_random_start = args.attack_norm != 'l1'
-                        if attack_domain == 'pixel':
-                            cand_adv = trades_adv_generator(
-                                args,
-                                input,
-                                model,
-                                att_eps,
-                                attack_steps,
-                                att_step,
-                                random_start=trades_random_start,
-                                use_best=attack_use_best,
-                            )
-                        else:
-                            cand_adv = v1_trades_adv_generator(
-                                args,
-                                input,
-                                model,
-                                att_eps,
-                                attack_steps,
-                                att_step,
-                                random_start=trades_random_start,
-                                use_best=attack_use_best,
-                            )
+                    if attack_domain == 'pixel':
+                        cand_adv = adv_generator(
+                            args,
+                            input,
+                            target,
+                            model,
+                            att_eps,
+                            attack_steps,
+                            att_step,
+                            random_start=attack_random_start,
+                            use_best=attack_use_best,
+                        )
                     else:
-                        if attack_domain == 'pixel':
-                            cand_adv = adv_generator(
-                                args,
-                                input,
-                                target,
-                                model,
-                                att_eps,
-                                attack_steps,
-                                att_step,
-                                random_start=attack_random_start,
-                                use_best=attack_use_best,
-                            )
-                        else:
-                            cand_adv = v1_adv_generator(
-                                args,
-                                input,
-                                target,
-                                model,
-                                att_eps,
-                                attack_steps,
-                                att_step,
-                                random_start=attack_random_start,
-                                use_best=attack_use_best,
-                            )
+                        cand_adv = v1_adv_generator(
+                            args,
+                            input,
+                            target,
+                            model,
+                            att_eps,
+                            attack_steps,
+                            att_step,
+                            random_start=attack_random_start,
+                            use_best=attack_use_best,
+                        )
                     with torch.no_grad():
                         with amp_autocast():
                             if attack_domain == 'pixel':

@@ -132,6 +132,12 @@ def main(args):
     # build model
     model = build_model(args, _logger, num_aug_splits)
 
+    if getattr(args, 'compile_model', False):
+      if not hasattr(torch, 'compile'):
+          raise RuntimeError('compile_model=True requires torch.compile, available in PyTorch 2.x')
+      _logger.info('Compiling model with torch.compile')
+      model = torch.compile(model)
+
     # create optimizer
     optimizer=None
     if args.lr is None:

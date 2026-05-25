@@ -5,6 +5,7 @@ resume: ''
 gp: null
 channels_last: False
 max_history: 10 
+compile_model: False
 
 # Batch norm parameters
 bn_momentum: null
