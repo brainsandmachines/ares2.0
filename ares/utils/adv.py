@@ -1,4 +1,4 @@
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 import torch
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 
@@ -128,7 +128,7 @@ class L2Step(AttackerStep):
         Take a step in the direction of the normalized gradient with step size.
         """
         l = len(x.shape) - 1
-        g_norm = torch.norm(g.view(g.shape[0], -1), dim=1).view(-1, *([1]*l))
+        g_norm = torch.norm(g.reshape(g.shape[0], -1), dim=1).view(-1, *([1]*l))
         scaled_g = g / (g_norm + 1e-10)
         return x + scaled_g * self.step_size
 
@@ -315,6 +315,19 @@ def _unwrap_v1_attack_model(model):
         raise ValueError('V1 feature-space attacks require a model with the V1 attack interface.')
     return base_model
 
+
+@contextmanager
+def _temporarily_disable_param_grads(model):
+    params = list(model.parameters())
+    previous = [param.requires_grad for param in params]
+    try:
+        for param in params:
+            param.requires_grad_(False)
+        yield
+    finally:
+        for param, requires_grad in zip(params, previous):
+            param.requires_grad_(requires_grad)
+
 def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, random_start, use_best=True):
     # denorm images to 0-1
     std_tensor=torch.Tensor(args.std).cuda(non_blocking=True)[None, :, None, None]
@@ -324,59 +337,59 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
     # define perturbation range
     prev_training = bool(model.training)
     model.eval()
-    orig_input = images.detach().cuda(non_blocking=True)
-    step = _build_step(args, orig_input, eps, attack_lr)
+    try:
+        with _temporarily_disable_param_grads(model):
+            orig_input = images.detach().cuda(non_blocking=True)
+            step = _build_step(args, orig_input, eps, attack_lr)
 
+            # define loss function
+            attack_criterion = torch.nn.CrossEntropyLoss()
 
-    # define loss function
-    attack_criterion = torch.nn.CrossEntropyLoss()
+            # amp_autocast
+            amp_autocast=suppress
+            if args.amp_version == 'native':
+                amp_autocast = torch.cuda.amp.autocast
 
-    # amp_autocast
-    amp_autocast=suppress
-    if args.amp_version == 'native':
-        amp_autocast = torch.cuda.amp.autocast
+            # adv generation
+            best_loss = None
+            best_x = None
+            if random_start:
+                images = step.random_perturb(images)
+            else:
+                images = orig_input.clone().detach()
 
-    # adv generation
-    best_loss = None
-    best_x = None
-    if random_start:
-        images = step.random_perturb(images)
-    else:
-        images = orig_input.clone().detach()
+            l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(args, attack_lr)
 
-    l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(args, attack_lr)
+            for _ in range(attack_steps):
+                images = images.clone().detach().requires_grad_(True)
 
-    for _ in range(attack_steps):
-        images = images.clone().detach().requires_grad_(True)
+                # forward
+                adv_losses=None
+                with amp_autocast():
+                    adv_losses = attack_criterion(model((images-mean_tensor)/std_tensor), target)
 
-        # forward
-        adv_losses=None
-        with amp_autocast():
-            adv_losses = attack_criterion(model((images-mean_tensor)/std_tensor), target)
+                # update gradient
+                grad = torch.autograd.grad(torch.mean(adv_losses), images)[0].detach()
+                with torch.no_grad():
+                    if l1_apgd_mode_active:
+                        cur_loss = float(adv_losses.item())
+                        if l1_apgd_use_halving and l1_prev_loss is not None and cur_loss <= l1_prev_loss + 1e-12:
+                            l1_cur_step = max(l1_cur_step / 2.0, l1_min_step)
+                        step.step_size = l1_cur_step
+                        l1_prev_loss = cur_loss
 
-        torch.mean(adv_losses).backward()
+                    varlist = [adv_losses, best_loss, images, best_x]
+                    best_loss, best_x = replace_best(*varlist) if use_best else (adv_losses, images)
 
-        # update gradient
-        grad = images.grad.detach()
+                    images = step.step(images, grad)
+                    images = step.project(images)
         with torch.no_grad():
-            if l1_apgd_mode_active:
-                cur_loss = float(adv_losses.item())
-                if l1_apgd_use_halving and l1_prev_loss is not None and cur_loss <= l1_prev_loss + 1e-12:
-                    l1_cur_step = max(l1_cur_step / 2.0, l1_min_step)
-                step.step_size = l1_cur_step
-                l1_prev_loss = cur_loss
-
-            varlist = [adv_losses, best_loss, images, best_x]
-            best_loss, best_x = replace_best(*varlist) if use_best else (adv_losses, images)
-
-            images = step.step(images, grad)
-            images = step.project(images)
-    with torch.no_grad():
-        adv_losses = attack_criterion(model((images-mean_tensor)/std_tensor), target)
-    varlist = [adv_losses, best_loss, images, best_x]
-    best_loss, best_x = replace_best(*varlist) if use_best else (adv_losses, images)
-    if prev_training:
-        model.train()
+            adv_losses = attack_criterion(model((images-mean_tensor)/std_tensor), target)
+        varlist = [adv_losses, best_loss, images, best_x]
+        best_loss, best_x = replace_best(*varlist) if use_best else (adv_losses, images)
+    finally:
+        if prev_training:
+            model.train()
     
     best_x=(best_x-mean_tensor)/std_tensor
     return best_x
@@ -386,47 +399,49 @@ def v1_adv_generator(args, images, target, model, eps, attack_steps, attack_lr, 
     prev_training = bool(model.training)
     model.eval()
     attack_model = _unwrap_v1_attack_model(model)
-    orig_features = attack_model.forward_v1_features(images, apply_noise=True).detach()
-    step = _build_step(args, orig_features, eps, attack_lr, clamp_min=None, clamp_max=None)
-    attack_criterion = torch.nn.CrossEntropyLoss()
+    try:
+        with _temporarily_disable_param_grads(model):
+            orig_features = attack_model.forward_v1_features(images, apply_noise=True).detach()
+            step = _build_step(args, orig_features, eps, attack_lr, clamp_min=None, clamp_max=None)
+            attack_criterion = torch.nn.CrossEntropyLoss()
 
-    amp_autocast = suppress
-    if args.amp_version == 'native':
-        amp_autocast = torch.cuda.amp.autocast
+            amp_autocast = suppress
+            if args.amp_version == 'native':
+                amp_autocast = torch.cuda.amp.autocast
 
-    best_loss = None
-    best_x = None
-    if random_start:
-        adv_features = step.random_perturb(orig_features)
-    else:
-        adv_features = orig_features.clone().detach()
+            best_loss = None
+            best_x = None
+            if random_start:
+                adv_features = step.random_perturb(orig_features)
+            else:
+                adv_features = orig_features.clone().detach()
 
-    l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(args, attack_lr)
+            l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(args, attack_lr)
 
-    for _ in range(attack_steps):
-        adv_features = adv_features.clone().detach().requires_grad_(True)
-        with amp_autocast():
-            adv_losses = attack_criterion(attack_model.forward_from_v1_features(adv_features), target)
+            for _ in range(attack_steps):
+                adv_features = adv_features.clone().detach().requires_grad_(True)
+                with amp_autocast():
+                    adv_losses = attack_criterion(attack_model.forward_from_v1_features(adv_features), target)
 
-        torch.mean(adv_losses).backward()
-        grad = adv_features.grad.detach()
-        with torch.no_grad():
-            if l1_apgd_mode_active:
-                cur_loss = float(adv_losses.item())
-                if l1_apgd_use_halving and l1_prev_loss is not None and cur_loss <= l1_prev_loss + 1e-12:
-                    l1_cur_step = max(l1_cur_step / 2.0, l1_min_step)
-                step.step_size = l1_cur_step
-                l1_prev_loss = cur_loss
+                grad = torch.autograd.grad(torch.mean(adv_losses), adv_features)[0].detach()
+                with torch.no_grad():
+                    if l1_apgd_mode_active:
+                        cur_loss = float(adv_losses.item())
+                        if l1_apgd_use_halving and l1_prev_loss is not None and cur_loss <= l1_prev_loss + 1e-12:
+                            l1_cur_step = max(l1_cur_step / 2.0, l1_min_step)
+                        step.step_size = l1_cur_step
+                        l1_prev_loss = cur_loss
 
+                    best_loss, best_x = replace_best(adv_losses, best_loss, adv_features, best_x) if use_best else (adv_losses, adv_features)
+                    adv_features = step.step(adv_features, grad)
+                    adv_features = step.project(adv_features)
+
+            with torch.no_grad():
+                adv_losses = attack_criterion(attack_model.forward_from_v1_features(adv_features), target)
             best_loss, best_x = replace_best(adv_losses, best_loss, adv_features, best_x) if use_best else (adv_losses, adv_features)
-            adv_features = step.step(adv_features, grad)
-            adv_features = step.project(adv_features)
-
-    with torch.no_grad():
-        adv_losses = attack_criterion(attack_model.forward_from_v1_features(adv_features), target)
-    best_loss, best_x = replace_best(adv_losses, best_loss, adv_features, best_x) if use_best else (adv_losses, adv_features)
-    if prev_training:
-        model.train()
+    finally:
+        if prev_training:
+            model.train()
     return best_x.detach()
 
 def v1_trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, random_start=True, use_best=True):

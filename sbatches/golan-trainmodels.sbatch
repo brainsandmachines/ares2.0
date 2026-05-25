@@ -35,6 +35,13 @@ jobname="$SLURM_JOB_NAME"
 
 parse_train_job "$jobname" "$GPU_TOTAL" || exit 1
 
+LRB=1.0e-3
+if [[ "$attack_eps" == "8" ]]; then
+    LRB=5.0e-4
+elif [[ "$attack_eps" == "16" ]]; then
+    LRB=2.5e-4
+fi
+
 
 echo "JOB NAME        : $jobname"
 echo "job_core        : $job_core"
@@ -51,6 +58,7 @@ echo "attack_domain  : $attack_domain"
 echo "model_name     : $model_name"
 echo "Batch size     : $BATCH_SIZE"
 echo "attack_crit    : $crit"
+echo "lrb            : $LRB"
 
 cmd=(
     python -m robust_training.adversarial_training
@@ -63,8 +71,18 @@ cmd=(
     model.experiment_num="$experiment_num"
     model.resume="/home/ashtomer/projects/ares/results/models/$model_name/last.pth.tar"
     training.batch_size=$BATCH_SIZE
+    lr_scheduler.lrb="$LRB"
     hydra.run.dir="/home/ashtomer/projects/ares/results/models/$model_name/${now:%Y-%m-%d}/${now:%H-%M-%S}"
 )
+
+if [[ "$advtrain" == "true" ]] && {
+      [[ "$crit" == "madry" && "$attack_domain" == "pixel" ]] ||
+      [[ "$crit" == "trades" && "$attack_domain" == "v1_feature" && "$GPU_TOTAL" -gt 90000 ]]
+  }; then
+      cmd+=("model.compile_model=True")
+      echo "compile_model  : True"
+  fi
+
 
 if [[ -n "$model_override" ]]; then
     cmd+=("$model_override")

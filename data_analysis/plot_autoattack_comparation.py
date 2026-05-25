@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+# to run this file, use this exmaple:
+# python data_analysis/plot_autoattack_comparation.py     --plot_name "v1_models"      --models     convnext_small_v1_clean_init1     convnext_small_v1_noise_init1    convnext_small_v1_clean_l2_4_init1      convnext_small_v1_clean_l2_40_init1
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
