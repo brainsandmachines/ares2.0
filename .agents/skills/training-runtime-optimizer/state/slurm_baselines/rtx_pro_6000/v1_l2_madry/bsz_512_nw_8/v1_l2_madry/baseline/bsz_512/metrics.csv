@@ -1,0 +1,2 @@
+protocol,candidate,batch_size,status,avg_iter_seconds,avg_data_seconds,images_per_sec,final_loss,max_memory_bytes,elapsed_seconds
+v1_l2_madry,baseline,512,ok,2.281937,0.000243,224.3708,7.051108,72791294464,108.900417

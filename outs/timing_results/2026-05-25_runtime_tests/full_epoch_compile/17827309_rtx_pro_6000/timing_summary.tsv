@@ -1,0 +1,3 @@
+gpu	candidate	compile_model	experiment_num	status	exit_code	start_time	end_time	elapsed_seconds	elapsed_hms	log_path
+rtx_pro_6000	no_compile_init20	false	20	ok	0	2026-05-25T01:18:25+03:00	2026-05-25T03:39:24+03:00	8459	02:20:59	/home/ashtomer/projects/ares/outs/advtrain/timing/full_epoch_compile/17827309_rtx_pro_6000/no_compile_init20.log
+rtx_pro_6000	compile_init20	true	20	ok	0	2026-05-25T03:39:24+03:00	2026-05-25T05:56:40+03:00	8236	02:17:16	/home/ashtomer/projects/ares/outs/advtrain/timing/full_epoch_compile/17827309_rtx_pro_6000/compile_init20.log

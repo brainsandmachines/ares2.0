@@ -1,0 +1,17 @@
+{
+  "avg_data_seconds": 0.00025783299352042375,
+  "avg_iter_seconds": 1.918043327506166,
+  "batch_size": 224,
+  "candidate": "trades_cached_norm_tensors",
+  "elapsed_seconds": 90.40727150498424,
+  "error": "",
+  "final_loss": 7.054839134216309,
+  "gpu_name": "NVIDIA RTX 6000 Ada Generation",
+  "images_per_sec": 116.78568298623583,
+  "max_memory_bytes": 44591264256,
+  "measured_iters": 20,
+  "num_workers": 6,
+  "protocol": "pixel_l1_trades_rs_off",
+  "status": "ok",
+  "warmup_iters": 1
+}

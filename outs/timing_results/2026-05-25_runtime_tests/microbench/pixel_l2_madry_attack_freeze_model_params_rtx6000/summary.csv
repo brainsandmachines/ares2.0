@@ -1,0 +1,2 @@
+protocol,candidate,batch_size,status,result_json
+pixel_l2_madry,attack_freeze_model_params,256,ok,/home/ashtomer/projects/ares/outs/timing_testing/pixel_l2_madry_attack_freeze_model_params_rtx6000/pixel_l2_madry/attack_freeze_model_params/bsz_256/result.json

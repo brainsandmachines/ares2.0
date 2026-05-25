@@ -5,9 +5,11 @@ description: Use when exploring `ares` training-loop runtime ideas under strict 
 
 # Goal
 
-Explore ways to reduce training runtime without changing the scientific meaning of the experiment.
+Explore simple runtime optimization ideas without changing the scientific meaning of the experiment.
 
 This skill is for `ares` only. It must preserve the current training contract unless the user explicitly asks for a protocol change.
+
+The skill should know where to search for ideas, which repo files define the training protocol, and which runtime-only settings can be changed safely to reduce runtime.
 
 The skill is designed for repeated calls, including scheduled runs every 30 or 60 minutes. Each call should test one new idea, record the result, and avoid retesting ideas already present in `state/ideas_tested.json`.
 
@@ -35,6 +37,8 @@ Runtime-only configuration changes are allowed when they preserve data semantics
 
 # Required Workflow
 
+Stage 1: idea and local Botero check.
+
 1. Inspect the current training contract in `references/repo_contract.md`.
 2. Inspect `state/ideas_tested.json` with `scripts/idea_state.py` and avoid repeating tested ideas for the same protocol and runtime knobs.
 3. Look for one useful untested idea from the repo, existing outputs, profiler/timing evidence, or nearby code paths.
@@ -47,11 +51,26 @@ Runtime-only configuration changes are allowed when they preserve data semantics
 10. Run a bounded local benchmark on `imagenet_sample` when available.
 11. Record throughput, iteration time, max VRAM, finite-loss sanity, source, pass/fail, and rejection reason in `state/ideas_tested.json`.
 12. Compare the idea against the fresh local baseline for the same protocol.
-13. If the candidate improves locally, identify all related in-scope protocols and run the same bounded baseline-vs-candidate check for each related protocol.
-14. Record each related-protocol result separately in `state/ideas_tested.json`; a candidate can be a winner for one protocol and neutral or rejected for another.
-15. Generate Slurm sbatches only for protocol-specific ideas that reduced local runtime.
-16. Emit additive sbatches under `sbatches_botero/timing_skill/`.
-17. Do not edit the main training files to test candidates. Candidate changes must stay additive until Slurm proves a winner.
+
+Stage 2: scheduled exploration.
+
+13. For repeated Botero/crontab calls, keep compact summaries and avoid retesting recorded ideas.
+14. Keep full logs for winners, failures, or user-requested audits; otherwise prefer `result.json`, `summary.csv`, and `decision.json`.
+15. Stop or narrow repeated jobs when memory pressure or excessive output files make the result harder to inspect.
+
+Stage 3: Slurm verification.
+
+16. If the candidate improves locally, identify all related in-scope protocols and run the same bounded baseline-vs-candidate check for each related protocol.
+17. Record each related-protocol result separately in `state/ideas_tested.json`; a candidate can be a winner for one protocol and neutral or rejected for another.
+18. Generate Slurm sbatches only for protocol-specific ideas that reduced local runtime.
+19. Emit additive sbatches under `sbatches_botero/timing_skill/`.
+20. After Slurm comparison, produce a clear recommendation: `recommend_code_change`, `run_full_epoch_validation`, or `reject_candidate`.
+
+Stage 4: full-epoch validation.
+
+21. Use full-epoch validation only when short Slurm evidence is not enough, such as `torch.compile` candidates or unclear stage-3 results.
+22. For compile ideas, require evidence that compile was requested and applied, not only that runtime changed.
+23. Do not edit the main training files to test candidates. Candidate changes must stay additive until Slurm or full-epoch evidence proves a winner.
 
 # Protocols In Scope
 
@@ -74,6 +93,8 @@ Runtime-only configuration changes are allowed when they preserve data semantics
 - Reject any candidate that fails the contract suite, produces non-finite loss, or regresses local baseline timing.
 - Do not emit an sbatch when an idea fails to improve the local runtime for that protocol.
 - Save machine-readable outputs for both local and Slurm runs.
+- Timing benchmarks must disable or stub real checkpoint saving, validation, final eval, and external logging unless the user explicitly asks to inspect those paths.
+- Result files should be compact by default. Keep full logs only for winners, failures, or user-requested audits.
 
 # Related-Protocol Sweep Rules
 
@@ -101,11 +122,14 @@ Runtime-only configuration changes are allowed when they preserve data semantics
 End with one of these decisions:
 
 - `this suggested change achieved faster runtime; do the following changes to your code: <implementation plan>`
+- `this suggested change needs full-epoch validation before a code change; run: <validation plan>`
 - `this change did not improve runtime or failed validation; no code change is recommended`
 
 Include protocol, idea id, baseline throughput, candidate throughput, speedup ratio, test status, artifact paths, and generated sbatches when present.
 
 If a related-protocol sweep ran, summarize winners and non-winners separately. Recommend a broad code/config change only for protocols where the candidate improved locally; for mixed results, recommend protocol-specific enablement.
+
+Every `decision.json` or Slurm comparison summary should include a machine-readable recommendation with `stage`, `recommendation`, `reason`, `required_next_validation`, `proposed_code_change`, and `evidence_paths`.
 
 # Files To Read
 
@@ -120,6 +144,7 @@ If a related-protocol sweep ran, summarize winners and non-winners separately. R
 - `scripts/benchmark_local.sh`
 - `scripts/run_candidate_benchmark.py`
 - `scripts/make_slurm_benchmarks.py`
+- `scripts/slurm_baselines.py`
 - `scripts/compare_benchmarks.py`
 - `scripts/idea_state.py`
 - `scripts/run_one_idea_cycle.py`

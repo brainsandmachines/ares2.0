@@ -14,6 +14,8 @@ warmup_iters="1"
 measured_iters="5"
 num_workers="6"
 seed="0"
+conda_env="${TIMING_CONDA_ENV:-${CONDA_DEFAULT_ENV:-ares}}"
+artifact_mode="compact"
 
 usage() {
   cat <<'EOF'
@@ -29,6 +31,8 @@ Options:
   --measured-iters <n>
   --num-workers <n>
   --seed <n>
+  --conda-env <name>
+  --artifact-mode <compact|keep-all>
 EOF
 }
 
@@ -45,6 +49,8 @@ while [[ $# -gt 0 ]]; do
     --measured-iters) measured_iters="$2"; shift 2 ;;
     --num-workers) num_workers="$2"; shift 2 ;;
     --seed) seed="$2"; shift 2 ;;
+    --conda-env) conda_env="$2"; shift 2 ;;
+    --artifact-mode) artifact_mode="$2"; shift 2 ;;
     *)
       echo "Unknown argument: $1" >&2
       exit 2
@@ -54,6 +60,11 @@ done
 
 if [[ -z "${protocol}" || -z "${output_dir}" ]]; then
   echo "--protocol and --output-dir are required" >&2
+  exit 2
+fi
+
+if [[ "${artifact_mode}" != "compact" && "${artifact_mode}" != "keep-all" ]]; then
+  echo "--artifact-mode must be compact or keep-all" >&2
   exit 2
 fi
 
@@ -81,6 +92,9 @@ if [[ -z "${train_dir}" || -z "${eval_dir}" ]]; then
 fi
 
 mkdir -p "${output_dir}"
+printf '{"artifact_mode":"%s","policy":"compact summaries are default; keep full logs only for winners, failures, or requested audits"}\n' "${artifact_mode}" > "${output_dir}/artifact_policy.json"
+
+export TIMING_CONDA_ENV="${conda_env}"
 
 bash "${SCRIPT_DIR}/run_contract_tests.sh"
 
@@ -96,7 +110,7 @@ for bsz in "${bsz_values[@]}"; do
   mkdir -p "${run_dir}"
   result_json="${run_dir}/result.json"
 
-  if conda run -n ares python "${SCRIPT_DIR}/run_candidate_benchmark.py" \
+  if conda run -n "${conda_env}" python "${SCRIPT_DIR}/run_candidate_benchmark.py" \
       --protocol "${protocol}" \
       --candidate "${candidate}" \
       --train-dir "${train_dir}" \

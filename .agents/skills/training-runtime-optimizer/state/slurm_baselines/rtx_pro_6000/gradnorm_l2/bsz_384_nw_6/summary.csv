@@ -1,0 +1,2 @@
+protocol,candidate,batch_size,status,result_json
+gradnorm_l2,baseline,384,ok,/home/ashtomer/projects/ares/outs/timing_testing/slurm_baselines/rtx_pro_6000/gradnorm_l2/bsz_384_nw_6/gradnorm_l2/baseline/bsz_384/result.json

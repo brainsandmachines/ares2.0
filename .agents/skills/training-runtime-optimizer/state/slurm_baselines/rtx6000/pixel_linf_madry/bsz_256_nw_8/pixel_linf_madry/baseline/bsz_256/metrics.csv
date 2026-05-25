@@ -1,0 +1,2 @@
+protocol,candidate,batch_size,status,avg_iter_seconds,avg_data_seconds,images_per_sec,final_loss,max_memory_bytes,elapsed_seconds
+pixel_linf_madry,baseline,256,ok,1.513222,0.000226,169.1755,7.051186,27256458240,73.932741

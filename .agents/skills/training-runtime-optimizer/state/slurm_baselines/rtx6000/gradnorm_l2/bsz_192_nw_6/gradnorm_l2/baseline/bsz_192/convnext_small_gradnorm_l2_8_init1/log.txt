@@ -1,0 +1,15 @@
+[2026-05-20 10:46:51 ARES 2.0] INFO: Runtime distributed=False, world_size=1, rank=0, local_rank=0, device_id=0
+[2026-05-20 10:46:51 ARES 2.0] INFO: Experiment: convnext_small_gradnorm_l2_8_init1
+[2026-05-20 10:46:51 ARES 2.0] INFO: Results directory: /home/ashtomer/projects/ares/outs/timing_testing/slurm_baselines/rtx6000/gradnorm_l2/bsz_192_nw_6/gradnorm_l2/baseline/bsz_192/convnext_small_gradnorm_l2_8_init1
+[2026-05-20 10:46:51 ARES 2.0] INFO: Using seed: 0
+[2026-05-20 10:46:51 ARES 2.0] INFO: Creating model: convnext_small
+[2026-05-20 10:46:52 ARES 2.0] INFO: Model convnext_small created, param count:50223688
+[2026-05-20 10:46:52 ARES 2.0] INFO: Optimizer: AdamW
+[2026-05-20 10:46:52 ARES 2.0] INFO: Using native Torch AMP. Training in mixed precision.
+[2026-05-20 10:47:17 ARES 2.0] INFO: GradNorm start: 0
+[2026-05-20 10:47:17 ARES 2.0] INFO: GradNorm penalty norm: l2, GradNorm alpha scaling: init=0.1, scale_epochs=9, max_reg_to_ce_ratio=1.0
+[2026-05-20 10:47:17 ARES 2.0] INFO: Reg losses: DBP()
+[2026-05-20 10:47:17 ARES 2.0] INFO: Weights & Biases logging initialized for run: convnext_small_gradnorm_l2_8_init1 in group: gradnorm_l2
+[2026-05-20 10:47:17 ARES 2.0] INFO: Start training for 1 epochs
+[2026-05-20 10:47:17 ARES 2.0] INFO: gradclip: None
+[2026-05-20 10:48:28 ARES 2.0] INFO: *** Best metric: 0.0 (epoch 0)

@@ -1,0 +1,2 @@
+protocol,candidate,batch_size,status,avg_iter_seconds,avg_data_seconds,images_per_sec,final_loss,max_memory_bytes,elapsed_seconds
+gradnorm_l2,baseline,192,ok,2.091941,0.000224,91.7808,7.033388,42018391040,96.366875

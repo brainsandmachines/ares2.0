@@ -1,0 +1,3 @@
+sbatches_botero/timing_skill/baselines
+sbatches_botero/timing_skill/l2_madry_compile_1epoch_rtx6000.sbatch
+sbatches_botero/timing_skill/l2_madry_compile_1epoch_rtx_pro_6000.sbatch

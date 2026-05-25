@@ -1,0 +1,17 @@
+{
+  "avg_data_seconds": 0.00033007084275595846,
+  "avg_iter_seconds": 2.382175460655708,
+  "batch_size": 448,
+  "candidate": "attack_freeze_model_params",
+  "elapsed_seconds": 102.65191330807284,
+  "error": "",
+  "final_loss": 7.063288688659668,
+  "gpu_name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+  "images_per_sec": 188.06339306202295,
+  "max_memory_bytes": 88220433408,
+  "measured_iters": 20,
+  "num_workers": 6,
+  "protocol": "pixel_linf_trades_rs_on",
+  "status": "ok",
+  "warmup_iters": 1
+}

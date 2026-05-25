@@ -1,0 +1,2 @@
+protocol,candidate,batch_size,status,result_json
+pixel_linf_trades_rs_off,channels_last,448,ok,/home/ashtomer/projects/ares/outs/timing_testing/pixel_linf_trades_rs_off_channels_last_rtx_pro_6000/pixel_linf_trades_rs_off/channels_last/bsz_448/result.json

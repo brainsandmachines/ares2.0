@@ -1,0 +1,9 @@
+protocol,candidate,batch_size,status,result_json
+gradnorm_l2,baseline,384,ok,/home/ashtomer/projects/ares/outs/timing_testing/gradnorm_l2_runtime_matrix_rtx_pro_6000/gradnorm_l2/baseline/bsz_384/result.json
+gradnorm_l2,adamw_fused,384,ok,/home/ashtomer/projects/ares/outs/timing_testing/gradnorm_l2_runtime_matrix_rtx_pro_6000/gradnorm_l2/adamw_fused/bsz_384/result.json
+gradnorm_l2,channels_last,384,ok,/home/ashtomer/projects/ares/outs/timing_testing/gradnorm_l2_runtime_matrix_rtx_pro_6000/gradnorm_l2/channels_last/bsz_384/result.json
+gradnorm_l2,cudnn_benchmark,384,ok,/home/ashtomer/projects/ares/outs/timing_testing/gradnorm_l2_runtime_matrix_rtx_pro_6000/gradnorm_l2/cudnn_benchmark/bsz_384/result.json
+gradnorm_l2,adamw_fused_channels_last,384,ok,/home/ashtomer/projects/ares/outs/timing_testing/gradnorm_l2_runtime_matrix_rtx_pro_6000/gradnorm_l2/adamw_fused_channels_last/bsz_384/result.json
+gradnorm_l2,adamw_fused_cudnn_benchmark,384,ok,/home/ashtomer/projects/ares/outs/timing_testing/gradnorm_l2_runtime_matrix_rtx_pro_6000/gradnorm_l2/adamw_fused_cudnn_benchmark/bsz_384/result.json
+gradnorm_l2,channels_last_cudnn_benchmark,384,ok,/home/ashtomer/projects/ares/outs/timing_testing/gradnorm_l2_runtime_matrix_rtx_pro_6000/gradnorm_l2/channels_last_cudnn_benchmark/bsz_384/result.json
+gradnorm_l2,adamw_fused_channels_last_cudnn_benchmark,384,ok,/home/ashtomer/projects/ares/outs/timing_testing/gradnorm_l2_runtime_matrix_rtx_pro_6000/gradnorm_l2/adamw_fused_channels_last_cudnn_benchmark/bsz_384/result.json

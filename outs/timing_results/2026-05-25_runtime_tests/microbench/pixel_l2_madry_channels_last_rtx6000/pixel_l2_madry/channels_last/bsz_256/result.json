@@ -1,0 +1,17 @@
+{
+  "avg_data_seconds": 0.0003133256861474365,
+  "avg_iter_seconds": 1.5676774716586805,
+  "batch_size": 256,
+  "candidate": "channels_last",
+  "elapsed_seconds": 82.30437140201684,
+  "error": "",
+  "final_loss": 7.0558271408081055,
+  "gpu_name": "NVIDIA RTX 6000 Ada Generation",
+  "images_per_sec": 163.29889574106036,
+  "max_memory_bytes": 27413416960,
+  "measured_iters": 20,
+  "num_workers": 6,
+  "protocol": "pixel_l2_madry",
+  "status": "ok",
+  "warmup_iters": 1
+}
