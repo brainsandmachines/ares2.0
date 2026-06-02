@@ -152,7 +152,7 @@ export HYDRA_FULL_ERROR=1
 # ---- Run Hydra training ----
 if [ -f "$CHECKPOINT" ]; then
   echo "[INFO] Resuming training from checkpoint..."
-  torchrun --nproc_per_node=$NUM_GPUS hydra_advtrain.py \
+  torchrun --nproc_per_node=$NUM_GPUS -m robust_training.adversarial_training \
     attacks.attack_norm="$NORM" \
     attacks.attack_eps="$CONS" \
     attacks.advtrain="$ADV_BOOL" \
@@ -165,7 +165,7 @@ if [ -f "$CHECKPOINT" ]; then
     hydra.run.dir="results/convnext_small/${SAFE_NAME}"
 else
   echo "[INFO] Starting new training..."
-  torchrun --nproc_per_node=$NUM_GPUS hydra_advtrain.py \
+  torchrun --nproc_per_node=$NUM_GPUS -m robust_training.adversarial_training \
     attacks.attack_norm="$NORM" \
     attacks.attack_eps="$CONS" \
     attacks.advtrain="$ADV_BOOL" \

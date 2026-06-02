@@ -21,7 +21,7 @@ cd /home/ashtomer/projects/ares
 export MASTER_PORT=$((10000 + RANDOM % 50000))
 export HYDRA_FULL_ERROR=1
 
-torchrun --nproc_per_node=1 --master-port=$MASTER_PORT -m robust_training.hydra_advtrain \
+torchrun --nproc_per_node=1 --master-port=$MASTER_PORT -m robust_training.adversarial_training \
     attacks.attack_norm=linf \
     attacks.attack_eps=1 \
     attacks.advtrain=false \

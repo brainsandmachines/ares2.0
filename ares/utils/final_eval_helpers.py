@@ -66,11 +66,11 @@ def _pgd_completion_csv_candidates(out_dir, csv_name):
     return deduped
 
 
-def _is_pgd_eval_complete(args, out_dir, ckpt_path, _logger):
-    csv_name = getattr(args, "final_eval_pgd_completion_csv", "pgd_validation_results.csv")
+def _is_pgd_eval_complete(cfg, out_dir, ckpt_path, _logger):
+    csv_name = cfg.get("final_eval_pgd_completion_csv", "pgd_validation_results.csv")
 
-    expected_norms = [n.lower() for n in _parse_csv_list(getattr(args, "final_eval_pgd_norms", "linf,l2,l1"))]
-    expected_eps = _parse_float_list(getattr(args, "final_eval_pgd_eps", "0.5,1,2,4,8,16"))
+    expected_norms = [n.lower() for n in _parse_csv_list(cfg.get("final_eval_pgd_norms", "linf,l2,l1"))]
+    expected_eps = _parse_float_list(cfg.get("final_eval_pgd_eps", "0.5,1,2,4,8,16"))
     expected_pairs = {(n, round(float(e), 10)) for n in expected_norms for e in expected_eps}
 
     observed_pairs = set()
@@ -109,9 +109,9 @@ def _is_pgd_eval_complete(args, out_dir, ckpt_path, _logger):
     return True
 
 
-def _resolve_expected_aa_attack(args, ckpt_path, parse_attack_from_path):
-    aa_norm = getattr(args, "final_eval_aa_norm", None)
-    aa_eps = getattr(args, "final_eval_aa_eps", None)
+def _resolve_expected_aa_attack(cfg, ckpt_path, parse_attack_from_path):
+    aa_norm = cfg.get("final_eval_aa_norm", None)
+    aa_eps = cfg.get("final_eval_aa_eps", None)
     if aa_norm is not None or aa_eps is not None:
         if aa_norm is None or aa_eps is None:
             return False, None, None
@@ -119,14 +119,14 @@ def _resolve_expected_aa_attack(args, ckpt_path, parse_attack_from_path):
     return parse_attack_from_path(str(ckpt_path))
 
 
-def _is_aa_eval_complete(args, out_dir, ckpt_path, parse_attack_from_path, _logger):
-    csv_name = getattr(args, "final_eval_aa_completion_csv", "autoattack_results.csv")
+def _is_aa_eval_complete(cfg, out_dir, ckpt_path, parse_attack_from_path, _logger):
+    csv_name = cfg.get("final_eval_aa_completion_csv", "autoattack_results.csv")
     csv_path = os.path.join(out_dir, csv_name)
     rows = _read_csv_rows(csv_path, _logger)
     if not rows:
         return False
 
-    skip_auto, expected_norm, expected_eps = _resolve_expected_aa_attack(args, ckpt_path, parse_attack_from_path)
+    skip_auto, expected_norm, expected_eps = _resolve_expected_aa_attack(cfg, ckpt_path, parse_attack_from_path)
     if skip_auto:
         _logger.info("AA baseline checkpoint detected for %s. Skipping AA.", ckpt_path)
         return True
@@ -163,26 +163,26 @@ def _is_aa_eval_complete(args, out_dir, ckpt_path, parse_attack_from_path, _logg
     return False
 
 
-def _maybe_run_final_eval(args, output_dir, _logger, did_train_this_run=True):
-    if not getattr(args, "final_eval", False):
+def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
+    if not cfg.get("final_eval", False):
         return
 
-    if not (getattr(args, "final_eval_autoattack", False) or getattr(args, "final_eval_pgd", False)):
+    if not (cfg.get("final_eval_autoattack", False) or cfg.get("final_eval_pgd", False)):
         _logger.warning("Final eval enabled but no eval type selected. Use --final-eval-autoattack and/or --final-eval-pgd.")
         return
 
-    ckpt_name = getattr(args, "final_eval_ckpt_name", "model_best.pth.tar")
+    ckpt_name = cfg.get("final_eval_ckpt_name", "model_best.pth.tar")
     ckpt_path = os.path.join(output_dir, ckpt_name)
     if not os.path.exists(ckpt_path):
         _logger.error("Final eval checkpoint not found: %s", ckpt_path)
         return
 
-    val_dir = getattr(args, "final_eval_val_dir", "") or getattr(args, "eval_dir", "")
+    val_dir = cfg.get("final_eval_val_dir", "") or cfg.dataset.eval_dir
     if not val_dir:
         _logger.error("Final eval requires --eval-dir or --final-eval-val-dir.")
         return
 
-    configured_out_dir = str(getattr(args, "final_eval_out_dir", "") or "").strip()
+    configured_out_dir = str(cfg.get("final_eval_out_dir", "") or "").strip()
     if configured_out_dir:
         # Relative final_eval_out_dir should live under the model output dir.
         out_dir = configured_out_dir if os.path.isabs(configured_out_dir) else os.path.join(output_dir, configured_out_dir)
@@ -195,21 +195,21 @@ def _maybe_run_final_eval(args, output_dir, _logger, did_train_this_run=True):
         return
 
     try:
-        aa_bs = getattr(args, "final_eval_aa_batch_size", None) or 64
-        aa_num_batches = getattr(args, "final_eval_aa_max_batches", None) or 2
-        aa_csv_name = getattr(args, "final_eval_aa_completion_csv", "autoattack_sweep_results.csv")
-        pgd_bs = getattr(args, "final_eval_pgd_batch_size", None) or getattr(args, "batch_size", 64)
-        run_aa_sweep = bool(getattr(args, "final_eval_autoattack", False))
-        run_pgd = bool(getattr(args, "final_eval_pgd", False))
+        aa_bs = cfg.get("final_eval_aa_batch_size", None) or 64
+        aa_num_batches = cfg.get("final_eval_aa_max_batches", None) or 2
+        aa_csv_name = cfg.get("final_eval_aa_completion_csv", "autoattack_sweep_results.csv")
+        pgd_bs = cfg.get("final_eval_pgd_batch_size", None) or cfg.training.batch_size
+        run_aa_sweep = bool(cfg.get("final_eval_autoattack", False))
+        run_pgd = bool(cfg.get("final_eval_pgd", False))
         aa_runner = None
         aa_import_failed = False
 
-        if getattr(args, "final_eval_require_train_this_run", False) and not did_train_this_run:
+        if cfg.get("final_eval_require_train_this_run", False) and not did_train_this_run:
             _logger.info("No epochs trained in this run; skipping final eval due to final_eval_require_train_this_run=true.")
             return
 
         if run_aa_sweep:
-            if getattr(args, "final_eval_aa_norm", None) is not None or getattr(args, "final_eval_aa_eps", None) is not None:
+            if cfg.get("final_eval_aa_norm", None) is not None or cfg.get("final_eval_aa_eps", None) is not None:
                 _logger.warning(
                     "final_eval_aa_norm/final_eval_aa_eps are ignored for final AutoAttack sweep; "
                     "running linf,l2,l1 x eps 1,2,4,8,16."
@@ -223,8 +223,8 @@ def _maybe_run_final_eval(args, output_dir, _logger, did_train_this_run=True):
                 aa_import_failed = True
                 run_aa_sweep = False
 
-        if getattr(args, "final_eval_skip_if_complete", True):
-            if run_pgd and _is_pgd_eval_complete(args, out_dir, ckpt_path, _logger):
+        if cfg.get("final_eval_skip_if_complete", True):
+            if run_pgd and _is_pgd_eval_complete(cfg, out_dir, ckpt_path, _logger):
                 run_pgd = False
             if run_aa_sweep and is_complete_output(
                 Path(output_dir) / aa_csv_name,
@@ -262,18 +262,18 @@ def _maybe_run_final_eval(args, output_dir, _logger, did_train_this_run=True):
                     aa_eps=None,
                     aa_max_batches=None,
                     pgd_batch_size=int(pgd_bs),
-                    pgd_eps=_parse_float_list(getattr(args, "final_eval_pgd_eps", "0.5,1,2,4,8,16")),
-                    pgd_norms=_parse_csv_list(getattr(args, "final_eval_pgd_norms", "linf,l2,l1")),
-                    pgd_attack_steps=int(getattr(args, "final_eval_pgd_attack_steps", 10)),
-                    pgd_max_batches=getattr(args, "final_eval_pgd_max_batches", None),
-                    pgd_output_csv=getattr(args, "final_eval_pgd_completion_csv", "pgd_validation_results.csv"),
+                    pgd_eps=_parse_float_list(cfg.get("final_eval_pgd_eps", "0.5,1,2,4,8,16")),
+                    pgd_norms=_parse_csv_list(cfg.get("final_eval_pgd_norms", "linf,l2,l1")),
+                    pgd_attack_steps=int(cfg.get("final_eval_pgd_attack_steps", 10)),
+                    pgd_max_batches=cfg.get("final_eval_pgd_max_batches", None),
+                    pgd_output_csv=cfg.get("final_eval_pgd_completion_csv", "pgd_validation_results.csv"),
                     l1_step_mode="l1_apgd",
-                    l1_apgd_rho=float(getattr(args, "l1_apgd_rho", 0.05)),
-                    l1_apgd_use_halving=bool(getattr(args, "l1_apgd_use_halving", True)),
-                    l1_apgd_min_step_scale=float(getattr(args, "l1_apgd_min_step_scale", 0.01)),
-                    plots=bool(getattr(args, "final_eval_plots", False)),
-                    plot_x_col=getattr(args, "final_eval_plot_x_col", "pgd_constrained_eps"),
-                    num_workers=int(getattr(args, "final_eval_num_workers", 8)),
+                    l1_apgd_rho=float(cfg.attacks.get("l1_apgd_rho", 0.05)),
+                    l1_apgd_use_halving=bool(cfg.attacks.get("l1_apgd_use_halving", True)),
+                    l1_apgd_min_step_scale=float(cfg.attacks.get("l1_apgd_min_step_scale", 0.01)),
+                    plots=bool(cfg.get("final_eval_plots", False)),
+                    plot_x_col=cfg.get("final_eval_plot_x_col", "pgd_constrained_eps"),
+                    num_workers=int(cfg.get("final_eval_num_workers", 8)),
                 )
 
         if run_aa_sweep and aa_runner is not None:
@@ -284,10 +284,10 @@ def _maybe_run_final_eval(args, output_dir, _logger, did_train_this_run=True):
                 device=device,
                 batch_size=int(aa_bs),
                 num_batches=int(aa_num_batches),
-                num_workers=int(getattr(args, "final_eval_num_workers", 8)),
-                seed=int(getattr(args, "seed", 0) or 0),
+                num_workers=int(cfg.get("final_eval_num_workers", 8)),
+                seed=int(cfg.seed or 0),
                 output_csv=aa_csv_name,
-                force=not bool(getattr(args, "final_eval_skip_if_complete", True)),
+                force=not bool(cfg.get("final_eval_skip_if_complete", True)),
                 logger=_logger,
             )
     except Exception as exc:

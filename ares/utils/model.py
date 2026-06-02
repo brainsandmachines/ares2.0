@@ -21,10 +21,10 @@ def denormalize(tensor, mean, std):
     return tensor*std[None]+mean[None]
 
 
-def resolve_v1_gabor_seed(args):
-    gabor_seed = getattr(args, 'v1_gabor_seed', None)
+def resolve_v1_gabor_seed(cfg):
+    gabor_seed = cfg.model.get('v1_gabor_seed', None)
     if gabor_seed is None:
-        gabor_seed = getattr(args, 'seed', 0)
+        gabor_seed = cfg.seed
     return gabor_seed
 
 def resolve_convnext_v1_backbone(model_name):
@@ -105,67 +105,71 @@ def convert_switchablebn_model(module):
     del module
     return mod
 
-def build_model(args, _logger, num_aug_splits):
+def build_model(cfg, _logger, num_aug_splits):
     '''The function to build model for robust training.'''
     # creating model
-    _logger.info(f"Creating model: {args.model}")
+    model_cfg = cfg.model
+    training = cfg.training
+    dataset = cfg.dataset
+    attacks = cfg.attacks
+    _logger.info(f"Creating model: {model_cfg.model}")
     model_kwargs = dict({
-        'num_classes': args.num_classes,
-        'drop_rate': args.drop,
-        'drop_path_rate': args.drop_path,
-        'drop_block_rate': args.drop_block,
-        'global_pool': args.gp,
-        'bn_momentum': args.bn_momentum,
-        'bn_eps': args.bn_eps,
+        'num_classes': model_cfg.num_classes,
+        'drop_rate': training.drop,
+        'drop_path_rate': training.drop_path,
+        'drop_block_rate': training.drop_block,
+        'global_pool': model_cfg.gp,
+        'bn_momentum': model_cfg.bn_momentum,
+        'bn_eps': model_cfg.bn_eps,
     })
-    v1_backbone_name = resolve_convnext_v1_backbone(args.model)
+    v1_backbone_name = resolve_convnext_v1_backbone(model_cfg.model)
     if v1_backbone_name is not None:
         from ares.model.v1_convnext import V1ConvNeXt
 
         model = V1ConvNeXt(
             backbone_name=v1_backbone_name,
-            input_size=args.input_size,
-            v1_noise_train_only=getattr(args, 'v1_noise_train_only', True),
-            visual_degrees=getattr(args, 'v1_visual_degrees', 8),
-            stride=getattr(args, 'v1_stride', 4),
-            ksize=getattr(args, 'v1_ksize', 25),
-            sf_corr=getattr(args, 'v1_sf_corr', 0.75),
-            sf_max=getattr(args, 'v1_sf_max', 9),
-            sf_min=getattr(args, 'v1_sf_min', 0),
-            rand_param=getattr(args, 'v1_rand_param', False),
-            gabor_seed=resolve_v1_gabor_seed(args),
-            simple_channels=getattr(args, 'v1_simple_channels', 256),
-            complex_channels=getattr(args, 'v1_complex_channels', 256),
-            noise_mode=getattr(args, 'v1_noise_mode', None),
-            noise_scale=getattr(args, 'v1_noise_scale', 0.35),
-            noise_level=getattr(args, 'v1_noise_level', 0.07),
-            k_exc=getattr(args, 'v1_k_exc', 25),
+            input_size=dataset.input_size,
+            v1_noise_train_only=model_cfg.get('v1_noise_train_only', True),
+            visual_degrees=model_cfg.get('v1_visual_degrees', 8),
+            stride=model_cfg.get('v1_stride', 4),
+            ksize=model_cfg.get('v1_ksize', 25),
+            sf_corr=model_cfg.get('v1_sf_corr', 0.75),
+            sf_max=model_cfg.get('v1_sf_max', 9),
+            sf_min=model_cfg.get('v1_sf_min', 0),
+            rand_param=model_cfg.get('v1_rand_param', False),
+            gabor_seed=resolve_v1_gabor_seed(cfg),
+            simple_channels=model_cfg.get('v1_simple_channels', 256),
+            complex_channels=model_cfg.get('v1_complex_channels', 256),
+            noise_mode=model_cfg.get('v1_noise_mode', None),
+            noise_scale=model_cfg.get('v1_noise_scale', 0.35),
+            noise_level=model_cfg.get('v1_noise_level', 0.07),
+            k_exc=model_cfg.get('v1_k_exc', 25),
             **model_kwargs,
         )
     else:
-        model = create_model(args.model, pretrained=False, **model_kwargs)
-    if args.num_classes is None:
+        model = create_model(model_cfg.model, pretrained=False, **model_kwargs)
+    if model_cfg.num_classes is None:
         assert hasattr(model, 'num_classes'), 'Model must have `num_classes` attr if not set on cmd line/config.'
-        args.num_classes = model.num_classes
+        model_cfg.num_classes = model.num_classes
     
-    _logger.info(f'Model {safe_model_name(args.model)} created, param count:{sum([m.numel() for m in model.parameters()])}')
+    _logger.info(f'Model {safe_model_name(model_cfg.model)} created, param count:{sum([m.numel() for m in model.parameters()])}')
 
     # enable split bn (separate bn stats per batch-portion)
-    if args.split_bn:
-        assert num_aug_splits > 1 or args.resplit
+    if model_cfg.split_bn:
+        assert num_aug_splits > 1 or dataset.resplit
         model = convert_splitbn_model(model, max(num_aug_splits, 2))
 
     # advprop conversion
-    if args.advprop:
+    if attacks.advprop:
         model=convert_switchablebn_model(model)
 
     model.cuda()
-    if args.channels_last:
+    if model_cfg.channels_last:
         model = model.to(memory_format=torch.channels_last)
 
     # setup synchronized BatchNorm for distributed training
-    if args.distributed and args.sync_bn:
-        if args.amp_version == 'apex':
+    if cfg.dist.distributed and model_cfg.sync_bn:
+        if cfg.amp_version == 'apex':
             # Apex SyncBN preferred unless native amp is activated
             from apex.parallel import convert_syncbn_model
             model = convert_syncbn_model(model)
@@ -177,10 +181,10 @@ def build_model(args, _logger, num_aug_splits):
 
     return model
 
-def load_pretrained_21k(args, model, logger):
+def load_pretrained_21k(cfg, model, logger):
     '''The function to load pretrained 21K checkpoint to 1K model.'''
-    logger.info(f"==============> Loading weight {args.pretrain} for fine-tuning......")
-    checkpoint = torch.load(args.pretrain, map_location='cpu')
+    logger.info(f"==============> Loading weight {cfg.model.pretrain} for fine-tuning......")
+    checkpoint = torch.load(cfg.model.pretrain, map_location='cpu')
     state_dict = checkpoint['model']
 
     # delete relative_position_index since we always re-init it
@@ -262,7 +266,7 @@ def load_pretrained_21k(args, model, logger):
     msg = model.load_state_dict(state_dict, strict=False)
     logger.warning(msg)
 
-    logger.info(f"=> loaded successfully '{args.pretrain}'")
+    logger.info(f"=> loaded successfully '{cfg.model.pretrain}'")
 
     del checkpoint
     torch.cuda.empty_cache()

@@ -1,4 +1,3 @@
-import argparse
 import contextlib
 import math
 
@@ -25,6 +24,9 @@ def _compose_base_cfg():
             "attacks": OmegaConf.load(f"{root}/attacks/adv.yaml"),
             "dist": OmegaConf.load(f"{root}/dist/default.yaml"),
             "lr_scheduler": OmegaConf.load(f"{root}/lr_scheduler/cosine.yaml"),
+            "continuation": OmegaConf.load(f"{root}/continuation/default.yaml"),
+            "epsilon_schedule": OmegaConf.load(f"{root}/epsilon_schedule/default.yaml"),
+            "checkpointing": OmegaConf.load(f"{root}/checkpointing/default.yaml"),
         }
     )
 
@@ -77,15 +79,23 @@ def test_l2_default_step_derivation_contract(
             }
         ),
     )
-    args = argparse.Namespace(**advt._merge_groups_for_hydra(cfg))
-    args.train_dir = "/tmp/train"
-    args.eval_dir = "/tmp/val"
-    args.output_dir = "/tmp/out"
-    args.world_size = 1
-    args.rank = 0
-    args.local_rank = 0
-    args.device_id = 0
-    args.final_eval = False
+    cfg = OmegaConf.merge(
+        cfg,
+        OmegaConf.create(
+            {
+                "dataset": {"train_dir": "/tmp/train", "eval_dir": "/tmp/val"},
+                "dist": {
+                    "world_size": 1,
+                    "rank": 0,
+                    "local_rank": 0,
+                    "device_id": 0,
+                    "distributed": False,
+                },
+                "output_dir": "/tmp/out",
+                "final_eval": False,
+            }
+        ),
+    )
 
     recorded = {}
 
@@ -118,10 +128,10 @@ def test_l2_default_step_derivation_contract(
         y = torch.zeros(2, dtype=torch.long)
         return [(x, y)]
 
-    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_args, **kwargs):
-        recorded["attack_domain"] = in_args.attack_domain
-        recorded["attack_step"] = getattr(in_args, "attack_step", None)
-        recorded["v1_attack_step"] = getattr(in_args, "v1_attack_step", None)
+    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_cfg, **kwargs):
+        recorded["attack_domain"] = in_cfg.attacks.attack_domain
+        recorded["attack_step"] = in_cfg.attacks.get("attack_step", None)
+        recorded["v1_attack_step"] = in_cfg.attacks.get("v1_attack_step", None)
         return {"loss": 0.1}
 
     monkeypatch.setattr(advt, "distributed_init", lambda _args: None)
@@ -148,7 +158,7 @@ def test_l2_default_step_derivation_contract(
     monkeypatch.setattr(advt.wandb, "log", lambda *_a, **_k: None)
     monkeypatch.setattr(advt.wandb.util, "generate_id", lambda: "test-run-id")
 
-    advt.main(args)
+    advt.main(cfg)
 
     if attack_domain == "pixel":
         assert math.isclose(recorded["attack_step"], expected_step, rel_tol=1e-8)

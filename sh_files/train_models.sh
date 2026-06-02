@@ -158,7 +158,7 @@ export MASTER_PORT=$((10000 + RANDOM % 50000))
 # ===================== TRAINING RUN =====================
 if [ -f "$CHECKPOINT" ]; then
   echo "[INFO] Resuming training..."
-  torchrun --nproc_per_node=$NUM_GPUS --master-port=$MASTER_PORT -m robust_training.hydra_advtrain \
+  torchrun --nproc_per_node=$NUM_GPUS --master-port=$MASTER_PORT -m robust_training.adversarial_training \
     attacks.attack_norm="$NORM" \
     attacks.attack_eps="$CONS" \
     attacks.advtrain="$ADV_BOOL" \
@@ -173,7 +173,7 @@ if [ -f "$CHECKPOINT" ]; then
     output_dir="$OUTPUT_DIR"
 else
   echo "[INFO] Starting new training..."
-  torchrun --nproc_per_node=$NUM_GPUS --master-port=$MASTER_PORT -m robust_training.hydra_advtrain \
+  torchrun --nproc_per_node=$NUM_GPUS --master-port=$MASTER_PORT -m robust_training.adversarial_training \
     attacks.attack_norm="$NORM" \
     attacks.attack_eps="$CONS" \
     attacks.advtrain="$ADV_BOOL" \

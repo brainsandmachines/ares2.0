@@ -1,27 +1,31 @@
-import argparse
-
+import hydra
 import torch
+from omegaconf import DictConfig, OmegaConf
 
 from ares.model.v1_convnext import V1ConvNeXt
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Sanity check for V1 + ConvNeXt-S forward pass")
-    parser.add_argument("--batch-size", type=int, default=2)
-    parser.add_argument("--input-size", type=int, default=224)
-    parser.add_argument("--device", default="cpu")
-    parser.add_argument("--noise-mode", default=None)
-    args = parser.parse_args()
+@hydra.main(config_path=None, config_name=None, version_base="1.3")
+def main(cfg: DictConfig):
+    cfg = OmegaConf.merge(
+        {
+            "batch_size": 2,
+            "input_size": 224,
+            "device": "cpu",
+            "noise_mode": None,
+        },
+        cfg,
+    )
 
-    device = torch.device(args.device)
+    device = torch.device(cfg.device)
     model = V1ConvNeXt(
         backbone_name="convnext_small",
-        input_size=args.input_size,
-        noise_mode=args.noise_mode,
+        input_size=cfg.input_size,
+        noise_mode=cfg.noise_mode,
     ).to(device)
     model.eval()
 
-    x = torch.randn(args.batch_size, 3, args.input_size, args.input_size, device=device)
+    x = torch.randn(cfg.batch_size, 3, cfg.input_size, cfg.input_size, device=device)
 
     with torch.no_grad():
         v1_features = model.forward_v1_features(x)

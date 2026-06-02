@@ -1,10 +1,8 @@
 import logging
 import warnings
 warnings.filterwarnings("ignore")
-import argparse
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 import hydra
-import yaml
 import os
 import torch
 from torch.nn.parallel import DistributedDataParallel as NativeDDP
@@ -23,160 +21,176 @@ from ares.utils.model import build_model
 from ares.utils.loss import build_loss, resolve_amp, build_loss_scaler
 from ares.utils.gradnorm import DBP 
 from ares.utils.dataset import build_dataset
-from ares.utils.defaults import get_args_parser
 from ares.utils.train_loop import train_one_epoch
 from ares.utils.validate import validate
 from ares.utils.final_eval_helpers import _maybe_run_final_eval
+from ares.utils.epsilon_schedule import build_epsilon_schedule, normalize_epsilon
+from ares.utils.continuation import (
+    active_attack_eps_field,
+    capture_attack_step_auto,
+    configure_initial_schedule_target,
+    current_active_epsilon_user,
+    load_continuation_checkpoint,
+    maybe_save_best_adv_checkpoint,
+    set_active_epsilon,
+)
 
 from job_manager.model_scheduler import Model_scheduler
 
-from omegaconf import DictConfig, OmegaConf
-import hydra
-
-
-def main(args):
+def main(cfg: DictConfig):
     # distributed settings and logger
     if "WORLD_SIZE" in os.environ:
-        args.world_size=int(os.environ["WORLD_SIZE"])
-    args.distributed=float(args.world_size)>1
-    distributed_init(args)
+        with open_dict(cfg.dist):
+            cfg.dist.world_size = int(os.environ["WORLD_SIZE"])
+    with open_dict(cfg.dist):
+        cfg.dist.distributed = float(cfg.dist.world_size) > 1
+    with open_dict(cfg):
+        cfg.runtime = {}
+        cfg.hydra_config_yaml = OmegaConf.to_yaml(cfg, resolve=True)
+    distributed_init(cfg)
     
-    attack_domain = getattr(args, 'attack_domain', 'pixel')
-    v1_noise_mode = getattr(args, 'v1_noise_mode', None)
-    is_convnext_v1 = str(getattr(args, 'model', '')).startswith('convnext_') and str(getattr(args, 'model', '')).endswith('_v1')
+    attack_domain = cfg.attacks.get('attack_domain', 'pixel')
+    v1_noise_mode = cfg.model.get('v1_noise_mode', None)
+    is_convnext_v1 = str(cfg.model.model).startswith('convnext_') and str(cfg.model.model).endswith('_v1')
 
     if (
         is_convnext_v1
-        and getattr(args, 'advtrain', False)
-        and getattr(args, 'attack_criterion', None) in {'madry', 'trades'}
+        and cfg.attacks.advtrain
+        and cfg.attacks.attack_criterion in {'madry', 'trades'}
         and v1_noise_mode is not None
     ):
         raise ValueError('Adversarial training with V1 noise is not supported. Set v1_noise_mode=null.')
 
+    if bool(cfg.epsilon_schedule.enabled):
+        capture_attack_step_auto(cfg)
+        configure_initial_schedule_target(cfg)
+
     # Normalize pixel-space attack magnitudes and derive norm-specific defaults.
     if attack_domain == 'pixel':
-        if getattr(args, 'attack_norm', None) == 'linf':
-            if getattr(args, 'attack_eps', None) is not None:
-                args.attack_eps = float(args.attack_eps) / 255.0
-            if getattr(args, 'attack_step', None) is not None:
-                args.attack_step = float(args.attack_step) / 255.0
-        elif getattr(args, 'attack_norm', None) == 'l1':
-            if getattr(args, 'attack_step', None) is None:
-                args.attack_step = 1.0
-            if getattr(args, 'attack_eps', None) is not None:
-                args.attack_eps = float(args.attack_eps) * 255.0 / 2.0
+        if cfg.attacks.attack_norm == 'linf':
+            if cfg.attacks.attack_eps is not None:
+                cfg.attacks.attack_eps = float(cfg.attacks.attack_eps) / 255.0
+            if cfg.attacks.attack_step is not None:
+                cfg.attacks.attack_step = float(cfg.attacks.attack_step) / 255.0
+        elif cfg.attacks.attack_norm == 'l1':
+            if cfg.attacks.attack_step is None:
+                cfg.attacks.attack_step = 1.0
+            if cfg.attacks.attack_eps is not None:
+                cfg.attacks.attack_eps = float(cfg.attacks.attack_eps) * 255.0 / 2.0
 
         if (
-            getattr(args, 'attack_norm', None) == 'linf'
-            and getattr(args, 'attack_step', None) is None
-            and getattr(args, 'attack_eps', None) is not None
+            cfg.attacks.attack_norm == 'linf'
+            and cfg.attacks.attack_step is None
+            and cfg.attacks.attack_eps is not None
         ):
-            args.attack_step = float(args.attack_eps) / max(int(args.attack_it), 1)
+            cfg.attacks.attack_step = float(cfg.attacks.attack_eps) / max(int(cfg.attacks.attack_it), 1)
         elif (
-            getattr(args, 'attack_norm', None) == 'l2'
-            and getattr(args, 'attack_step', None) is None
-            and getattr(args, 'attack_eps', None) is not None
+            cfg.attacks.attack_norm == 'l2'
+            and cfg.attacks.attack_step is None
+            and cfg.attacks.attack_eps is not None
         ):
-            args.attack_step = 2.0 * float(args.attack_eps) / max(int(args.attack_it), 1)
+            cfg.attacks.attack_step = 2.0 * float(cfg.attacks.attack_eps) / max(int(cfg.attacks.attack_it), 1)
     else:
-        if getattr(args, 'attack_norm', None) == 'linf':
-            if getattr(args, 'v1_attack_eps', None) is not None:
-                args.v1_attack_eps = float(args.v1_attack_eps) / 255.0
-            if getattr(args, 'v1_attack_step', None) is not None:
-                args.v1_attack_step = float(args.v1_attack_step) / 255.0
-        elif getattr(args, 'attack_norm', None) == 'l1':
-            if getattr(args, 'v1_attack_step', None) is None:
-                args.v1_attack_step = 1.0
-            if getattr(args, 'v1_attack_eps', None) is not None:
-                args.v1_attack_eps = float(args.v1_attack_eps) * 255.0 / 2.0
+        if cfg.attacks.attack_norm == 'linf':
+            if cfg.attacks.v1_attack_eps is not None:
+                cfg.attacks.v1_attack_eps = float(cfg.attacks.v1_attack_eps) / 255.0
+            if cfg.attacks.v1_attack_step is not None:
+                cfg.attacks.v1_attack_step = float(cfg.attacks.v1_attack_step) / 255.0
+        elif cfg.attacks.attack_norm == 'l1':
+            if cfg.attacks.v1_attack_step is None:
+                cfg.attacks.v1_attack_step = 1.0
+            if cfg.attacks.v1_attack_eps is not None:
+                cfg.attacks.v1_attack_eps = float(cfg.attacks.v1_attack_eps) * 255.0 / 2.0
         if (
-            getattr(args, 'attack_norm', None) == 'linf'
-            and getattr(args, 'v1_attack_step', None) is None
-            and getattr(args, 'v1_attack_eps', None) is not None
+            cfg.attacks.attack_norm == 'linf'
+            and cfg.attacks.v1_attack_step is None
+            and cfg.attacks.v1_attack_eps is not None
         ):
-            args.v1_attack_step = float(args.v1_attack_eps) / max(int(args.v1_attack_it), 1)
+            cfg.attacks.v1_attack_step = float(cfg.attacks.v1_attack_eps) / max(int(cfg.attacks.v1_attack_it), 1)
         elif (
-            getattr(args, 'attack_norm', None) == 'l2'
-            and getattr(args, 'v1_attack_step', None) is None
-            and getattr(args, 'v1_attack_eps', None) is not None
+            cfg.attacks.attack_norm == 'l2'
+            and cfg.attacks.v1_attack_step is None
+            and cfg.attacks.v1_attack_eps is not None
         ):
-            args.v1_attack_step = 2.0 * float(args.v1_attack_eps) / max(int(args.v1_attack_it), 1)
+            cfg.attacks.v1_attack_step = 2.0 * float(cfg.attacks.v1_attack_eps) / max(int(cfg.attacks.v1_attack_it), 1)
 
-    if args.rank == 0:
-        experiment_name, group_name = _auto_experiment_name(args)
-        args.output_dir = os.path.join(args.output_dir,experiment_name)
-        os.makedirs(args.output_dir, exist_ok = True)
+    if cfg.dist.rank == 0:
+        experiment_name, group_name = _auto_experiment_name(cfg)
+        cfg.output_dir = os.path.join(cfg.output_dir, experiment_name)
+        os.makedirs(cfg.output_dir, exist_ok = True)
     
-    _logger = setup_logger(save_dir=args.output_dir, distributed_rank=args.rank)
-    _logger.info(f"Runtime distributed={args.distributed}, world_size={args.world_size}, rank={args.rank}, local_rank={args.local_rank}, device_id={args.device_id}")
+    _logger = setup_logger(save_dir=cfg.output_dir, distributed_rank=cfg.dist.rank)
+    _logger.info(f"Runtime distributed={cfg.dist.distributed}, world_size={cfg.dist.world_size}, rank={cfg.dist.rank}, local_rank={cfg.dist.local_rank}, device_id={cfg.dist.device_id}")
     _logger.info(f"Experiment: {experiment_name}")
-    _logger.info(f"Results directory: {args.output_dir}")
+    _logger.info(f"Results directory: {cfg.output_dir}")
 
     # fix the seed for reproducibility
-    if args.seed is None:
-        args.seed = int(torch.randint(0, 2**32 - 1, ()).item())
-    _logger.info(f"Using seed: {args.seed}")
-    random_seed(args.seed, args.rank)
+    if cfg.seed is None:
+        cfg.seed = int(torch.randint(0, 2**32 - 1, ()).item())
+    _logger.info(f"Using seed: {cfg.seed}")
+    random_seed(cfg.seed, cfg.dist.rank)
     torch.backends.cudnn.deterministic=False
     torch.backends.cudnn.benchmark = True
     
     # setup augmentation batch splits for contrastive loss or split bn
     num_aug_splits = 0
-    if args.aug_splits > 0:
-        assert args.aug_splits > 1, 'A split of 1 makes no sense'
-        num_aug_splits = args.aug_splits
+    if cfg.dataset.aug_splits > 0:
+        assert cfg.dataset.aug_splits > 1, 'A split of 1 makes no sense'
+        num_aug_splits = cfg.dataset.aug_splits
     
     # resolve amp
-    resolve_amp(args, _logger)
+    resolve_amp(cfg, _logger)
 
     # build model
-    model = build_model(args, _logger, num_aug_splits)
-
-    if getattr(args, 'compile_model', False):
-      if not hasattr(torch, 'compile'):
-          raise RuntimeError('compile_model=True requires torch.compile, available in PyTorch 2.x')
-      _logger.info('Compiling model with torch.compile')
-      model = torch.compile(model)
+    model = build_model(cfg, _logger, num_aug_splits)
 
     # create optimizer
     optimizer=None
-    if args.lr is None:
-        args.lr=args.lrb * args.batch_size * args.world_size / 512
-    optimizer = create_optimizer_v2(model, **optimizer_kwargs(cfg=args))
+    if cfg.optimizer.lr is None:
+        cfg.optimizer.lr = cfg.lr_scheduler.lrb * cfg.training.batch_size * cfg.dist.world_size / 512
+    optimizer = create_optimizer_v2(model, **optimizer_kwargs(cfg=cfg.optimizer))
     _logger.info(f"Optimizer: {optimizer.__class__.__name__}")
 
     # build loss scaler
-    amp_autocast, loss_scaler = build_loss_scaler(args, _logger)
+    amp_autocast, loss_scaler = build_loss_scaler(cfg, _logger)
     print(f'Using amp_autocast: {amp_autocast}')
     print(f"Using loss scaler: {loss_scaler}")
 
     # resume from a checkpoint
     resume_epoch = None
-    if args.resume and os.path.exists(args.resume):
+    if cfg.model.resume and os.path.exists(cfg.model.resume):
         resume_epoch = resume_checkpoint(
-            model, args.resume,
+            model, cfg.model.resume,
             optimizer=optimizer,
             loss_scaler=loss_scaler,
-            log_info=args.rank == 0)
+            log_info=cfg.dist.rank == 0)
+    elif bool(cfg.continuation.enabled):
+        load_continuation_checkpoint(model, cfg, _logger)
 
     # setup ema
     model_ema = None
-    if args.model_ema:
+    if cfg.training.model_ema:
         # Important to create EMA model after cuda(), DP wrapper, and AMP but before SyncBN and DDP wrapper
         model_ema = ModelEmaV2(
-            model, decay=args.model_ema_decay, device='cpu' if args.model_ema_force_cpu else None)
+            model, decay=cfg.training.model_ema_decay, device='cpu' if cfg.training.model_ema_force_cpu else None)
         _logger.info("Using EMA model")
-        if args.resume and os.path.exists(args.resume):
-            load_checkpoint(model_ema.module, args.resume, use_ema=True)
+        if cfg.model.resume and os.path.exists(cfg.model.resume):
+            load_checkpoint(model_ema.module, cfg.model.resume, use_ema=True)
+
+    if cfg.model.get('compile_model', False):
+      if not hasattr(torch, 'compile'):
+          raise RuntimeError('compile_model=True requires torch.compile, available in PyTorch 2.x')
+      _logger.info('Compiling model with torch.compile')
+      model = torch.compile(model)
 
     # # setup distributed training
-    if args.distributed:
+    if cfg.dist.distributed:
         _logger.info("Using native Torch DistributedDataParallel.")
-        model = NativeDDP(model, device_ids=[args.device_id])
+        model = NativeDDP(model, device_ids=[cfg.dist.device_id])
         # NOTE: EMA model does not need to be wrapped by DDP
     
     # create the train and eval dataloaders
-    loader_train, loader_eval = build_dataset(args, num_aug_splits)
+    loader_train, loader_eval = build_dataset(cfg, num_aug_splits)
     
     images, targets = next(iter(loader_train))
     print(f"Training data min: {images.min()}, max: {images.max()}, mean: {images.mean()}, std: {images.std()}")
@@ -185,36 +199,42 @@ def main(args):
 
 
     # setup loss function
-    train_loss_fn, validate_loss_fn = build_loss(args, num_aug_splits)
+    train_loss_fn, validate_loss_fn = build_loss(cfg, num_aug_splits)
     print(f"Using training loss: {train_loss_fn}, validation loss: {validate_loss_fn}")
     
     # setup gradnorm regularization loss function
     reg_loss_fn = None
-    gradnorm_start_epoch = args.epochs  # default: never start
-    if args.gradnorm:
+    gradnorm_start_epoch = cfg.training.epochs  # default: never start
+    if cfg.attacks.gradnorm:
         reg_loss_fn = DBP(
-            eps=args.attack_eps,
+            eps=cfg.attacks.attack_eps,
             std=0.225,
-            penalty_norm=getattr(args, 'gradnorm_penalty_norm', 'l1'),
+            penalty_norm=cfg.attacks.get('gradnorm_penalty_norm', 'l1'),
         )
-        gradnorm_start_epoch = args.alpha_start_epoch
+        gradnorm_start_epoch = cfg.attacks.alpha_start_epoch
     _logger.info(f'GradNorm start: {gradnorm_start_epoch}')
     _logger.info(
-        f"GradNorm penalty norm: {getattr(args, 'gradnorm_penalty_norm', 'l1')}, "
-        f"GradNorm alpha scaling: init={getattr(args, 'alpha_scale_init', 0.1)}, "
-        f"scale_epochs={getattr(args, 'alpha_scale_epochs', 9.0)}, "
-        f"max_reg_to_ce_ratio={getattr(args, 'gradnorm_max_reg_to_ce_ratio', 3.0)}"
+        f"GradNorm penalty norm: {cfg.attacks.get('gradnorm_penalty_norm', 'l1')}, "
+        f"GradNorm alpha scaling: init={cfg.attacks.get('alpha_scale_init', 0.1)}, "
+        f"scale_epochs={cfg.attacks.get('alpha_scale_epochs', 9.0)}, "
+        f"max_reg_to_ce_ratio={cfg.attacks.get('gradnorm_max_reg_to_ce_ratio', 3.0)}"
     )
     _logger.info(f'Reg losses: {str(reg_loss_fn)}')
     
-    if args.attack_criterion == 'trades' and args.advtrain:
-        args.random_start = True
+    if cfg.attacks.attack_criterion == 'trades' and cfg.attacks.advtrain:
+        cfg.attacks.random_start = True
 
     # setup learning rate schedule and starting epoch
     updates_per_epoch = len(loader_train)
+    scheduler_cfg = OmegaConf.to_container(cfg.lr_scheduler, resolve=True)
+    scheduler_cfg.update({
+        "epochs": cfg.training.epochs,
+        "seed": cfg.seed,
+        "eval_metric": cfg.eval_metric,
+    })
     lr_scheduler, num_epochs = create_scheduler_v2(
         optimizer,
-        **scheduler_kwargs(args),
+        **scheduler_kwargs(OmegaConf.create(scheduler_cfg)),
         updates_per_epoch=updates_per_epoch,
     )
     print(f"Using learning rate scheduler: {lr_scheduler}")
@@ -223,7 +243,7 @@ def main(args):
     if resume_epoch is not None:
         start_epoch = resume_epoch
     if lr_scheduler is not None and start_epoch > 0:
-        if args.sched_on_updates:
+        if cfg.lr_scheduler.sched_on_updates:
             lr_scheduler.step_update(start_epoch * updates_per_epoch)
         else:
             lr_scheduler.step(start_epoch)
@@ -233,19 +253,33 @@ def main(args):
     # sch = Model_scheduler(db_path=db_path)
 
     # saver
-    eval_metric = args.eval_metric
+    eval_metric = cfg.eval_metric
     saver = None
     best_metric = None
     best_epoch = None
-    output_dir = args.output_dir
+    best_adv_metric = None
+    best_adv_epoch = None
+    output_dir = cfg.output_dir
+    epsilon_schedule = build_epsilon_schedule(cfg)
+    target_epsilon_user = None
+    target_epsilon_internal = None
+    if epsilon_schedule is not None:
+        target_epsilon_user = float(epsilon_schedule.target_epsilon)
+        target_epsilon_internal = normalize_epsilon(target_epsilon_user, cfg.attacks.attack_norm)
     
-    if args.rank == 0:
+    if cfg.dist.rank == 0:
         decreasing=True if eval_metric=='loss' else False
+        checkpoint_metadata = OmegaConf.create(
+            {
+                "model": cfg.model.model,
+                "config": OmegaConf.to_container(cfg, resolve=True),
+            }
+        )
         saver = CheckpointSaver(
-            model=model, optimizer=optimizer, args=args, model_ema=model_ema, amp_scaler=loss_scaler,
-            checkpoint_dir=output_dir, recovery_dir=output_dir, decreasing=decreasing, max_history=args.max_history)
+            model=model, optimizer=optimizer, args=checkpoint_metadata, model_ema=model_ema, amp_scaler=loss_scaler,
+            checkpoint_dir=output_dir, recovery_dir=output_dir, decreasing=decreasing, max_history=cfg.model.max_history)
         # wandb init:
-        wandb_config = {k: v for k, v in vars(args).items() if not k.startswith('_')}
+        wandb_config = OmegaConf.to_container(cfg, resolve=True)
         # Use experiment_name as ID if given, otherwise generate one
         if experiment_name is None:   
             run_id = wandb.util.generate_id()
@@ -266,50 +300,76 @@ def main(args):
         _logger.info(f"Weights & Biases logging initialized for run: {experiment_name} in group: {group_name}")
 
         
-        args_text = yaml.safe_dump(args.__dict__, default_flow_style=False)
-        with open(os.path.join(output_dir, 'args.yaml'), 'w') as f:
-            f.write(args_text)
+        with open(os.path.join(output_dir, 'runtime_config.yaml'), 'w') as f:
+            f.write(OmegaConf.to_yaml(cfg, resolve=True))
+        with open(os.path.join(output_dir, 'hydra_config.yaml'), 'w') as f:
+            f.write(cfg.hydra_config_yaml)
 
-    did_train_this_run = start_epoch < args.epochs
+    did_train_this_run = start_epoch < cfg.training.epochs
 
     # start training
-    _logger.info(f"Start training for {args.epochs-start_epoch} epochs")
-    _logger.info(f"gradclip: {args.clip_grad}")
+    _logger.info(f"Start training for {cfg.training.epochs-start_epoch} epochs")
+    _logger.info(f"gradclip: {cfg.optimizer.clip_grad}")
     
     already_canceled_mixup = False
     
-    for epoch in range(start_epoch, args.epochs):
+    for epoch in range(start_epoch, cfg.training.epochs):
+        if epsilon_schedule is not None:
+            train_epsilon_user = epsilon_schedule.value_for_epoch(epoch)
+            train_epsilon_internal = set_active_epsilon(cfg, train_epsilon_user)
+            _logger.info(
+                f"Epsilon schedule epoch={epoch + 1}: train_epsilon={train_epsilon_user:g} "
+                f"(internal={train_epsilon_internal:.8g})"
+            )
+        else:
+            train_epsilon_user = current_active_epsilon_user(cfg)
+            train_epsilon_internal = cfg.attacks[active_attack_eps_field(cfg)]
+            target_epsilon_user = train_epsilon_user
+            target_epsilon_internal = train_epsilon_internal
+
         if hasattr(loader_train, 'sampler') and hasattr(loader_train.sampler, 'set_epoch'):
             loader_train.sampler.set_epoch(epoch)
             # mixup setting
-        if args.mixup_off_epoch and epoch >= args.mixup_off_epoch:
+        if cfg.dataset.mixup_off_epoch and epoch >= cfg.dataset.mixup_off_epoch:
             if not already_canceled_mixup:
-                args.mixup_active = False
-                loader_train, loader_eval = build_dataset(args, num_aug_splits)
+                cfg.dataset.mixup_active = False
+                loader_train, loader_eval = build_dataset(cfg, num_aug_splits)
                 already_canceled_mixup = True
         # one epoch training
         train_metrics = train_one_epoch(
-            epoch, model, loader_train, optimizer, train_loss_fn, args,reg_loss_fn=reg_loss_fn,
+            epoch, model, loader_train, optimizer, train_loss_fn, cfg,reg_loss_fn=reg_loss_fn,
             lr_scheduler=lr_scheduler, saver=saver, amp_autocast=amp_autocast,
             loss_scaler=loss_scaler, model_ema=model_ema, _logger=_logger,gradnorm_start_epoch=gradnorm_start_epoch)
+        if epsilon_schedule is not None:
+            train_metrics['epsilon'] = float(train_epsilon_user)
+            train_metrics['epsilon_internal'] = float(train_epsilon_internal)
+
+        if epsilon_schedule is not None:
+            target_epsilon_internal = set_active_epsilon(cfg, target_epsilon_user)
 
         # distributed bn sync
-        if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
+        if cfg.dist.distributed and cfg.model.dist_bn in ('broadcast', 'reduce'):
             _logger.info("Distributing BatchNorm running means and vars")
-            distribute_bn(model, args.world_size, args.dist_bn == 'reduce')
+            distribute_bn(model, cfg.dist.world_size, cfg.model.dist_bn == 'reduce')
 
         # calculate evaluation metric
-        eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, _logger=_logger, epoch=epoch)
+        eval_metrics = validate(model, loader_eval, validate_loss_fn, cfg, amp_autocast=amp_autocast, _logger=_logger, epoch=epoch)
+        if epsilon_schedule is not None:
+            eval_metrics['epsilon'] = float(target_epsilon_user)
+            eval_metrics['epsilon_internal'] = float(target_epsilon_internal)
 
         # model ema update
         ema_eval_metrics = None
-        if model_ema is not None and not args.model_ema_force_cpu:
-            if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
-                distribute_bn(model_ema, args.world_size, args.dist_bn == 'reduce')
-            ema_eval_metrics = validate(model_ema.module, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, log_suffix=' (EMA)', _logger=_logger, epoch=epoch)
+        if model_ema is not None and not cfg.training.model_ema_force_cpu:
+            if cfg.dist.distributed and cfg.model.dist_bn in ('broadcast', 'reduce'):
+                distribute_bn(model_ema, cfg.dist.world_size, cfg.model.dist_bn == 'reduce')
+            ema_eval_metrics = validate(model_ema.module, loader_eval, validate_loss_fn, cfg, amp_autocast=amp_autocast, log_suffix=' (EMA)', _logger=_logger, epoch=epoch)
+            if epsilon_schedule is not None:
+                ema_eval_metrics['epsilon'] = float(target_epsilon_user)
+                ema_eval_metrics['epsilon_internal'] = float(target_epsilon_internal)
             
         # log wandb
-        if args.rank == 0:
+        if cfg.dist.rank == 0:
             wandb_log_dict = {}
             for k, v in train_metrics.items():
                 wandb_log_dict[f"train/{k}"] = v
@@ -336,78 +396,31 @@ def main(args):
         # save best checkpoint
         if saver is not None:
             best_metric, best_epoch = saver.save_checkpoint(epoch, eval_metrics[eval_metric])
+            if bool(cfg.checkpointing.save_best_adv) and (cfg.attacks.advtrain or cfg.attacks.gradnorm):
+                best_adv_metric, best_adv_epoch = maybe_save_best_adv_checkpoint(
+                    saver, epoch, eval_metrics, best_adv_metric, best_adv_epoch
+                )
             
         # -------- DB update: end-of-epoch --------
-        # if sch is not None and args.model_id is not None and args.rank == 0:
-        #     sch.update_progress_epoch_end(model_id=args.model_id, epoch=epoch+1)
+        # if sch is not None and cfg.model.model_id is not None and cfg.dist.rank == 0:
+        #     sch.update_progress_epoch_end(model_id=cfg.model.model_id, epoch=epoch+1)
 
-        if args.distributed:
+        if cfg.dist.distributed:
             torch.distributed.barrier()
 
     if best_metric is not None:
         _logger.info('*** Best metric: {0} (epoch {1})'.format(best_metric, best_epoch))
+    if best_adv_metric is not None:
+        _logger.info('*** Best adv metric: {0} (epoch {1})'.format(best_adv_metric, best_adv_epoch))
 
-    if args.rank == 0:
-        _maybe_run_final_eval(args, output_dir, _logger, did_train_this_run)
-
-
-
-def _merge_groups_for_hydra(cfg):
-    """
-    Merge Hydra's grouped config dictionaries (training/model/dataset/optimizer/attacks/etc.)
-    into a flat argparse.Namespace-compatible dictionary.
-
-    This preserves ALL your original training logic WITHOUT modifying it.
-    """
-    cfg_dict = OmegaConf.to_container(cfg, resolve=True)
-    merged = {}
-
-    # Keep all top-level primitive values
-    for k, v in cfg_dict.items():
-        if not isinstance(v, dict):
-            merged[k] = v
-
-    # Merge known Hydra config groups
-    for group in (
-        'training', 'model', 'dataset', 'optimizer',
-        'attacks', 'dist', 'loss', 'lr_scheduler'
-    ):
-        if group in cfg_dict and isinstance(cfg_dict[group], dict):
-            merged.update(cfg_dict[group])
-
-    return merged
+    if cfg.dist.rank == 0:
+        _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run)
 
 @hydra.main(config_path="configs", config_name="config", version_base="1.3")
 def hydra_main(cfg: DictConfig):
-    """
-    Hydra entrypoint: converts grouped Hydra config into the argparse-style Namespace
-    expected by main(args), then launches the adversarial training.
-    """
-    merged = _merge_groups_for_hydra(cfg)
-    args = argparse.Namespace(**merged)
-    main(args)
+    """Hydra entrypoint for adversarial training."""
+    main(cfg)
 
 
 if __name__ == '__main__':
-    import sys
-
-    # Detect Hydra-style overrides such as:
-    #   python adversarial_training.py training.epochs=200 optimizer.lr=1e-3
-    #
-    # If any CLI argument contains "=", we assume the user wants Hydra.
-    if any("=" in arg for arg in sys.argv[1:]):
-        hydra_main()  # use Hydra
-    else:
-        # ORIGINAL argparse CLI (unchanged)
-        parser = argparse.ArgumentParser(
-            "Robust training script",
-            parents=[get_args_parser()]
-        )
-        args = parser.parse_args()
-        opt = vars(args)
-
-        if args.configs:
-            opt.update(yaml.load(open(args.configs), Loader=yaml.FullLoader))
-
-        args = argparse.Namespace(**opt)
-        main(args)
+    hydra_main()

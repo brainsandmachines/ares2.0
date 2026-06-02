@@ -1,5 +1,6 @@
 # Optimizer defaults: adamw
 opt: adamw
+lr: null
 opt_eps: 1.0e-8
 opt_betas: null
 momentum: 0.9
