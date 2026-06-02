@@ -1,0 +1,2 @@
+# Keep existing model_best behavior unchanged; optionally add an adv-best checkpoint.
+save_best_adv: False

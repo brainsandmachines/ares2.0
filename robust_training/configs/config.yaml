@@ -5,6 +5,9 @@ defaults:
   - dataset: imagenet
   - optimizer: adamw
   - attacks: adv
+  - continuation: default
+  - epsilon_schedule: default
+  - checkpointing: default
   - dist: default
   - training: convnext_small
   - _self_

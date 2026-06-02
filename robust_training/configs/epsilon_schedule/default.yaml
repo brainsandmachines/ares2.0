@@ -1,0 +1,9 @@
+# Disabled by default so regular training keeps the static attack_eps behavior.
+enabled: False
+type: fixed
+source_epsilon: null
+target_epsilon: null
+warmup_epochs: 0
+ramp_start_epoch: null
+ramp_end_epoch: null
+fixed_start_epoch: null

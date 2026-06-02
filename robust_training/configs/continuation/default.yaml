@@ -1,0 +1,4 @@
+# Continuation initializes model weights from a previous checkpoint and starts a new run.
+enabled: False
+checkpoint_path: ''
+use_ema: True
