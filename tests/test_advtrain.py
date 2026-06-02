@@ -1,4 +1,3 @@
-import argparse
 import contextlib
 import csv
 import math
@@ -29,7 +28,30 @@ def _compose_base_cfg():
             "attacks": OmegaConf.load(f"{root}/attacks/adv.yaml"),
             "dist": OmegaConf.load(f"{root}/dist/default.yaml"),
             "lr_scheduler": OmegaConf.load(f"{root}/lr_scheduler/cosine.yaml"),
+            "continuation": OmegaConf.load(f"{root}/continuation/default.yaml"),
+            "epsilon_schedule": OmegaConf.load(f"{root}/epsilon_schedule/default.yaml"),
+            "checkpointing": OmegaConf.load(f"{root}/checkpointing/default.yaml"),
         }
+    )
+
+
+def _runtime_test_cfg(cfg):
+    return OmegaConf.merge(
+        cfg,
+        OmegaConf.create(
+            {
+                "dataset": {"train_dir": "/tmp/train", "eval_dir": "/tmp/val"},
+                "dist": {
+                    "world_size": 1,
+                    "rank": 0,
+                    "local_rank": 0,
+                    "device_id": 0,
+                    "distributed": False,
+                },
+                "output_dir": "/tmp/out",
+                "final_eval": False,
+            }
+        ),
     )
 
 
@@ -163,16 +185,13 @@ def test_sbatch_launch_modes_are_launchable(jobname, eps, exp_num, expected):
         ),
     )
 
-    merged = advt._merge_groups_for_hydra(cfg)
-    args = argparse.Namespace(**merged)
-
-    assert args.attack_eps == float(eps)
-    assert args.experiment_num == exp_num
-    assert args.attack_norm == expected["attack_norm"]
-    assert args.advtrain is expected["advtrain"]
-    assert args.gradnorm is expected["gradnorm"]
-    assert args.gradnorm_penalty_norm == expected["gradnorm_penalty_norm"]
-    assert args.attack_criterion == expected["attack_criterion"]
+    assert cfg.attacks.attack_eps == float(eps)
+    assert cfg.model.experiment_num == exp_num
+    assert cfg.attacks.attack_norm == expected["attack_norm"]
+    assert cfg.attacks.advtrain is expected["advtrain"]
+    assert cfg.attacks.gradnorm is expected["gradnorm"]
+    assert cfg.attacks.gradnorm_penalty_norm == expected["gradnorm_penalty_norm"]
+    assert cfg.attacks.attack_criterion == expected["attack_criterion"]
 
 
 @pytest.mark.parametrize(
@@ -213,16 +232,7 @@ def test_main_one_epoch_modes(
             }
         ),
     )
-    args = argparse.Namespace(**advt._merge_groups_for_hydra(cfg))
-
-    args.train_dir = "/tmp/train"
-    args.eval_dir = "/tmp/val"
-    args.output_dir = "/tmp/out"
-    args.world_size = 1
-    args.rank = 0
-    args.local_rank = 0
-    args.device_id = 0
-    args.final_eval = False
+    cfg = _runtime_test_cfg(cfg)
 
     class _Logger:
         def info(self, *_a, **_k):
@@ -250,10 +260,10 @@ def test_main_one_epoch_modes(
 
     train_call = {}
 
-    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_args, reg_loss_fn=None, **kwargs):
+    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_cfg, reg_loss_fn=None, **kwargs):
         train_call["epoch"] = epoch
-        train_call["attack_eps"] = in_args.attack_eps
-        train_call["random_start"] = getattr(in_args, "random_start", False)
+        train_call["attack_eps"] = in_cfg.attacks.attack_eps
+        train_call["random_start"] = in_cfg.attacks.get("random_start", False)
         train_call["reg_loss_fn"] = reg_loss_fn
         train_call["gradnorm_start_epoch"] = kwargs.get("gradnorm_start_epoch")
         return {"loss": 0.1}
@@ -288,27 +298,26 @@ def test_main_one_epoch_modes(
     monkeypatch.setattr(advt.wandb, "log", lambda *_a, **_k: None)
     monkeypatch.setattr(advt.wandb.util, "generate_id", lambda: "test-run-id")
 
-    advt.main(args)
+    advt.main(cfg)
 
     assert train_call["epoch"] == 0
     assert math.isclose(train_call["attack_eps"], expected_eps, rel_tol=1e-8)
     assert train_call["random_start"] is expected_random_start
     if expect_regnorm:
         assert isinstance(train_call["reg_loss_fn"], advt.DBP)
-        assert train_call["reg_loss_fn"].penalty_norm == args.gradnorm_penalty_norm
-        assert train_call["gradnorm_start_epoch"] == args.alpha_start_epoch
+        assert train_call["reg_loss_fn"].penalty_norm == cfg.attacks.gradnorm_penalty_norm
+        assert train_call["gradnorm_start_epoch"] == cfg.attacks.alpha_start_epoch
     else:
         assert train_call["reg_loss_fn"] is None
 
 
 def test_final_eval_defaults_are_pgd_without_autoattack_with_plots():
     cfg = _compose_base_cfg()
-    merged = advt._merge_groups_for_hydra(cfg)
 
-    assert merged["final_eval"] is True
-    assert merged["final_eval_pgd"] is True
-    assert merged["final_eval_autoattack"] is True
-    assert merged["final_eval_plots"] is True
+    assert cfg.final_eval is True
+    assert cfg.final_eval_pgd is True
+    assert cfg.final_eval_autoattack is True
+    assert cfg.final_eval_plots is True
 
 
 def test_maybe_run_final_eval_default_call(monkeypatch, tmp_path):
@@ -336,30 +345,34 @@ def test_maybe_run_final_eval_default_call(monkeypatch, tmp_path):
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "model_best.pth.tar").write_bytes(b"x")
 
-    args = argparse.Namespace(
-        final_eval=True,
-        final_eval_autoattack=False,
-        final_eval_pgd=True,
-        final_eval_ckpt_name="model_best.pth.tar",
-        final_eval_val_dir="",
-        eval_dir="/tmp/val",
-        final_eval_out_dir="",
-        final_eval_aa_batch_size=None,
-        batch_size=2,
-        final_eval_aa_norm=None,
-        final_eval_aa_eps=None,
-        final_eval_aa_max_batches=None,
-        final_eval_pgd_batch_size=None,
-        final_eval_pgd_eps="0.5,1,2,4,8,16",
-        final_eval_pgd_norms="linf,l2,l1",
-        final_eval_pgd_attack_steps=10,
-        final_eval_pgd_max_batches=None,
-        final_eval_plots=True,
-        final_eval_plot_x_col="epsilon_input",
-        final_eval_num_workers=8,
+    cfg = OmegaConf.merge(
+        _runtime_test_cfg(_compose_base_cfg()),
+        OmegaConf.create(
+            {
+                "final_eval": True,
+                "final_eval_autoattack": False,
+                "final_eval_pgd": True,
+                "final_eval_ckpt_name": "model_best.pth.tar",
+                "final_eval_val_dir": "",
+                "final_eval_out_dir": "",
+                "final_eval_aa_batch_size": None,
+                "training": {"batch_size": 2},
+                "final_eval_aa_norm": None,
+                "final_eval_aa_eps": None,
+                "final_eval_aa_max_batches": None,
+                "final_eval_pgd_batch_size": None,
+                "final_eval_pgd_eps": "0.5,1,2,4,8,16",
+                "final_eval_pgd_norms": "linf,l2,l1",
+                "final_eval_pgd_attack_steps": 10,
+                "final_eval_pgd_max_batches": None,
+                "final_eval_plots": True,
+                "final_eval_plot_x_col": "epsilon_input",
+                "final_eval_num_workers": 8,
+            }
+        ),
     )
 
-    advt._maybe_run_final_eval(args, str(output_dir), _Logger())
+    advt._maybe_run_final_eval(cfg, str(output_dir), _Logger())
 
     assert len(calls) == 1
     kwargs = calls[0]
@@ -412,31 +425,35 @@ def test_maybe_run_final_eval_skips_when_pgd_csv_is_in_pgd_eval_subdir(monkeypat
                     }
                 )
 
-    args = argparse.Namespace(
-        final_eval=True,
-        final_eval_autoattack=False,
-        final_eval_pgd=True,
-        final_eval_ckpt_name="model_best.pth.tar",
-        final_eval_val_dir="",
-        eval_dir="/tmp/val",
-        final_eval_out_dir="",
-        final_eval_aa_batch_size=None,
-        batch_size=2,
-        final_eval_aa_norm=None,
-        final_eval_aa_eps=None,
-        final_eval_aa_max_batches=None,
-        final_eval_pgd_batch_size=None,
-        final_eval_pgd_eps="0.5,1,2,4,8,16",
-        final_eval_pgd_norms="linf,l2,l1",
-        final_eval_pgd_attack_steps=10,
-        final_eval_pgd_max_batches=None,
-        final_eval_plots=True,
-        final_eval_plot_x_col="epsilon_input",
-        final_eval_num_workers=8,
-        final_eval_skip_if_complete=True,
+    cfg = OmegaConf.merge(
+        _runtime_test_cfg(_compose_base_cfg()),
+        OmegaConf.create(
+            {
+                "final_eval": True,
+                "final_eval_autoattack": False,
+                "final_eval_pgd": True,
+                "final_eval_ckpt_name": "model_best.pth.tar",
+                "final_eval_val_dir": "",
+                "final_eval_out_dir": "",
+                "final_eval_aa_batch_size": None,
+                "training": {"batch_size": 2},
+                "final_eval_aa_norm": None,
+                "final_eval_aa_eps": None,
+                "final_eval_aa_max_batches": None,
+                "final_eval_pgd_batch_size": None,
+                "final_eval_pgd_eps": "0.5,1,2,4,8,16",
+                "final_eval_pgd_norms": "linf,l2,l1",
+                "final_eval_pgd_attack_steps": 10,
+                "final_eval_pgd_max_batches": None,
+                "final_eval_plots": True,
+                "final_eval_plot_x_col": "epsilon_input",
+                "final_eval_num_workers": 8,
+                "final_eval_skip_if_complete": True,
+            }
+        ),
     )
 
-    advt._maybe_run_final_eval(args, str(output_dir), _Logger())
+    advt._maybe_run_final_eval(cfg, str(output_dir), _Logger())
 
     assert len(calls) == 0
 
@@ -461,15 +478,7 @@ def test_main_v1_feature_attack_defaults(monkeypatch):
             }
         ),
     )
-    args = argparse.Namespace(**advt._merge_groups_for_hydra(cfg))
-    args.train_dir = "/tmp/train"
-    args.eval_dir = "/tmp/val"
-    args.output_dir = "/tmp/out"
-    args.world_size = 1
-    args.rank = 0
-    args.local_rank = 0
-    args.device_id = 0
-    args.final_eval = False
+    cfg = _runtime_test_cfg(cfg)
 
     class _Logger:
         def info(self, *_a, **_k):
@@ -497,9 +506,9 @@ def test_main_v1_feature_attack_defaults(monkeypatch):
 
     train_call = {}
 
-    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_args, reg_loss_fn=None, **kwargs):
-        train_call["attack_domain"] = in_args.attack_domain
-        train_call["v1_attack_step"] = in_args.v1_attack_step
+    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_cfg, reg_loss_fn=None, **kwargs):
+        train_call["attack_domain"] = in_cfg.attacks.attack_domain
+        train_call["v1_attack_step"] = in_cfg.attacks.v1_attack_step
         return {"loss": 0.1}
 
     def _fake_loader():
@@ -531,7 +540,7 @@ def test_main_v1_feature_attack_defaults(monkeypatch):
     monkeypatch.setattr(advt.wandb, "log", lambda *_a, **_k: None)
     monkeypatch.setattr(advt.wandb.util, "generate_id", lambda: "test-run-id")
 
-    advt.main(args)
+    advt.main(cfg)
 
     assert train_call["attack_domain"] == "v1_feature"
     assert math.isclose(train_call["v1_attack_step"], (9.0 / 255.0) / 3.0, rel_tol=1e-8)
@@ -563,20 +572,12 @@ def test_main_rejects_v1_noise_with_advtrain(monkeypatch, criterion):
             }
         ),
     )
-    args = argparse.Namespace(**advt._merge_groups_for_hydra(cfg))
-    args.train_dir = "/tmp/train"
-    args.eval_dir = "/tmp/val"
-    args.output_dir = "/tmp/out"
-    args.world_size = 1
-    args.rank = 0
-    args.local_rank = 0
-    args.device_id = 0
-    args.final_eval = False
+    cfg = _runtime_test_cfg(cfg)
 
     monkeypatch.setattr(advt, "distributed_init", lambda _args: None)
 
     with pytest.raises(ValueError, match="Adversarial training with V1 noise is not supported"):
-        advt.main(args)
+        advt.main(cfg)
 
 
 def test_main_v1_feature_trades_defaults(monkeypatch):
@@ -599,15 +600,7 @@ def test_main_v1_feature_trades_defaults(monkeypatch):
             }
         ),
     )
-    args = argparse.Namespace(**advt._merge_groups_for_hydra(cfg))
-    args.train_dir = "/tmp/train"
-    args.eval_dir = "/tmp/val"
-    args.output_dir = "/tmp/out"
-    args.world_size = 1
-    args.rank = 0
-    args.local_rank = 0
-    args.device_id = 0
-    args.final_eval = False
+    cfg = _runtime_test_cfg(cfg)
 
     class _Logger:
         def info(self, *_a, **_k):
@@ -635,11 +628,11 @@ def test_main_v1_feature_trades_defaults(monkeypatch):
 
     train_call = {}
 
-    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_args, reg_loss_fn=None, **kwargs):
-        train_call["attack_domain"] = in_args.attack_domain
-        train_call["attack_criterion"] = in_args.attack_criterion
-        train_call["v1_attack_step"] = in_args.v1_attack_step
-        train_call["random_start"] = getattr(in_args, "random_start", False)
+    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_cfg, reg_loss_fn=None, **kwargs):
+        train_call["attack_domain"] = in_cfg.attacks.attack_domain
+        train_call["attack_criterion"] = in_cfg.attacks.attack_criterion
+        train_call["v1_attack_step"] = in_cfg.attacks.v1_attack_step
+        train_call["random_start"] = in_cfg.attacks.get("random_start", False)
         return {"loss": 0.1}
 
     def _fake_loader():
@@ -671,7 +664,7 @@ def test_main_v1_feature_trades_defaults(monkeypatch):
     monkeypatch.setattr(advt.wandb, "log", lambda *_a, **_k: None)
     monkeypatch.setattr(advt.wandb.util, "generate_id", lambda: "test-run-id")
 
-    advt.main(args)
+    advt.main(cfg)
 
     assert train_call["attack_domain"] == "v1_feature"
     assert train_call["attack_criterion"] == "trades"
@@ -703,15 +696,7 @@ def test_main_v1_feature_l2_defaults(monkeypatch, criterion, expected_random_sta
             }
         ),
     )
-    args = argparse.Namespace(**advt._merge_groups_for_hydra(cfg))
-    args.train_dir = "/tmp/train"
-    args.eval_dir = "/tmp/val"
-    args.output_dir = "/tmp/out"
-    args.world_size = 1
-    args.rank = 0
-    args.local_rank = 0
-    args.device_id = 0
-    args.final_eval = False
+    cfg = _runtime_test_cfg(cfg)
 
     class _Logger:
         def info(self, *_a, **_k):
@@ -739,11 +724,11 @@ def test_main_v1_feature_l2_defaults(monkeypatch, criterion, expected_random_sta
 
     train_call = {}
 
-    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_args, reg_loss_fn=None, **kwargs):
-        train_call["attack_domain"] = in_args.attack_domain
-        train_call["attack_criterion"] = in_args.attack_criterion
-        train_call["v1_attack_step"] = in_args.v1_attack_step
-        train_call["random_start"] = getattr(in_args, "random_start", False)
+    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_cfg, reg_loss_fn=None, **kwargs):
+        train_call["attack_domain"] = in_cfg.attacks.attack_domain
+        train_call["attack_criterion"] = in_cfg.attacks.attack_criterion
+        train_call["v1_attack_step"] = in_cfg.attacks.v1_attack_step
+        train_call["random_start"] = in_cfg.attacks.get("random_start", False)
         return {"loss": 0.1}
 
     def _fake_loader():
@@ -775,7 +760,7 @@ def test_main_v1_feature_l2_defaults(monkeypatch, criterion, expected_random_sta
     monkeypatch.setattr(advt.wandb, "log", lambda *_a, **_k: None)
     monkeypatch.setattr(advt.wandb.util, "generate_id", lambda: "test-run-id")
 
-    advt.main(args)
+    advt.main(cfg)
 
     assert train_call["attack_domain"] == "v1_feature"
     assert train_call["attack_criterion"] == criterion
@@ -802,15 +787,7 @@ def test_mixup_turns_off_and_rebuilds_loader(monkeypatch):
             }
         ),
     )
-    args = argparse.Namespace(**advt._merge_groups_for_hydra(cfg))
-    args.train_dir = "/tmp/train"
-    args.eval_dir = "/tmp/val"
-    args.output_dir = "/tmp/out"
-    args.world_size = 1
-    args.rank = 0
-    args.local_rank = 0
-    args.device_id = 0
-    args.final_eval = False
+    cfg = _runtime_test_cfg(cfg)
 
     class _Logger:
         def info(self, *_a, **_k):
@@ -855,12 +832,12 @@ def test_mixup_turns_off_and_rebuilds_loader(monkeypatch):
     build_states = []
     epoch_mixup_states = []
 
-    def _build_dataset_stub(in_args, *_a, **_k):
-        build_states.append(bool(in_args.mixup_active))
+    def _build_dataset_stub(in_cfg, *_a, **_k):
+        build_states.append(bool(in_cfg.dataset.mixup_active))
         return _FakeLoader(), _FakeLoader()
 
-    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_args, reg_loss_fn=None, **kwargs):
-        epoch_mixup_states.append((epoch, bool(in_args.mixup_active)))
+    def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_cfg, reg_loss_fn=None, **kwargs):
+        epoch_mixup_states.append((epoch, bool(in_cfg.dataset.mixup_active)))
         return {"loss": 0.1}
 
     monkeypatch.setattr(advt, "distributed_init", lambda _args: None)
@@ -887,7 +864,7 @@ def test_mixup_turns_off_and_rebuilds_loader(monkeypatch):
     monkeypatch.setattr(advt.wandb, "log", lambda *_a, **_k: None)
     monkeypatch.setattr(advt.wandb.util, "generate_id", lambda: "test-run-id")
 
-    advt.main(args)
+    advt.main(cfg)
 
     assert build_states == [True, False]
     assert epoch_mixup_states == [(0, True), (1, False)]
@@ -903,60 +880,62 @@ def test_convnext_small_v1_default_noise_mode_is_null():
             }
         ),
     )
-    args = argparse.Namespace(**advt._merge_groups_for_hydra(cfg))
-
-    assert args.model == "convnext_small_v1"
-    assert args.v1_noise_mode is None
-    assert args.v1_gabor_seed is None
+    assert cfg.model.model == "convnext_small_v1"
+    assert cfg.model.v1_noise_mode is None
+    assert cfg.model.v1_gabor_seed is None
 
 
 def test_v1_gabor_seed_defaults_to_run_seed():
-    args = argparse.Namespace(seed=123456, v1_gabor_seed=None)
+    cfg = OmegaConf.create({"seed": 123456, "model": {"v1_gabor_seed": None}})
 
-    assert resolve_v1_gabor_seed(args) == 123456
+    assert resolve_v1_gabor_seed(cfg) == 123456
 
 
 def test_v1_gabor_seed_explicit_override_is_preserved():
-    args = argparse.Namespace(seed=123456, v1_gabor_seed=7)
+    cfg = OmegaConf.create({"seed": 123456, "model": {"v1_gabor_seed": 7}})
 
-    assert resolve_v1_gabor_seed(args) == 7
+    assert resolve_v1_gabor_seed(cfg) == 7
 
 
 def test_auto_experiment_name_uses_v1_attack_eps_for_feature_domain():
-    args = argparse.Namespace(
-        model="convnext_small_v1",
-        advtrain=True,
-        attack_domain="v1_feature",
-        attack_norm="linf",
-        attack_criterion="madry",
-        attack_eps=1.0,
-        v1_attack_eps=16.0 / 255.0,
-        v1_noise_mode=None,
-        gradnorm=False,
-        experiment_num=1,
+    cfg = OmegaConf.create(
+        {
+            "model": {"model": "convnext_small_v1", "v1_noise_mode": None, "experiment_num": 1, "experiment_name": None},
+            "attacks": {
+                "advtrain": True,
+                "attack_domain": "v1_feature",
+                "attack_norm": "linf",
+                "attack_criterion": "madry",
+                "attack_eps": 1.0,
+                "v1_attack_eps": 16.0 / 255.0,
+                "gradnorm": False,
+            },
+        }
     )
 
-    experiment_name, group_name = _auto_experiment_name(args)
+    experiment_name, group_name = _auto_experiment_name(cfg)
 
     assert experiment_name == "convnext_small_v1_clean_linf_16_init1"
     assert group_name == "v1feat_linf_madry"
 
 
 def test_auto_experiment_name_marks_v1_noise_runs():
-    args = argparse.Namespace(
-        model="convnext_small_v1",
-        advtrain=False,
-        attack_domain="pixel",
-        attack_norm="linf",
-        attack_criterion="madry",
-        attack_eps=1.0,
-        v1_attack_eps=16.0 / 255.0,
-        v1_noise_mode="neuronal",
-        gradnorm=False,
-        experiment_num=1,
+    cfg = OmegaConf.create(
+        {
+            "model": {"model": "convnext_small_v1", "v1_noise_mode": "neuronal", "experiment_num": 1, "experiment_name": None},
+            "attacks": {
+                "advtrain": False,
+                "attack_domain": "pixel",
+                "attack_norm": "linf",
+                "attack_criterion": "madry",
+                "attack_eps": 1.0,
+                "v1_attack_eps": 16.0 / 255.0,
+                "gradnorm": False,
+            },
+        }
     )
 
-    experiment_name, group_name = _auto_experiment_name(args)
+    experiment_name, group_name = _auto_experiment_name(cfg)
 
     assert experiment_name == "convnext_small_v1_noise_init1"
     assert group_name == "default"
@@ -972,21 +951,23 @@ def test_auto_experiment_name_marks_v1_noise_runs():
 def test_auto_experiment_name_includes_gradnorm_penalty_norm(
     penalty_norm, expected_name, expected_group
 ):
-    args = argparse.Namespace(
-        model="convnext_small",
-        advtrain=False,
-        attack_domain="pixel",
-        attack_norm="linf",
-        attack_criterion="madry",
-        attack_eps=8.0 / 255.0,
-        v1_attack_eps=1.0,
-        v1_noise_mode=None,
-        gradnorm=True,
-        gradnorm_penalty_norm=penalty_norm,
-        experiment_num=2,
+    cfg = OmegaConf.create(
+        {
+            "model": {"model": "convnext_small", "v1_noise_mode": None, "experiment_num": 2, "experiment_name": None},
+            "attacks": {
+                "advtrain": False,
+                "attack_domain": "pixel",
+                "attack_norm": "linf",
+                "attack_criterion": "madry",
+                "attack_eps": 8.0 / 255.0,
+                "v1_attack_eps": 1.0,
+                "gradnorm": True,
+                "gradnorm_penalty_norm": penalty_norm,
+            },
+        }
     )
 
-    experiment_name, group_name = _auto_experiment_name(args)
+    experiment_name, group_name = _auto_experiment_name(cfg)
 
     assert experiment_name == expected_name
     assert group_name == expected_group

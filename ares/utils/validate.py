@@ -11,7 +11,7 @@ from timm.utils import  reduce_tensor
 from ares.utils.adv import adv_generator, v1_adv_generator
 from ares.utils.metrics import AverageMeter, accuracy
 
-def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _logger=None, epoch=None):
+def validate(model, loader, loss_fn, cfg, amp_autocast=None, log_suffix='', _logger=None, epoch=None):
     batch_time_m = AverageMeter()
     losses_m = AverageMeter()
     top1_m = AverageMeter()
@@ -19,7 +19,9 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
     adv_losses_m = AverageMeter()
     adv_top1_m = AverageMeter()
     adv_top5_m = AverageMeter()
-    attack_domain = getattr(args, 'attack_domain', 'pixel')
+    attacks = cfg.attacks
+    dist = cfg.dist
+    attack_domain = attacks.get('attack_domain', 'pixel')
 
     model.eval()
 
@@ -30,7 +32,7 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
         last_batch = batch_idx == last_idx
         input = input.cuda(non_blocking=True)
         target = target.cuda(non_blocking=True)
-        if args.channels_last:
+        if cfg.model.channels_last:
             input = input.contiguous(memory_format=torch.channels_last)
 
         # normal eval process
@@ -43,10 +45,10 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
             loss = loss_fn(output, target)
             acc1, acc5 = accuracy(output, target, topk=(1, 5))
 
-            if args.distributed:
-                reduced_loss = reduce_tensor(loss.data, args.world_size)
-                acc1 = reduce_tensor(acc1, args.world_size)
-                acc5 = reduce_tensor(acc5, args.world_size)
+            if dist.distributed:
+                reduced_loss = reduce_tensor(loss.data, dist.world_size)
+                acc1 = reduce_tensor(acc1, dist.world_size)
+                acc5 = reduce_tensor(acc5, dist.world_size)
             else:
                 reduced_loss = loss.data
 
@@ -58,26 +60,26 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
             top5_m.update(acc5.item(), output.size(0))
 
         # adv eval process
-        if args.advtrain or args.gradnorm:
+        if attacks.advtrain or attacks.gradnorm:
             if epoch > 0:
                 # Keep training-time warmup by default; allow eval callers to opt out.
                 if attack_domain == 'pixel':
-                    base_attack_step = args.attack_step
-                    att_eps = args.attack_eps
-                    attack_steps = int(getattr(args, "attack_it", 8))
-                    attack_random_start = bool(getattr(args, "attack_random_start", False))
-                    attack_use_best = bool(getattr(args, "attack_use_best", True))
+                    base_attack_step = attacks.attack_step
+                    att_eps = attacks.attack_eps
+                    attack_steps = int(attacks.get("attack_it", 8))
+                    attack_random_start = bool(attacks.get("attack_random_start", False))
+                    attack_use_best = bool(attacks.get("attack_use_best", True))
                 else:
-                    base_attack_step = args.v1_attack_step
-                    att_eps = args.v1_attack_eps
-                    attack_steps = int(getattr(args, "v1_attack_it", 8))
-                    attack_random_start = bool(getattr(args, "v1_attack_random_start", False))
-                    attack_use_best = bool(getattr(args, "v1_attack_use_best", True))
-                if getattr(args, "disable_attack_step_warmup", False):
+                    base_attack_step = attacks.v1_attack_step
+                    att_eps = attacks.v1_attack_eps
+                    attack_steps = int(attacks.get("v1_attack_it", 8))
+                    attack_random_start = bool(attacks.get("v1_attack_random_start", False))
+                    attack_use_best = bool(attacks.get("v1_attack_use_best", True))
+                if attacks.get("disable_attack_step_warmup", False):
                     att_step = base_attack_step
                 else:
                     att_step = base_attack_step * min(epoch, 5) / 5
-                attack_restarts = int(getattr(args, "attack_restarts", 1))
+                attack_restarts = int(attacks.get("attack_restarts", 1))
                 attack_ce = torch.nn.CrossEntropyLoss(reduction='none')
 
                 best_adv_input = None
@@ -85,7 +87,7 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
                 for _ in range(max(1, attack_restarts)):
                     if attack_domain == 'pixel':
                         cand_adv = adv_generator(
-                            args,
+                            cfg,
                             input,
                             target,
                             model,
@@ -97,7 +99,7 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
                         )
                     else:
                         cand_adv = v1_adv_generator(
-                            args,
+                            cfg,
                             input,
                             target,
                             model,
@@ -139,10 +141,10 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
                     adv_loss = loss_fn(adv_output, target)
                     adv_acc1, adv_acc5 = accuracy(adv_output, target, topk=(1, 5))
 
-                    if args.distributed:
-                        adv_reduced_loss = reduce_tensor(adv_loss.data, args.world_size)
-                        adv_acc1 = reduce_tensor(adv_acc1, args.world_size)
-                        adv_acc5 = reduce_tensor(adv_acc5, args.world_size)
+                    if dist.distributed:
+                        adv_reduced_loss = reduce_tensor(adv_loss.data, dist.world_size)
+                        adv_acc1 = reduce_tensor(adv_acc1, dist.world_size)
+                        adv_acc5 = reduce_tensor(adv_acc5, dist.world_size)
                     else:
                         adv_reduced_loss = adv_loss.data
 
@@ -157,7 +159,7 @@ def validate(model, loader, loss_fn, args, amp_autocast=None, log_suffix='', _lo
         batch_time_m.update(time.time() - end)
         end = time.time()
 
-        if last_batch or batch_idx % args.log_interval == 0:
+        if last_batch or batch_idx % cfg.log_interval == 0:
             log_name = 'Test' + log_suffix
             _logger.info(
                 '{0}: [{1:>4d}/{2}]  '

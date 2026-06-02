@@ -3,6 +3,7 @@ from torch import nn
 from timm.loss import JsdCrossEntropy, BinaryCrossEntropy, LabelSmoothingCrossEntropy
 from contextlib import suppress
 from timm.utils import NativeScaler
+from omegaconf import open_dict
 try:
     from apex import amp
     from timm.utils import ApexScaler
@@ -56,29 +57,32 @@ def margin_loss(outputs, labels, target_labels, targeted, device):
         cost = -torch.clamp((j-i), min=0)  # -self.kappa=0
     return cost.sum()
 
-def resolve_amp(args, _logger):
+def resolve_amp(cfg, _logger):
     '''The function to resolve amp parameters for robust training.'''
-    args.amp_version=''
+    with open_dict(cfg):
+        cfg.amp_version=''
     # resolve AMP arguments based on PyTorch / Apex availability
-    if args.apex_amp and has_apex:
-        args.amp_version = 'apex'
-    elif args.native_amp and has_native_amp:
-        args.amp_version = 'native'
+    if cfg.apex_amp and has_apex:
+        with open_dict(cfg):
+            cfg.amp_version = 'apex'
+    elif cfg.native_amp and has_native_amp:
+        with open_dict(cfg):
+            cfg.amp_version = 'native'
     else:
         _logger.warning("Neither APEX or native Torch AMP is available, using float32. "
                         "Install NVIDA apex or upgrade to PyTorch 1.6")
 
 
-def build_loss_scaler(args, _logger):
+def build_loss_scaler(cfg, _logger):
     '''The function to build loss scaler for robust training.'''
     # setup loss scaler
     amp_autocast = suppress  # do nothing
     loss_scaler = None
-    if args.amp_version == 'apex':
+    if cfg.amp_version == 'apex':
         model, optimizer = amp.initialize(model, optimizer, opt_level='O1')
         loss_scaler = ApexScaler()
         _logger.info('Using NVIDIA APEX AMP. Training in mixed precision.')
-    elif args.amp_version == 'native':
+    elif cfg.amp_version == 'native':
         amp_autocast = torch.cuda.amp.autocast
         loss_scaler = NativeScaler()
         _logger.info('Using native Torch AMP. Training in mixed precision.')
@@ -88,16 +92,17 @@ def build_loss_scaler(args, _logger):
     return amp_autocast, loss_scaler
 
 
-def build_loss(args, num_aug_splits):
+def build_loss(cfg, num_aug_splits):
     '''The function to build loss function for robust training.'''
-    if args.jsd_loss:
+    dataset = cfg.dataset
+    if dataset.jsd_loss:
         assert num_aug_splits > 1  # JSD only valid with aug splits set
-        train_loss_fn = JsdCrossEntropy(num_splits=num_aug_splits, smoothing=args.smoothing)
-    elif args.mixup_active:
+        train_loss_fn = JsdCrossEntropy(num_splits=num_aug_splits, smoothing=dataset.smoothing)
+    elif dataset.mixup_active:
         # smoothing is handled with mixup target transform which outputs sparse, soft targets
         train_loss_fn = nn.CrossEntropyLoss()
-    elif args.smoothing > 0.0:
-        train_loss_fn = nn.CrossEntropyLoss(label_smoothing=args.smoothing)
+    elif dataset.smoothing > 0.0:
+        train_loss_fn = nn.CrossEntropyLoss(label_smoothing=dataset.smoothing)
     else:
         train_loss_fn = nn.CrossEntropyLoss()
     train_loss_fn = train_loss_fn.cuda()

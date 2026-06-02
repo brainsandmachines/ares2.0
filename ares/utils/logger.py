@@ -59,62 +59,68 @@ class PrintFormatter:
         pass
     
     
-def _auto_experiment_name(args):
+def _auto_experiment_name(cfg):
     group_name = "default"  # Initialize group_name with a default value
-    parts = [f"{args.model}"]
-    if str(args.model).startswith("convnext_") and str(args.model).endswith("_v1"):
-        v1_noise_mode = getattr(args, "v1_noise_mode", None)
-        parts.append("noise" if v1_noise_mode is not None else "clean")
-    if args.advtrain:
-        attack_domain = getattr(args, "attack_domain", "pixel")
-        attack_eps = getattr(args, "attack_eps", None)
-        if attack_domain == "v1_feature":
-            attack_eps = getattr(args, "v1_attack_eps", attack_eps)
+    model_cfg = cfg.model
+    attacks = cfg.attacks
+    explicit_name = model_cfg.experiment_name
+    if explicit_name and explicit_name != "test_experiment":
+        return explicit_name, group_name
 
-        if args.attack_norm=="linf":
-            if args.attack_criterion=="madry":
+    parts = [f"{model_cfg.model}"]
+    if str(model_cfg.model).startswith("convnext_") and str(model_cfg.model).endswith("_v1"):
+        v1_noise_mode = model_cfg.get("v1_noise_mode", None)
+        parts.append("noise" if v1_noise_mode is not None else "clean")
+    if attacks.advtrain:
+        attack_domain = attacks.get("attack_domain", "pixel")
+        attack_eps = attacks.get("attack_eps", None)
+        if attack_domain == "v1_feature":
+            attack_eps = attacks.get("v1_attack_eps", attack_eps)
+
+        if attacks.attack_norm=="linf":
+            if attacks.attack_criterion=="madry":
                 parts.append(f"linf_{int(attack_eps*255)}")
                 group_name = "v1feat_linf_madry" if attack_domain == "v1_feature" else "linf_madry"
-            elif args.attack_criterion=="trades":
+            elif attacks.attack_criterion=="trades":
                 parts.append(f"linftrades_{int(attack_eps*255)}")
                 group_name = "v1feat_linf_trades" if attack_domain == "v1_feature" else "linf_trades"
             else:
-                raise ValueError(f"Unknown attack criterion: {args.attack_criterion}")
-        elif args.attack_norm=="l2":
-            if args.attack_criterion=="madry":
+                raise ValueError(f"Unknown attack criterion: {attacks.attack_criterion}")
+        elif attacks.attack_norm=="l2":
+            if attacks.attack_criterion=="madry":
                 parts.append(f"l2_{attack_eps}")
                 group_name = "v1feat_l2_madry" if attack_domain == "v1_feature" else "l2_madry"
-            elif args.attack_criterion=="trades":
+            elif attacks.attack_criterion=="trades":
                 parts.append(f"l2trades_{attack_eps}")
                 group_name = "v1feat_l2_trades" if attack_domain == "v1_feature" else "l2_trades"
             else:
-                raise ValueError(f"Unknown attack criterion: {args.attack_criterion}")
-        elif args.attack_norm=="l1":
-            if args.attack_criterion=="madry":
+                raise ValueError(f"Unknown attack criterion: {attacks.attack_criterion}")
+        elif attacks.attack_norm=="l1":
+            if attacks.attack_criterion=="madry":
                 parts.append(f"l1_{int(attack_eps/(255/2))}")
                 group_name = "v1feat_l1_madry" if attack_domain == "v1_feature" else "l1_madry"
-            elif args.attack_criterion=="trades":
+            elif attacks.attack_criterion=="trades":
                 parts.append(f"l1trades_{int(attack_eps/(255/2))}")
                 group_name = "v1feat_l1_trades" if attack_domain == "v1_feature" else "l1_trades"
             else:
-                raise ValueError(f"Unknown attack criterion: {args.attack_criterion}")
+                raise ValueError(f"Unknown attack criterion: {attacks.attack_criterion}")
         else:
-            raise ValueError(f"Unknown attack norm: {args.attack_norm}")
-    if args.gradnorm:
-        gradnorm_penalty_norm = getattr(args, "gradnorm_penalty_norm", "l1")
-        parts.append(f"gradnorm_{gradnorm_penalty_norm}_{int(args.attack_eps*255)}")
+            raise ValueError(f"Unknown attack norm: {attacks.attack_norm}")
+    if attacks.gradnorm:
+        gradnorm_penalty_norm = attacks.get("gradnorm_penalty_norm", "l1")
+        parts.append(f"gradnorm_{gradnorm_penalty_norm}_{int(attacks.attack_eps*255)}")
         group_name = f"gradnorm_{gradnorm_penalty_norm}"
-    # if args.lipshitz:
-    #     parts.append(f"lip_{args.lip_coeff}")
+    # if cfg.lipshitz:
+    #     parts.append(f"lip_{cfg.lip_coeff}")
     #     group_name = "lipshitz"
-    # if args.jacobian_reg:
-    #     parts.append(f"jacobian_{args.jacobian_coeff}")
+    # if cfg.jacobian_reg:
+    #     parts.append(f"jacobian_{cfg.jacobian_coeff}")
     #     group_name = "jacobian"
     if len(parts)==1:
         parts.append("baseline")
         group_name = "baseline"
-    if args.experiment_num is not None:
-        parts.append(f"init{args.experiment_num}")
+    if model_cfg.experiment_num is not None:
+        parts.append(f"init{model_cfg.experiment_num}")
     experiment_name = "_".join(parts)
 
     return experiment_name, group_name

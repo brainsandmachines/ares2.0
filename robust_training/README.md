@@ -27,7 +27,7 @@ This repository contains the code for adversarial training on classification mod
 
 **Dataset**
 
-- We train our models with ImageNet dataset. Please download [ImageNet](https://www.image-net.org/) dataset first. The directories to the training and evaluation dataset should be assigned to `train_dir` and `eval_dir` in the `train_configs` files.
+- We train our models with ImageNet dataset. Please download [ImageNet](https://www.image-net.org/) dataset first. Set the training and evaluation roots with Hydra fields such as `dataset.train_dir=...` and `dataset.eval_dir=...`.
 
 **Classification Model**
 
@@ -35,10 +35,10 @@ This repository contains the code for adversarial training on classification mod
 
 ## Getting Started
 
-- We provide a command line interface to run adversarial training. For example, you can train a robust model of ResNet50 with the corresponding configuration:
+- Use the Hydra entrypoint to run adversarial training. For example:
   
   ```bash
-  python -m torch.distributed.launch --nproc_per_node=<num-of-gpus-to-use> adversarial_training.py --configs=./train_configs/resnet50.yaml
+  python -m robust_training.adversarial_training model=convnext_small training.epochs=200 attacks.attack_norm=linf attacks.attack_eps=8
   ```
 - For distributed training and testing, you can also refer to the [run_train.sh](run_train.sh) for details.
 

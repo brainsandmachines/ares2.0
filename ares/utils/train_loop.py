@@ -15,7 +15,7 @@ from ares.utils.gradnorm import compute_gradnorm_alpha
 
 
 def train_one_epoch(
-        epoch, model, loader, optimizer, loss_fn, args,
+        epoch, model, loader, optimizer, loss_fn, cfg,
         reg_loss_fn=None, lr_scheduler=None, saver=None, amp_autocast=None,
         loss_scaler=None, model_ema=None, _logger=None,gradnorm_start_epoch=0):
     
@@ -28,7 +28,12 @@ def train_one_epoch(
     grad_avg_m = AverageMeter()
     grad_max_m = AverageMeter()
 
-    num_epochs = args.epochs + args.cooldown_epochs
+    attacks = cfg.attacks
+    training = cfg.training
+    dataset = cfg.dataset
+    optimizer_cfg = cfg.optimizer
+    dist = cfg.dist
+    num_epochs = training.epochs + cfg.lr_scheduler.cooldown_epochs
 
     model.train()
     
@@ -36,15 +41,15 @@ def train_one_epoch(
     last_idx = len(loader) - 1
     num_updates = epoch * len(loader)
     
-    attack_domain = getattr(args, 'attack_domain', 'pixel')
+    attack_domain = attacks.get('attack_domain', 'pixel')
     if attack_domain == 'pixel':
-        att_step = args.attack_step * min(epoch, 5) / 5
-        att_eps = args.attack_eps
-        att_it = args.attack_it
+        att_step = attacks.attack_step * min(epoch, 5) / 5
+        att_eps = attacks.attack_eps
+        att_it = attacks.attack_it
     elif attack_domain == 'v1_feature':
-        att_step = args.v1_attack_step * min(epoch, 5) / 5
-        att_eps = args.v1_attack_eps
-        att_it = args.v1_attack_it
+        att_step = attacks.v1_attack_step * min(epoch, 5) / 5
+        att_eps = attacks.v1_attack_eps
+        att_it = attacks.v1_attack_it
     else:
         raise ValueError(f"Unsupported attack_domain: {attack_domain}")
 
@@ -54,51 +59,51 @@ def train_one_epoch(
             raise ValueError("Input contains NaN or Inf values")
         last_batch = batch_idx == last_idx
         input, target = input.cuda(non_blocking=True), target.cuda(non_blocking=True)
-        if args.channels_last:
+        if cfg.model.channels_last:
             input=input.contiguous(memory_format=torch.channels_last)
         
         data_time_m.update(time.time() - end)
 
         # generate adv input
-        if args.advtrain:
-            if args.attack_criterion == 'madry':
+        if attacks.advtrain:
+            if attacks.attack_criterion == 'madry':
                 if attack_domain == 'pixel':
-                    input_advtrain = adv_generator(args, input, target, model, att_eps, att_it, att_step, random_start=False)
+                    input_advtrain = adv_generator(cfg, input, target, model, att_eps, att_it, att_step, random_start=False)
                 else:
-                    input_advtrain = v1_adv_generator(args, input, target, model, att_eps, att_it, att_step, random_start=False)
-            elif args.attack_criterion == 'trades': 
-                trades_random_start = args.attack_norm != 'l1'
+                    input_advtrain = v1_adv_generator(cfg, input, target, model, att_eps, att_it, att_step, random_start=False)
+            elif attacks.attack_criterion == 'trades':
+                trades_random_start = attacks.attack_norm != 'l1'
                 if attack_domain == 'pixel':
                     input_advtrain = trades_adv_generator(
-                        args, input, model, att_eps, att_it, att_step, random_start=trades_random_start
+                        cfg, input, model, att_eps, att_it, att_step, random_start=trades_random_start
                     )
                 else:
                     input_advtrain = v1_trades_adv_generator(
-                        args, input, model, att_eps, att_it, att_step, random_start=trades_random_start
+                        cfg, input, model, att_eps, att_it, att_step, random_start=trades_random_start
                     )
 
         # generate advprop input
-        if args.advprop:
+        if attacks.advprop:
             model.apply(lambda m: setattr(m, 'bn_mode', 'adv'))
-            input_advprop = adv_generator(args, input, target, model, 1/255, 1, 1/255, random_start=True, use_best=False)
+            input_advprop = adv_generator(cfg, input, target, model, 1/255, 1, 1/255, random_start=True, use_best=False)
             
         # forward
         with amp_autocast():
-            if args.advprop:
+            if attacks.advprop:
                 outputs = model(input_advprop)
                 adv_loss = loss_fn(outputs, target)
                 model.apply(lambda m: setattr(m, 'bn_mode', 'clean'))
                 outputs = model(input)
                 loss = loss_fn(outputs, target) + adv_loss
-            elif args.advtrain:
-                if args.attack_criterion == 'madry':
+            elif attacks.advtrain:
+                if attacks.attack_criterion == 'madry':
                     if attack_domain == 'pixel':
                         output = model(input_advtrain)
                     else:
                         attack_model = model.module if hasattr(model, 'module') else model
                         output = attack_model.forward_from_v1_features(input_advtrain)
                     loss = loss_fn(output, target)
-                elif args.attack_criterion == 'trades':
+                elif attacks.attack_criterion == 'trades':
                     output = model(input)
                     ce_loss = loss_fn(output, target)
                     if attack_domain == 'pixel':
@@ -110,8 +115,8 @@ def train_one_epoch(
                         torch.nn.functional.log_softmax(output_adv, dim=1),
                         torch.nn.functional.softmax(output, dim=1),
                         reduction='batchmean')
-                    loss = ce_loss + args.trades_beta * kl_loss
-            elif args.gradnorm:
+                    loss = ce_loss + attacks.trades_beta * kl_loss
+            elif attacks.gradnorm:
                 input.requires_grad_(True)
                 output = model(input)
                 ce_loss = loss_fn(output, target)
@@ -122,10 +127,10 @@ def train_one_epoch(
                     batch_idx,
                     len(loader),
                     gradnorm_start_epoch,
-                    getattr(args, 'alpha_scale_epochs', 9.0),
-                    getattr(args, 'alpha_scale_init', 0.1),
+                    attacks.get('alpha_scale_epochs', 9.0),
+                    attacks.get('alpha_scale_init', 0.1),
                 )
-                max_ratio = getattr(args, 'gradnorm_max_reg_to_ce_ratio', 0.0)
+                max_ratio = attacks.get('gradnorm_max_reg_to_ce_ratio', 0.0)
                 raw_loss_reg = reg_loss_fn(gradient, input) * alpha
 
                 if max_ratio is not None and max_ratio > 0:
@@ -142,7 +147,7 @@ def train_one_epoch(
                 loss = loss_fn(output, target)
         # debugging NaN/Inf in loss
         if not torch.isfinite(loss).all():
-            if args.gradnorm:
+            if attacks.gradnorm:
                 raise ValueError(
                     f"Loss is NaN/Inf. ce_loss={ce_loss.detach().item():.6g}, "
                     f"reg_loss={loss_reg.detach().item():.6g}, alpha={alpha:.4f}, "
@@ -150,24 +155,24 @@ def train_one_epoch(
                 )
             raise ValueError(f"Loss is NaN/Inf at epoch={epoch}, batch_idx={batch_idx}")
 
-        if not args.distributed:
+        if not dist.distributed:
             losses_m.update(loss.item(), input.size(0))
 
         optimizer.zero_grad()
         if loss_scaler is not None:
             loss_scaler(
                 loss, optimizer,
-                clip_grad=args.clip_grad, clip_mode=args.clip_mode,
-                parameters=model_parameters(model, exclude_head='agc' in args.clip_mode),
+                clip_grad=optimizer_cfg.clip_grad, clip_mode=optimizer_cfg.clip_mode,
+                parameters=model_parameters(model, exclude_head='agc' in optimizer_cfg.clip_mode),
                 create_graph=second_order)
             global_g, avg_g, max_g = compute_grad_stats(model)
 
         else:
             loss.backward(create_graph=second_order)
-            if args.clip_grad is not None:
+            if optimizer_cfg.clip_grad is not None:
                 dispatch_clip_grad(
-                    model_parameters(model, exclude_head='agc' in args.clip_mode),
-                    value=args.clip_grad, mode=args.clip_mode)
+                    model_parameters(model, exclude_head='agc' in optimizer_cfg.clip_mode),
+                    value=optimizer_cfg.clip_grad, mode=optimizer_cfg.clip_mode)
             global_g, avg_g, max_g = compute_grad_stats(model)
             optimizer.step()
         
@@ -182,31 +187,34 @@ def train_one_epoch(
         torch.cuda.synchronize()
         num_updates += 1
         batch_time_m.update(time.time() - end)
-        if last_batch or batch_idx % args.log_interval == 0:
+        if last_batch or batch_idx % cfg.log_interval == 0:
             lrl = [param_group['lr'] for param_group in optimizer.param_groups]
             lr = sum(lrl) / len(lrl)
 
-            if args.distributed:
-                reduced_loss = reduce_tensor(loss.data, args.world_size)
+            if dist.distributed:
+                reduced_loss = reduce_tensor(loss.data, dist.world_size)
                 losses_m.update(reduced_loss.item(), input.size(0))
            
-            _logger.info(
-            'Train: [{}/{}] [{:>4d}/{} ({:>3.0f}%)]  '
-            'Loss: {loss.val:#.4g} ({loss.avg:#.3g})  '
-            'Batch Time: {batch_time.val:.3f}s, {rate:>7.2f}/s  '
-            '({batch_time.avg:.3f}s, {rate_avg:>7.2f}/s)  '
-            'LR: {lr:.3e}  '
-            'Data: {data_time.val:.3f} ({data_time.avg:.3f})'.format(
-                epoch, num_epochs,
-                batch_idx, len(loader),
-                100. * batch_idx / last_idx,
-                loss=losses_m,
-                batch_time=batch_time_m,
-                rate=input.size(0) * args.world_size / batch_time_m.val,
-                rate_avg=input.size(0) * args.world_size / batch_time_m.avg,
-                lr=lr,
-                data_time=data_time_m))
-            if args.gradnorm and batch_idx % (args.log_interval * 20) == 0:
+            log_msg = (
+                'Train: [{}/{}] [{:>4d}/{} ({:>3.0f}%)]  '
+                'Loss: {loss.val:#.4g} ({loss.avg:#.3g})  '
+                'Batch Time: {batch_time.val:.3f}s, {rate:>7.2f}/s  '
+                '({batch_time.avg:.3f}s, {rate_avg:>7.2f}/s)  '
+                'LR: {lr:.3e}  '.format(
+                    epoch, num_epochs,
+                    batch_idx, len(loader),
+                    100. * batch_idx / last_idx,
+                    loss=losses_m,
+                    batch_time=batch_time_m,
+                    rate=input.size(0) * dist.world_size / batch_time_m.val,
+                    rate_avg=input.size(0) * dist.world_size / batch_time_m.avg,
+                    lr=lr)
+            )
+            if cfg.epsilon_schedule.enabled:
+                log_msg += 'Eps: {:.6g}  '.format(float(att_eps))
+            log_msg += 'Data: {data_time.val:.3f} ({data_time.avg:.3f})'.format(data_time=data_time_m)
+            _logger.info(log_msg)
+            if attacks.gradnorm and batch_idx % (cfg.log_interval * 20) == 0:
                 ce_val = ce_loss.detach().item()
                 raw_reg_val = raw_loss_reg.detach().item()
                 reg_val = loss_reg.detach().item()
@@ -222,8 +230,8 @@ def train_one_epoch(
                 )
 
         # save checkpoint
-        if saver is not None and args.recovery_interval and (
-                last_batch or (batch_idx + 1) % args.recovery_interval == 0):
+        if saver is not None and cfg.recovery_interval and (
+                last_batch or (batch_idx + 1) % cfg.recovery_interval == 0):
             saver.save_recovery(epoch, batch_idx=batch_idx)
 
         # update lr scheduler

@@ -2,43 +2,47 @@ import os
 import torch
 import numpy as np
 import random
+from omegaconf import open_dict
 
-def distributed_init(args):
+def distributed_init(cfg):
     '''This function performs the distributed setting.'''
-    if args.distributed:
+    dist = cfg.dist
+    if dist.distributed:
         # Prefer torchrun environment variables
-        if 'LOCAL_RANK' in os.environ:
-            args.local_rank = int(os.environ['LOCAL_RANK'])
-            args.rank = int(os.environ.get('RANK', args.local_rank))
-            args.world_size = int(os.environ.get('WORLD_SIZE', args.world_size))
-            args.device_id = args.local_rank
-        elif args.local_rank != -1:    # legacy launch flag
-            args.rank = args.local_rank
-            args.device_id = args.local_rank
-        elif 'SLURM_PROCID' in os.environ:    # for slurm scheduler
-            args.rank = int(os.environ['SLURM_PROCID'])
-            args.device_id = args.rank % torch.cuda.device_count()
-        else:
-            # single-process fallback
-            args.local_rank = 0
-            args.world_size = 1
-            args.rank = 0
-            args.device_id = 0
+        with open_dict(dist):
+            if 'LOCAL_RANK' in os.environ:
+                dist.local_rank = int(os.environ['LOCAL_RANK'])
+                dist.rank = int(os.environ.get('RANK', dist.local_rank))
+                dist.world_size = int(os.environ.get('WORLD_SIZE', dist.world_size))
+                dist.device_id = dist.local_rank
+            elif dist.local_rank != -1:    # legacy launch flag
+                dist.rank = dist.local_rank
+                dist.device_id = dist.local_rank
+            elif 'SLURM_PROCID' in os.environ:    # for slurm scheduler
+                dist.rank = int(os.environ['SLURM_PROCID'])
+                dist.device_id = dist.rank % torch.cuda.device_count()
+            else:
+                # single-process fallback
+                dist.local_rank = 0
+                dist.world_size = 1
+                dist.rank = 0
+                dist.device_id = 0
         if torch.cuda.is_available():
-            torch.cuda.set_device(args.device_id)
+            torch.cuda.set_device(dist.device_id)
         # With env://, let torch.distributed read RANK/WORLD_SIZE from env
         torch.distributed.init_process_group(
-            backend=args.dist_backend,
-            init_method=args.dist_url
+            backend=dist.dist_backend,
+            init_method=dist.dist_url
         )
-        setup_for_distributed(args.rank == 0)
+        setup_for_distributed(dist.rank == 0)
     else:
-        args.local_rank = 0
-        args.world_size = 1
-        args.rank = 0
-        args.device_id = 0
+        with open_dict(dist):
+            dist.local_rank = 0
+            dist.world_size = 1
+            dist.rank = 0
+            dist.device_id = 0
         if torch.cuda.is_available():
-            torch.cuda.set_device(args.device_id)
+            torch.cuda.set_device(dist.device_id)
         
         # Initialize process group for various scenarios:
         # 1. Non-distributed scenarios (e.g., regular python script)

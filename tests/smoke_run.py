@@ -1,8 +1,5 @@
-"""Smoke test: load the composed Hydra config (without launching training)
-and verify conversion to argparse.Namespace works. This is fast and safe.
-"""
+"""Smoke test: load the composed Hydra config without launching training."""
 from omegaconf import OmegaConf
-from robust_training.adversarial_training import _cfg_to_namespace
 
 def main():
     cfg = OmegaConf.load('robust_training/configs/config.yaml')
@@ -13,6 +10,11 @@ def main():
     dataset = OmegaConf.load('robust_training/configs/dataset/imagenet.yaml')
     optimizer = OmegaConf.load('robust_training/configs/optimizer/adamw.yaml')
     attacks = OmegaConf.load('robust_training/configs/attacks/adv.yaml')
+    dist = OmegaConf.load('robust_training/configs/dist/default.yaml')
+    lr_scheduler = OmegaConf.load('robust_training/configs/lr_scheduler/cosine.yaml')
+    continuation = OmegaConf.load('robust_training/configs/continuation/default.yaml')
+    epsilon_schedule = OmegaConf.load('robust_training/configs/epsilon_schedule/default.yaml')
+    checkpointing = OmegaConf.load('robust_training/configs/checkpointing/default.yaml')
 
     composed = OmegaConf.create({
         'training': training,
@@ -20,14 +22,18 @@ def main():
         'dataset': dataset,
         'optimizer': optimizer,
         'attacks': attacks,
+        'dist': dist,
+        'lr_scheduler': lr_scheduler,
+        'continuation': continuation,
+        'epsilon_schedule': epsilon_schedule,
+        'checkpointing': checkpointing,
     })
 
-    args = _cfg_to_namespace(composed)
     # basic assertions
-    assert hasattr(args, 'model')
-    assert hasattr(args, 'epochs')
-    assert hasattr(args, 'train_dir')
-    print('Smoke conversion OK. model=', args.model, 'epochs=', args.epochs)
+    assert composed.model.model
+    assert composed.training.epochs
+    assert composed.dataset.train_dir
+    print('Smoke config OK. model=', composed.model.model, 'epochs=', composed.training.epochs)
 
 if __name__ == '__main__':
     main()

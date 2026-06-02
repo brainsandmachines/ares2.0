@@ -1,5 +1,6 @@
 # Optimizer defaults: sgd
 opt: sgd
+lr: null
 opt_eps: null
 opt_betas: null
 momentum: 0.9

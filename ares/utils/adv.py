@@ -285,25 +285,27 @@ def replace_best_reverse(loss, bloss, x, bx):
     return bloss, bx
 
 
-def _build_step(args, orig_input, eps, attack_lr, clamp_min=0.0, clamp_max=1.0):
-    if args.attack_norm == 'l2':
+def _build_step(cfg, orig_input, eps, attack_lr, clamp_min=0.0, clamp_max=1.0):
+    attacks = cfg.attacks
+    if attacks.attack_norm == 'l2':
         return L2Step(eps=eps, orig_input=orig_input, step_size=attack_lr, clamp_min=clamp_min, clamp_max=clamp_max)
-    if args.attack_norm == 'l1':
+    if attacks.attack_norm == 'l1':
         step = L1Step(eps=eps, orig_input=orig_input, step_size=attack_lr, clamp_min=clamp_min, clamp_max=clamp_max)
-        step.l1_step_mode = str(getattr(args, 'l1_step_mode', 'l2_norm')).lower()
-        step.l1_apgd_rho = float(getattr(args, 'l1_apgd_rho', 0.05))
+        step.l1_step_mode = str(attacks.get('l1_step_mode', 'l2_norm')).lower()
+        step.l1_apgd_rho = float(attacks.get('l1_apgd_rho', 0.05))
         return step
-    if args.attack_norm == 'linf':
+    if attacks.attack_norm == 'linf':
         return LinfStep(eps=eps, orig_input=orig_input, step_size=attack_lr, clamp_min=clamp_min, clamp_max=clamp_max)
     raise NotImplementedError
 
 
-def _configure_l1_step_search(args, attack_lr):
+def _configure_l1_step_search(cfg, attack_lr):
+    attacks = cfg.attacks
     return (
-        bool(getattr(args, 'l1_apgd_use_halving', True)),
-        bool(args.attack_norm == 'l1' and str(getattr(args, 'l1_step_mode', 'l2_norm')).lower() == 'l1_apgd'),
+        bool(attacks.get('l1_apgd_use_halving', True)),
+        bool(attacks.attack_norm == 'l1' and str(attacks.get('l1_step_mode', 'l2_norm')).lower() == 'l1_apgd'),
         float(attack_lr),
-        max(float(attack_lr) * float(getattr(args, 'l1_apgd_min_step_scale', 0.01)), 1e-12),
+        max(float(attack_lr) * float(attacks.get('l1_apgd_min_step_scale', 0.01)), 1e-12),
         None,
     )
 
@@ -328,10 +330,10 @@ def _temporarily_disable_param_grads(model):
         for param, requires_grad in zip(params, previous):
             param.requires_grad_(requires_grad)
 
-def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, random_start, use_best=True):
+def adv_generator(cfg, images, target, model, eps, attack_steps, attack_lr, random_start, use_best=True):
     # denorm images to 0-1
-    std_tensor=torch.Tensor(args.std).cuda(non_blocking=True)[None, :, None, None]
-    mean_tensor=torch.Tensor(args.mean).cuda(non_blocking=True)[None, :, None, None]
+    std_tensor=torch.Tensor(cfg.dataset.std).cuda(non_blocking=True)[None, :, None, None]
+    mean_tensor=torch.Tensor(cfg.dataset.mean).cuda(non_blocking=True)[None, :, None, None]
     images=images*std_tensor+mean_tensor
 
     # define perturbation range
@@ -340,14 +342,14 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
     try:
         with _temporarily_disable_param_grads(model):
             orig_input = images.detach().cuda(non_blocking=True)
-            step = _build_step(args, orig_input, eps, attack_lr)
+            step = _build_step(cfg, orig_input, eps, attack_lr)
 
             # define loss function
             attack_criterion = torch.nn.CrossEntropyLoss()
 
             # amp_autocast
             amp_autocast=suppress
-            if args.amp_version == 'native':
+            if cfg.amp_version == 'native':
                 amp_autocast = torch.cuda.amp.autocast
 
             # adv generation
@@ -358,7 +360,7 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
             else:
                 images = orig_input.clone().detach()
 
-            l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(args, attack_lr)
+            l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(cfg, attack_lr)
 
             for _ in range(attack_steps):
                 images = images.clone().detach().requires_grad_(True)
@@ -395,18 +397,18 @@ def adv_generator(args, images, target, model, eps, attack_steps, attack_lr, ran
     return best_x
 
 
-def v1_adv_generator(args, images, target, model, eps, attack_steps, attack_lr, random_start, use_best=True):
+def v1_adv_generator(cfg, images, target, model, eps, attack_steps, attack_lr, random_start, use_best=True):
     prev_training = bool(model.training)
     model.eval()
     attack_model = _unwrap_v1_attack_model(model)
     try:
         with _temporarily_disable_param_grads(model):
             orig_features = attack_model.forward_v1_features(images, apply_noise=True).detach()
-            step = _build_step(args, orig_features, eps, attack_lr, clamp_min=None, clamp_max=None)
+            step = _build_step(cfg, orig_features, eps, attack_lr, clamp_min=None, clamp_max=None)
             attack_criterion = torch.nn.CrossEntropyLoss()
 
             amp_autocast = suppress
-            if args.amp_version == 'native':
+            if cfg.amp_version == 'native':
                 amp_autocast = torch.cuda.amp.autocast
 
             best_loss = None
@@ -416,7 +418,7 @@ def v1_adv_generator(args, images, target, model, eps, attack_steps, attack_lr, 
             else:
                 adv_features = orig_features.clone().detach()
 
-            l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(args, attack_lr)
+            l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(cfg, attack_lr)
 
             for _ in range(attack_steps):
                 adv_features = adv_features.clone().detach().requires_grad_(True)
@@ -444,7 +446,7 @@ def v1_adv_generator(args, images, target, model, eps, attack_steps, attack_lr, 
             model.train()
     return best_x.detach()
 
-def v1_trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, random_start=True, use_best=True):
+def v1_trades_adv_generator(cfg, images, model, eps, attack_steps, attack_lr, random_start=True, use_best=True):
     prev_training = bool(model.training)
     model.eval()
     attack_model = _unwrap_v1_attack_model(model)
@@ -454,7 +456,7 @@ def v1_trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, r
         nat_logits = attack_model.forward_from_v1_features(nat_features)
         nat_probs = torch.softmax(nat_logits, dim=1).detach()
 
-    step = _build_step(args, nat_features, eps, attack_lr, clamp_min=None, clamp_max=None)
+    step = _build_step(cfg, nat_features, eps, attack_lr, clamp_min=None, clamp_max=None)
 
     if random_start:
         adv_features = step.random_perturb(nat_features)
@@ -464,7 +466,7 @@ def v1_trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, r
     best_loss = None
     best_x = None
 
-    l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(args, attack_lr)
+    l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(cfg, attack_lr)
 
     for _ in range(attack_steps):
         adv_features = adv_features.clone().detach().requires_grad_(True)
@@ -503,10 +505,10 @@ def v1_trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, r
         model.train()
     return best_x.detach()
 
-def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, random_start=True, use_best=True):
+def trades_adv_generator(cfg, images, model, eps, attack_steps, attack_lr, random_start=True, use_best=True):
     prev_training = bool(model.training)
-    std = torch.Tensor(args.std).cuda()[None,:,None,None]
-    mean = torch.Tensor(args.mean).cuda()[None,:,None,None]
+    std = torch.Tensor(cfg.dataset.std).cuda()[None,:,None,None]
+    mean = torch.Tensor(cfg.dataset.mean).cuda()[None,:,None,None]
     images = images * std + mean
 
     model.eval()
@@ -516,7 +518,7 @@ def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, rand
         nat_logits = model((x_nat - mean) / std)
         nat_probs = torch.softmax(nat_logits, dim=1).detach()
 
-    step = _build_step(args, x_nat, eps, attack_lr)
+    step = _build_step(cfg, x_nat, eps, attack_lr)
 
     if random_start:
         x_adv = step.random_perturb(x_nat)
@@ -526,7 +528,7 @@ def trades_adv_generator(args, images, model, eps, attack_steps, attack_lr, rand
     best_loss = None
     best_x = None
 
-    l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(args, attack_lr)
+    l1_apgd_use_halving, l1_apgd_mode_active, l1_cur_step, l1_min_step, l1_prev_loss = _configure_l1_step_search(cfg, attack_lr)
 
     for _ in range(attack_steps):
         x_adv.requires_grad_()
