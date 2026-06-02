@@ -71,11 +71,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
     parser.add_argument("--output-csv", default=OUTPUT_CSV)
+    parser.add_argument("--selection-json", default=SELECTION_JSON)
+    parser.add_argument("--run-id", default=RUN_ID)
+    parser.add_argument(
+        "--eps-inputs",
+        default=",".join(str(eps) for eps in EPS_INPUTS),
+        help="Comma-separated epsilon inputs evaluated for every norm.",
+    )
     parser.add_argument("--force", action="store_true", help="Rerun even if this sweep CSV is complete.")
     parser.add_argument("--dry-run", action="store_true", help="Print selection/model info without running attacks.")
     parser.add_argument("--list-models", action="store_true", help="List eligible models and exit.")
     parser.add_argument("--max-settings", type=int, default=None, help="Debug: run only the first N settings.")
     return parser.parse_args()
+
+
+def parse_eps_inputs(raw: str) -> tuple[float, ...]:
+    values = tuple(float(part.strip()) for part in raw.split(",") if part.strip())
+    if not values:
+        raise ValueError("--eps-inputs must contain at least one numeric value")
+    return values
 
 
 def set_seed(seed: int) -> None:
@@ -344,8 +358,11 @@ def aa_norm(norm: str) -> str:
     return {"linf": "Linf", "l2": "L2", "l1": "L1"}[norm]
 
 
-def expected_settings(max_settings: Optional[int] = None) -> list[tuple[str, float, float]]:
-    settings = [(norm, eps_input, eps_eval(norm, eps_input)) for norm in NORMS for eps_input in EPS_INPUTS]
+def expected_settings(
+    max_settings: Optional[int] = None,
+    eps_inputs: Iterable[float] = EPS_INPUTS,
+) -> list[tuple[str, float, float]]:
+    settings = [(norm, eps_input, eps_eval(norm, eps_input)) for norm in NORMS for eps_input in eps_inputs]
     return settings[:max_settings] if max_settings is not None else settings
 
 
@@ -377,15 +394,17 @@ def is_complete_output(
     max_settings: Optional[int],
     checkpoint_path: str | Path | None = None,
     model_name: str | None = None,
+    run_id: str = RUN_ID,
+    eps_inputs: Iterable[float] = EPS_INPUTS,
 ) -> bool:
     if not csv_path.exists() or max_settings is not None:
         return False
-    expected = {(norm, eps_input) for norm, eps_input, _ in expected_settings()}
+    expected = {(norm, eps_input) for norm, eps_input, _ in expected_settings(eps_inputs=eps_inputs)}
     found = set()
     try:
         with csv_path.open("r", newline="") as handle:
             for row in csv.DictReader(handle):
-                if row.get("run_id") != RUN_ID:
+                if row.get("run_id") != run_id:
                     return False
                 if model_name is not None and row.get("model_name") != model_name:
                     continue
@@ -397,9 +416,16 @@ def is_complete_output(
     return found == expected
 
 
-def save_selection(model_dir: Path, selected_indices: list[int], selected_targets: list[int], args: argparse.Namespace) -> None:
+def save_selection(
+    model_dir: Path,
+    selected_indices: list[int],
+    selected_targets: list[int],
+    args: argparse.Namespace,
+    run_id: str,
+    selection_json: str,
+) -> Path:
     payload = {
-        "run_id": RUN_ID,
+        "run_id": run_id,
         "seed": args.seed,
         "batch_size": args.batch_size,
         "num_batches": args.num_batches,
@@ -408,8 +434,10 @@ def save_selection(model_dir: Path, selected_indices: list[int], selected_target
         "selected_labels": selected_targets,
         "selected_targets": selected_targets,
     }
-    with (model_dir / SELECTION_JSON).open("w") as handle:
+    path = model_dir / selection_json
+    with path.open("w") as handle:
         json.dump(payload, handle, indent=2)
+    return path
 
 
 def validate_raw_batch(loader: DataLoader) -> None:
@@ -523,6 +551,9 @@ def run_autoattack_sweep_for_checkpoint(
     num_workers: int = 8,
     seed: int = 0,
     output_csv: str = OUTPUT_CSV,
+    selection_json: str = SELECTION_JSON,
+    run_id: str = RUN_ID,
+    eps_inputs: Iterable[float] = EPS_INPUTS,
     force: bool = False,
     dry_run: bool = False,
     max_settings: Optional[int] = None,
@@ -534,8 +565,16 @@ def run_autoattack_sweep_for_checkpoint(
     val_dir = Path(val_dir)
     logger = logger or setup_logger(model_dir, dry_run)
     csv_path = model_dir / output_csv
+    eps_inputs = tuple(eps_inputs)
 
-    if is_complete_output(csv_path, max_settings, checkpoint_path=checkpoint_path, model_name=model_dir.name) and not force:
+    if is_complete_output(
+        csv_path,
+        max_settings,
+        checkpoint_path=checkpoint_path,
+        model_name=model_dir.name,
+        run_id=run_id,
+        eps_inputs=eps_inputs,
+    ) and not force:
         logger.info("Skipping complete matching sweep CSV: %s", csv_path)
         return None
 
@@ -565,30 +604,30 @@ def run_autoattack_sweep_for_checkpoint(
     epoch_value = epoch if epoch is not None else extract_epoch_from_checkpoint(checkpoint_path)
     if dry_run:
         print(json.dumps({
-            "run_id": RUN_ID,
+            "run_id": run_id,
             "model": model_dir.name,
             "checkpoint": str(checkpoint_path),
             "epoch": epoch_value,
             "num_images": len(selected_indices),
             "unique_classes": len(set(selected_targets)),
             "selected_indices_head": selected_indices[:20],
-            "settings": expected_settings(max_settings),
+            "settings": expected_settings(max_settings, eps_inputs=eps_inputs),
         }, indent=2))
         return None
 
     selection_args = SimpleNamespace(seed=seed, batch_size=batch_size, num_batches=num_batches)
-    save_selection(model_dir, selected_indices, selected_targets, selection_args)
+    selection_path = save_selection(model_dir, selected_indices, selected_targets, selection_args, run_id, selection_json)
     clean_acc = clean_accuracy(model, loader, device_obj)
     logger.info("clean_acc=%.4f", clean_acc * 100.0)
 
     timestamp = dt.datetime.now().isoformat(timespec="seconds")
     out_rows = []
-    for norm, eps_input, epsilon in expected_settings(max_settings):
+    for norm, eps_input, epsilon in expected_settings(max_settings, eps_inputs=eps_inputs):
         set_seed(seed)
         logger.info("running AutoAttack norm=%s epsilon_input=%s epsilon_eval=%s", norm, eps_input, epsilon)
         robust_acc = run_autoattack_setting(model, loader, device_obj, norm, epsilon, seed, logger)
         out_rows.append({
-            "run_id": RUN_ID,
+            "run_id": run_id,
             "timestamp": timestamp,
             "model_name": model_dir.name,
             "checkpoint_path": str(checkpoint_path),
@@ -603,7 +642,7 @@ def run_autoattack_sweep_for_checkpoint(
             "batch_size": batch_size,
             "num_batches": num_batches,
             "seed": seed,
-            "selection_json": str(model_dir / SELECTION_JSON),
+            "selection_json": str(selection_path),
         })
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -615,6 +654,7 @@ def run_autoattack_sweep_for_checkpoint(
 
 def main() -> None:
     args = parse_args()
+    eps_inputs = parse_eps_inputs(args.eps_inputs)
     set_seed(args.seed)
     rows = eligible_models(args.models_root)
 
@@ -652,6 +692,9 @@ def main() -> None:
         num_workers=args.num_workers,
         seed=args.seed,
         output_csv=args.output_csv,
+        selection_json=args.selection_json,
+        run_id=args.run_id,
+        eps_inputs=eps_inputs,
         force=args.force,
         dry_run=args.dry_run,
         max_settings=args.max_settings,
