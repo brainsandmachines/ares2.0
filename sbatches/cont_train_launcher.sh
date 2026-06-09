@@ -133,6 +133,11 @@ parse_cont_train_job() {
         ramp_start_epoch=4
         ramp_end_epoch=20
         fixed_start_epoch=21
+        epochs="${CONT_EPOCHS:-$epochs}"
+        warmup_epochs="${CONT_WARMUP_EPOCHS:-$warmup_epochs}"
+        ramp_start_epoch="${CONT_RAMP_START_EPOCH:-$ramp_start_epoch}"
+        ramp_end_epoch="${CONT_RAMP_END_EPOCH:-$ramp_end_epoch}"
+        fixed_start_epoch="${CONT_FIXED_START_EPOCH:-$fixed_start_epoch}"
     else
         echo "[ERROR] Unsupported continuation protocol: $protocol" >&2
         return 1

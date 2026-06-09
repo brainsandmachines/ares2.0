@@ -13,6 +13,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 import torch
+from omegaconf import OmegaConf
 from timm.models import create_model
 from torch.utils.data import DataLoader
 from torchvision import datasets
@@ -450,29 +451,40 @@ def make_validate_args(
     l1_apgd_min_step_scale: float,
 ) -> SimpleNamespace:
     attack_step = eps_eval / max(attack_steps / 2.0, 1.0)
-    return SimpleNamespace(
-        channels_last=False,
-        distributed=False,
-        world_size=1,
-        advtrain=True,
-        gradnorm=False,
-        attack_step=attack_step,
-        attack_eps=eps_eval,
-        attack_it=attack_steps,
-        attack_restarts=3,
-        attack_use_best=True,
-        attack_random_start=True,
-        attack_norm=norm,
-        disable_attack_step_warmup=True,
-        attack_criterion="regular",
-        l1_step_mode=l1_step_mode,
-        l1_apgd_rho=l1_apgd_rho,
-        l1_apgd_use_halving=l1_apgd_use_halving,
-        l1_apgd_min_step_scale=l1_apgd_min_step_scale,
-        amp_version="",
-        std=eval_cfg.std,
-        mean=eval_cfg.mean,
-        log_interval=50,
+    return OmegaConf.create(
+        {
+            "model": {
+                "channels_last": False,
+            },
+            "dist": {
+                "distributed": False,
+                "world_size": 1,
+            },
+            "dataset": {
+                "std": list(eval_cfg.std),
+                "mean": list(eval_cfg.mean),
+            },
+            "attacks": {
+                "advtrain": True,
+                "gradnorm": False,
+                "attack_domain": "pixel",
+                "attack_step": float(attack_step),
+                "attack_eps": float(eps_eval),
+                "attack_it": int(attack_steps),
+                "attack_restarts": 3,
+                "attack_use_best": True,
+                "attack_random_start": True,
+                "attack_norm": str(norm),
+                "disable_attack_step_warmup": True,
+                "attack_criterion": "regular",
+                "l1_step_mode": str(l1_step_mode),
+                "l1_apgd_rho": float(l1_apgd_rho),
+                "l1_apgd_use_halving": bool(l1_apgd_use_halving),
+                "l1_apgd_min_step_scale": float(l1_apgd_min_step_scale),
+            },
+            "amp_version": "",
+            "log_interval": 50,
+        }
     )
 
 
@@ -526,7 +538,7 @@ def evaluate_pgd_sweep(
                 model=model,
                 loader=eval_loader,
                 loss_fn=torch.nn.CrossEntropyLoss(),
-                args=v_args,
+                cfg=v_args,
                 amp_autocast=suppress,
                 _logger=logger,
                 epoch=1,
@@ -543,9 +555,9 @@ def evaluate_pgd_sweep(
                 "epsilon_input": float(eps_input),
                 "epsilon_eval": float(eps_eval),
                 "attack_steps": int(attack_steps),
-                "attack_step": float(v_args.attack_step),
-                "l1_step_mode": str(v_args.l1_step_mode),
-                "l1_apgd_rho": float(v_args.l1_apgd_rho) if norm == "l1" and str(v_args.l1_step_mode).lower() == "l1_apgd" else "",
+                "attack_step": float(v_args.attacks.attack_step),
+                "l1_step_mode": str(v_args.attacks.l1_step_mode),
+                "l1_apgd_rho": float(v_args.attacks.l1_apgd_rho) if norm == "l1" and str(v_args.attacks.l1_step_mode).lower() == "l1_apgd" else "",
                 "clean_top1": float(clean_metrics["clean_top1"]),
                 "clean_top5": float(clean_metrics["clean_top5"]),
                 "adv_top1": float(metrics["advtop1"]),
