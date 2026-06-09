@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ares Training Job Submitter"
+  short_description: "Translate training intent into verified Slurm launches"
+  default_prompt: "Use $submit-training-jobs to translate my training request into an approval-gated Slurm submission and verify its new log."
