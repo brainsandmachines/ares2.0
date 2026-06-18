@@ -35,12 +35,23 @@ jobname="$SLURM_JOB_NAME"
 
 parse_train_job "$jobname" "$GPU_TOTAL" || exit 1
 
+MODELS_ROOT="${MODELS_ROOT:-/home/ashtomer/projects/ares/results/models}"
+MODEL_NAME_SUFFIX="${MODEL_NAME_SUFFIX:-}"
+model_name="${model_name}${MODEL_NAME_SUFFIX}"
+
 LRB=1.0e-3
 if [[ "$attack_eps" == "8" ]]; then
     LRB=5.0e-4
 elif [[ "$attack_eps" == "16" ]]; then
     LRB=2.5e-4
 fi
+LRB="${TRAIN_LRB:-$LRB}"
+BATCH_SIZE="${TRAIN_BATCH_SIZE:-$BATCH_SIZE}"
+TRAIN_RESUME="${TRAIN_RESUME:-auto}"
+INIT_FROM_MODEL="${INIT_FROM_MODEL:-}"
+INIT_FROM_CKPT="${INIT_FROM_CKPT:-model_best.pth.tar}"
+GRADNORM_OBJECTIVE="${GRADNORM_OBJECTIVE:-}"
+GRADNORM_MAX_REG_TO_CE_RATIO="${GRADNORM_MAX_REG_TO_CE_RATIO:-}"
 
 
 echo "JOB NAME        : $jobname"
@@ -59,6 +70,20 @@ echo "model_name     : $model_name"
 echo "Batch size     : $BATCH_SIZE"
 echo "attack_crit    : $crit"
 echo "lrb            : $LRB"
+echo "models_root    : $MODELS_ROOT"
+echo "train_resume   : $TRAIN_RESUME"
+echo "init_from_model: $INIT_FROM_MODEL"
+echo "init_from_ckpt : $INIT_FROM_CKPT"
+echo "gn_objective   : $GRADNORM_OBJECTIVE"
+echo "gn_max_reg_ce  : $GRADNORM_MAX_REG_TO_CE_RATIO"
+
+RESUME_PATH="${MODELS_ROOT}/${model_name}/last.pth.tar"
+if [[ "$TRAIN_RESUME" == "none" ]]; then
+    RESUME_PATH=""
+elif [[ "$TRAIN_RESUME" != "auto" ]]; then
+    echo "[ERROR] TRAIN_RESUME must be 'auto' or 'none', got: $TRAIN_RESUME" >&2
+    exit 1
+fi
 
 cmd=(
     python -m robust_training.adversarial_training
@@ -69,11 +94,32 @@ cmd=(
     attacks.attack_criterion="$crit"
     attacks.attack_domain="$attack_domain"
     model.experiment_num="$experiment_num"
-    model.resume="/home/ashtomer/projects/ares/results/models/$model_name/last.pth.tar"
+    model.experiment_name="$model_name"
+    model.resume="$RESUME_PATH"
     training.batch_size=$BATCH_SIZE
     lr_scheduler.lrb="$LRB"
-    hydra.run.dir="/home/ashtomer/projects/ares/results/models/$model_name/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+    hydra.run.dir="${MODELS_ROOT}/$model_name/${now:%Y-%m-%d}/${now:%H-%M-%S}"
 )
+
+if [[ -n "$TRAIN_EPOCHS" ]]; then
+    cmd+=("training.epochs=$TRAIN_EPOCHS")
+fi
+
+if [[ -n "$INIT_FROM_MODEL" ]]; then
+    cmd+=(
+        "continuation.enabled=true"
+        "continuation.checkpoint_path=${MODELS_ROOT}/${INIT_FROM_MODEL}/${INIT_FROM_CKPT}"
+        "continuation.use_ema=true"
+    )
+fi
+
+if [[ -n "$GRADNORM_OBJECTIVE" ]]; then
+    cmd+=("attacks.gradnorm_objective=$GRADNORM_OBJECTIVE")
+fi
+
+if [[ -n "$GRADNORM_MAX_REG_TO_CE_RATIO" ]]; then
+    cmd+=("attacks.gradnorm_max_reg_to_ce_ratio=$GRADNORM_MAX_REG_TO_CE_RATIO")
+fi
 
 if [[ "$advtrain" == "true" ]] && {
       [[ "$crit" == "madry" && "$attack_domain" == "pixel" ]] ||
@@ -103,7 +149,7 @@ echo "[INFO] Training exit status: $status"
 if [ "$status" -eq 0 ]; then
     echo "[INFO] Running checkpoint pruning for $model_name"
     python /home/ashtomer/projects/ares/results/models/prune_model_checkpoints.py \
-        "/home/ashtomer/projects/ares/results/models/$model_name" \
+        "${MODELS_ROOT}/$model_name" \
         --keep-n 10
     echo "[INFO] Checkpoint pruning finished with status $?"
 else

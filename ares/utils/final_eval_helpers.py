@@ -15,6 +15,16 @@ def _parse_float_list(value):
     return [float(v) for v in _parse_csv_list(value)]
 
 
+def _parse_checkpoint_kinds(value):
+    kinds = [v.lower() for v in _parse_csv_list(value)]
+    kinds = kinds or ["best"]
+    allowed = {"best", "last", "advbest"}
+    unknown = [kind for kind in kinds if kind not in allowed]
+    if unknown:
+        raise ValueError(f"Unsupported final_eval_aa_checkpoint_kinds: {', '.join(unknown)}")
+    return kinds
+
+
 def _to_abs_norm(path):
     return os.path.normpath(os.path.abspath(path))
 
@@ -197,7 +207,9 @@ def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
     try:
         aa_bs = cfg.get("final_eval_aa_batch_size", None) or 64
         aa_num_batches = cfg.get("final_eval_aa_max_batches", None) or 2
+        aa_eps_inputs = _parse_float_list(cfg.get("final_eval_aa_eps_inputs", "1,2,4,6,8,12,16"))
         aa_csv_name = cfg.get("final_eval_aa_completion_csv", "autoattack_sweep_results.csv")
+        aa_checkpoint_kinds = _parse_checkpoint_kinds(cfg.get("final_eval_aa_checkpoint_kinds", "best,last,advbest"))
         pgd_bs = cfg.get("final_eval_pgd_batch_size", None) or cfg.training.batch_size
         run_aa_sweep = bool(cfg.get("final_eval_autoattack", False))
         run_pgd = bool(cfg.get("final_eval_pgd", False))
@@ -212,10 +224,16 @@ def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
             if cfg.get("final_eval_aa_norm", None) is not None or cfg.get("final_eval_aa_eps", None) is not None:
                 _logger.warning(
                     "final_eval_aa_norm/final_eval_aa_eps are ignored for final AutoAttack sweep; "
-                    "running linf,l2,l1 x eps 1,2,4,8,16."
+                    "running linf,l2,l1 x eps %s.",
+                    ",".join(str(eps).rstrip("0").rstrip(".") for eps in aa_eps_inputs),
                 )
             try:
-                from data_analysis.autoattack_array_eval import is_complete_output, run_autoattack_sweep_for_checkpoint
+                from data_analysis.autoattack_array_eval import (
+                    find_checkpoint_for_kind,
+                    is_complete_output,
+                    output_csv_for_checkpoint_kind,
+                    run_autoattack_sweep_for_checkpoint,
+                )
 
                 aa_runner = run_autoattack_sweep_for_checkpoint
             except Exception as exc:
@@ -226,14 +244,26 @@ def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
         if cfg.get("final_eval_skip_if_complete", True):
             if run_pgd and _is_pgd_eval_complete(cfg, out_dir, ckpt_path, _logger):
                 run_pgd = False
-            if run_aa_sweep and is_complete_output(
-                Path(output_dir) / aa_csv_name,
-                max_settings=None,
-                checkpoint_path=ckpt_path,
-                model_name=os.path.basename(output_dir),
-            ):
-                _logger.info("AutoAttack sweep already complete for %s. Skipping AutoAttack.", ckpt_path)
-                run_aa_sweep = False
+            if run_aa_sweep:
+                pending_kinds = []
+                for checkpoint_kind in aa_checkpoint_kinds:
+                    kind_ckpt = find_checkpoint_for_kind(Path(output_dir), checkpoint_kind)
+                    if kind_ckpt is None:
+                        _logger.info("AutoAttack checkpoint kind=%s missing under %s. Skipping.", checkpoint_kind, output_dir)
+                        continue
+                    kind_csv_name = output_csv_for_checkpoint_kind(aa_csv_name, checkpoint_kind)
+                    if is_complete_output(
+                        Path(output_dir) / kind_csv_name,
+                        max_settings=None,
+                        checkpoint_path=kind_ckpt,
+                        model_name=os.path.basename(output_dir),
+                        eps_inputs=aa_eps_inputs,
+                    ):
+                        _logger.info("AutoAttack sweep already complete for %s. Skipping AutoAttack.", kind_ckpt)
+                        continue
+                    pending_kinds.append(checkpoint_kind)
+                aa_checkpoint_kinds = pending_kinds
+                run_aa_sweep = bool(aa_checkpoint_kinds)
 
         if not run_aa_sweep and not run_pgd:
             if aa_import_failed:
@@ -277,18 +307,26 @@ def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
                 )
 
         if run_aa_sweep and aa_runner is not None:
-            aa_runner(
-                checkpoint_path=ckpt_path,
-                model_dir=output_dir,
-                val_dir=val_dir,
-                device=device,
-                batch_size=int(aa_bs),
-                num_batches=int(aa_num_batches),
-                num_workers=int(cfg.get("final_eval_num_workers", 8)),
-                seed=int(cfg.seed or 0),
-                output_csv=aa_csv_name,
-                force=not bool(cfg.get("final_eval_skip_if_complete", True)),
-                logger=_logger,
-            )
+            for checkpoint_kind in aa_checkpoint_kinds:
+                kind_ckpt = find_checkpoint_for_kind(Path(output_dir), checkpoint_kind)
+                if kind_ckpt is None:
+                    _logger.info("AutoAttack checkpoint kind=%s missing under %s. Skipping.", checkpoint_kind, output_dir)
+                    continue
+                kind_csv_name = output_csv_for_checkpoint_kind(aa_csv_name, checkpoint_kind)
+                aa_runner(
+                    checkpoint_path=kind_ckpt,
+                    model_dir=output_dir,
+                    val_dir=val_dir,
+                    device=device,
+                    batch_size=int(aa_bs),
+                    num_batches=int(aa_num_batches),
+                    num_workers=int(cfg.get("final_eval_num_workers", 8)),
+                    seed=int(cfg.seed or 0),
+                    output_csv=kind_csv_name,
+                    checkpoint_kind=checkpoint_kind,
+                    eps_inputs=aa_eps_inputs,
+                    force=not bool(cfg.get("final_eval_skip_if_complete", True)),
+                    logger=_logger,
+                )
     except Exception as exc:
         _logger.exception("Final eval failed: %s", exc)
