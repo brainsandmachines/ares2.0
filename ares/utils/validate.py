@@ -11,7 +11,7 @@ from timm.utils import  reduce_tensor
 from ares.utils.adv import adv_generator, v1_adv_generator
 from ares.utils.metrics import AverageMeter, accuracy
 
-def validate(model, loader, loss_fn, cfg, amp_autocast=None, log_suffix='', _logger=None, epoch=None):
+def validate(model, loader, loss_fn, cfg, amp_autocast=None, log_suffix='', _logger=None, epoch=None, runtime_probe=None):
     batch_time_m = AverageMeter()
     losses_m = AverageMeter()
     top1_m = AverageMeter()
@@ -28,6 +28,8 @@ def validate(model, loader, loss_fn, cfg, amp_autocast=None, log_suffix='', _log
     end = time.time()
     last_idx = len(loader) - 1
     for batch_idx, (input, target) in enumerate(loader):
+        if runtime_probe is not None:
+            runtime_probe.maybe_start(batch_idx)
         # read eval input
         last_batch = batch_idx == last_idx
         input = input.cuda(non_blocking=True)
@@ -158,6 +160,9 @@ def validate(model, loader, loss_fn, cfg, amp_autocast=None, log_suffix='', _log
 
         batch_time_m.update(time.time() - end)
         end = time.time()
+
+        if runtime_probe is not None and runtime_probe.maybe_stop(batch_idx):
+            break
 
         if last_batch or batch_idx % cfg.log_interval == 0:
             log_name = 'Test' + log_suffix

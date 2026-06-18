@@ -23,6 +23,7 @@ from ares.utils.gradnorm import DBP
 from ares.utils.dataset import build_dataset
 from ares.utils.train_loop import train_one_epoch
 from ares.utils.validate import validate
+from ares.utils.runtime_probe import PhaseTimer, append_runtime_row
 from ares.utils.final_eval_helpers import _maybe_run_final_eval
 from ares.utils.epsilon_schedule import build_epsilon_schedule, normalize_epsilon
 from ares.utils.continuation import (
@@ -336,10 +337,15 @@ def main(cfg: DictConfig):
                 loader_train, loader_eval = build_dataset(cfg, num_aug_splits)
                 already_canceled_mixup = True
         # one epoch training
+        if cfg.runtime_probe:
+            train_pt = PhaseTimer(cfg.runtime_probe_warmup_batches, cfg.runtime_probe_measure_batches, len(loader_train))
+        else:
+            train_pt = None
         train_metrics = train_one_epoch(
             epoch, model, loader_train, optimizer, train_loss_fn, cfg,reg_loss_fn=reg_loss_fn,
             lr_scheduler=lr_scheduler, saver=saver, amp_autocast=amp_autocast,
-            loss_scaler=loss_scaler, model_ema=model_ema, _logger=_logger,gradnorm_start_epoch=gradnorm_start_epoch)
+            loss_scaler=loss_scaler, model_ema=model_ema, _logger=_logger,gradnorm_start_epoch=gradnorm_start_epoch,
+            runtime_probe=train_pt)
         if epsilon_schedule is not None:
             train_metrics['epsilon'] = float(train_epsilon_user)
             train_metrics['epsilon_internal'] = float(train_epsilon_internal)
@@ -353,7 +359,11 @@ def main(cfg: DictConfig):
             distribute_bn(model, cfg.dist.world_size, cfg.model.dist_bn == 'reduce')
 
         # calculate evaluation metric
-        eval_metrics = validate(model, loader_eval, validate_loss_fn, cfg, amp_autocast=amp_autocast, _logger=_logger, epoch=epoch)
+        if cfg.runtime_probe:
+            eval_pt = PhaseTimer(cfg.runtime_probe_warmup_batches, cfg.runtime_probe_measure_batches, len(loader_eval))
+        else:
+            eval_pt = None
+        eval_metrics = validate(model, loader_eval, validate_loss_fn, cfg, amp_autocast=amp_autocast, _logger=_logger, epoch=epoch, runtime_probe=eval_pt)
         if epsilon_schedule is not None:
             eval_metrics['epsilon'] = float(target_epsilon_user)
             eval_metrics['epsilon_internal'] = float(target_epsilon_internal)
@@ -393,6 +403,27 @@ def main(cfg: DictConfig):
                 epoch, train_metrics, eval_metrics, os.path.join(output_dir, 'summary.csv'),lr=optimizer.param_groups[0]['lr'],
                 write_header=best_metric is None)
             
+        # runtime probe: record timing row and skip checkpointing (timing-only run)
+        if cfg.runtime_probe:
+            if cfg.dist.rank == 0:
+                train_runtime = train_pt.full_estimate()
+                eval_runtime = eval_pt.full_estimate()
+                append_runtime_row(cfg.runtime_probe_csv, {
+                    'protocol': cfg.runtime_probe_protocol,
+                    'arch': cfg.runtime_probe_arch,
+                    'bsz': cfg.training.batch_size,
+                    'optimizer': cfg.optimizer.opt,
+                    'compile': bool(cfg.model.compile_model),
+                    'fullepochruntime': round(train_runtime + eval_runtime, 3),
+                    'train_runtime': round(train_runtime, 3),
+                    'eval_runtime': round(eval_runtime, 3),
+                })
+                _logger.info(
+                    f"[runtime_probe] {cfg.runtime_probe_protocol}/{cfg.runtime_probe_arch} "
+                    f"train={train_runtime:.1f}s eval={eval_runtime:.1f}s "
+                    f"full={train_runtime + eval_runtime:.1f}s -> {cfg.runtime_probe_csv}")
+            continue
+
         # save best checkpoint
         if saver is not None:
             best_metric, best_epoch = saver.save_checkpoint(epoch, eval_metrics[eval_metric])

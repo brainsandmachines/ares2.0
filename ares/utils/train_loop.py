@@ -17,7 +17,8 @@ from ares.utils.gradnorm import compute_gradnorm_alpha
 def train_one_epoch(
         epoch, model, loader, optimizer, loss_fn, cfg,
         reg_loss_fn=None, lr_scheduler=None, saver=None, amp_autocast=None,
-        loss_scaler=None, model_ema=None, _logger=None,gradnorm_start_epoch=0):
+        loss_scaler=None, model_ema=None, _logger=None,gradnorm_start_epoch=0,
+        runtime_probe=None):
     
     # statistical variables
     second_order = hasattr(optimizer, 'is_second_order') and optimizer.is_second_order
@@ -54,6 +55,8 @@ def train_one_epoch(
         raise ValueError(f"Unsupported attack_domain: {attack_domain}")
 
     for batch_idx, (input, target) in enumerate(loader):
+        if runtime_probe is not None:
+            runtime_probe.maybe_start(batch_idx)
         # debugging NaN/Inf in input
         if not torch.isfinite(input).all():
             raise ValueError("Input contains NaN or Inf values")
@@ -237,6 +240,9 @@ def train_one_epoch(
         # update lr scheduler
         if lr_scheduler is not None:
             lr_scheduler.step_update(num_updates=num_updates, metric=losses_m.avg)
+
+        if runtime_probe is not None and runtime_probe.maybe_stop(batch_idx):
+            break
 
         end = time.time()
         # end for
