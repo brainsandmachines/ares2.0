@@ -19,8 +19,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODELS_ROOT = PROJECT_ROOT / "results" / "models"
 OUTPUT_DIR = PROJECT_ROOT / "data_analysis" / "plots" / "AutoAttack"
 CSV_NAME = "autoattack_sweep_results.csv"
+CHECKPOINT_KINDS = ("best", "last", "advbest")
+CHECKPOINT_KIND_SUFFIX = {"best": "", "last": "last", "advbest": "advbest"}
 ATTACK_NORMS = ["l1", "l2", "linf"]
-EVAL_EPS_ORDER = [0, 1, 2, 4, 8, 16]
+EVAL_EPS_ORDER = [0, 1, 2, 4, 6, 8, 12, 16]
 
 TITLE_TEMPLATE = "{plot_name}"
 COLORBAR_LABEL = "Accuracy (%)"
@@ -53,6 +55,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--models-root", type=Path, default=MODELS_ROOT, help="Root directory containing model folders.")
     parser.add_argument("--out-dir", type=Path, default=OUTPUT_DIR, help="Output directory for plot files.")
+    parser.add_argument(
+        "--checkpoint-kind",
+        choices=["best", "last", "advbest", "all"],
+        default="best",
+        help="Checkpoint CSV to plot: best, last, advbest, or all available kinds.",
+    )
+    parser.add_argument(
+        "--eval-eps-order",
+        default=",".join(str(eps) for eps in EVAL_EPS_ORDER),
+        help="Comma-separated epsilon_input values to show on the y-axis, including 0 for clean accuracy.",
+    )
     parser.add_argument("--svg", action="store_true", help="Also save an SVG version of the plot.")
     parser.add_argument("--show", action="store_true", help="Show the plot interactively after saving.")
     args = parser.parse_args()
@@ -64,6 +77,9 @@ def parse_args() -> argparse.Namespace:
     args.models = [model.strip() for model in args.models if model.strip()]
     if not args.models:
         parser.error("--models must include at least one non-empty model name.")
+    args.eval_eps_order = [float(part.strip()) for part in args.eval_eps_order.split(",") if part.strip()]
+    if not args.eval_eps_order:
+        parser.error("--eval-eps-order must include at least one epsilon.")
 
     return args
 
@@ -74,13 +90,41 @@ def model_name_to_label(model_name: str) -> str:
     return label.replace("_", "-")
 
 
+def csv_name_for_checkpoint_kind(checkpoint_kind: str) -> str:
+    suffix = CHECKPOINT_KIND_SUFFIX[checkpoint_kind]
+    if not suffix:
+        return CSV_NAME
+    path = Path(CSV_NAME)
+    return f"{path.stem}_{suffix}{path.suffix}"
+
+
+def model_entries(models_root: Path, models: list[str], checkpoint_kind: str) -> list[tuple[str, str, str]]:
+    entries = []
+    if checkpoint_kind == "all":
+        for model_name in models:
+            base_label = model_name_to_label(model_name)
+            for kind in CHECKPOINT_KINDS:
+                csv_name = csv_name_for_checkpoint_kind(kind)
+                if (models_root / model_name / csv_name).exists():
+                    entries.append((model_name, f"{base_label}-{kind}", csv_name))
+        if not entries:
+            raise FileNotFoundError("No AutoAttack CSVs found for --checkpoint-kind all.")
+        return entries
+
+    csv_name = csv_name_for_checkpoint_kind(checkpoint_kind)
+    missing = [model for model in models if not (models_root / model / csv_name).exists()]
+    if missing:
+        raise FileNotFoundError(f"Missing {checkpoint_kind} AutoAttack CSV {csv_name} for: {', '.join(missing)}")
+    return [(model_name, model_name_to_label(model_name), csv_name) for model_name in models]
+
+
 def require_columns(df: pd.DataFrame, csv_path: Path, columns: Iterable[str]) -> None:
     missing = [col for col in columns if col not in df.columns]
     if missing:
         raise ValueError(f"{csv_path} is missing required columns: {', '.join(missing)}")
 
 
-def accuracy_for_eval_eps(df_norm: pd.DataFrame, csv_path: Path, attack_norm: str, eval_eps: int) -> float:
+def accuracy_for_eval_eps(df_norm: pd.DataFrame, csv_path: Path, attack_norm: str, eval_eps: float) -> float:
 
     if eval_eps == 0:
         clean_values = pd.to_numeric(df_norm["clean_acc"], errors="coerce").dropna().unique()
@@ -98,14 +142,18 @@ def accuracy_for_eval_eps(df_norm: pd.DataFrame, csv_path: Path, attack_norm: st
     return float(robust_values.mean())
 
 
-def load_autoattack_results(models_root: Path, models: list[str]) -> dict[str, np.ndarray]:
+def load_autoattack_results(
+    models_root: Path,
+    entries: list[tuple[str, str, str]],
+    eval_eps_order: list[float],
+) -> dict[str, np.ndarray]:
     
     data_by_norm = {
-        attack_norm: np.full((len(EVAL_EPS_ORDER), len(models)), np.nan, dtype=float) for attack_norm in ATTACK_NORMS
+        attack_norm: np.full((len(eval_eps_order), len(entries)), np.nan, dtype=float) for attack_norm in ATTACK_NORMS
     }
 
-    for col_idx, model_name in enumerate(models):
-        csv_path = models_root / model_name / CSV_NAME
+    for col_idx, (model_name, _label, csv_name) in enumerate(entries):
+        csv_path = models_root / model_name / csv_name
         if not csv_path.exists():
             raise FileNotFoundError(f"Missing AutoAttack sweep CSV for model {model_name!r}: {csv_path}")
 
@@ -118,7 +166,7 @@ def load_autoattack_results(models_root: Path, models: list[str]) -> dict[str, n
             if df_norm.empty:
                 raise ValueError(f"{csv_path} has no rows with attack_norm={attack_norm!r} for model {model_name!r}.")
 
-            for row_idx, eval_eps in enumerate(EVAL_EPS_ORDER):
+            for row_idx, eval_eps in enumerate(eval_eps_order):
                 data_by_norm[attack_norm][row_idx, col_idx] = accuracy_for_eval_eps(
                     df_norm,
                     csv_path,
@@ -129,17 +177,22 @@ def load_autoattack_results(models_root: Path, models: list[str]) -> dict[str, n
     return data_by_norm
 
 
-def ytick_labels_for_norm(attack_norm: str) -> list[str]:
+def trim_float(value: float) -> str:
+    return f"{float(value):g}"
+
+
+def ytick_labels_for_norm(attack_norm: str, eval_eps_order: list[float]) -> list[str]:
     if attack_norm == "l1":
-        return [str(eps * 255 / 2).rstrip("0").rstrip(".") for eps in EVAL_EPS_ORDER]
+        return [trim_float(eps * 255 / 2) for eps in eval_eps_order]
     if attack_norm == "linf":
-        return ["0" if eps == 0 else f"{eps}/255" for eps in EVAL_EPS_ORDER]
-    return [str(eps) for eps in EVAL_EPS_ORDER]
+        return ["0" if eps == 0 else f"{trim_float(eps)}/255" for eps in eval_eps_order]
+    return [trim_float(eps) for eps in eval_eps_order]
 
 
 def plot_comparation(
     data_by_norm: dict[str, np.ndarray],
     model_labels: list[str],
+    eval_eps_order: list[float],
     plot_name: str,
     out_png: Path,
     out_svg: Path | None = None,
@@ -161,12 +214,12 @@ def plot_comparation(
         im = ax.imshow(data, origin="lower", aspect="auto", cmap=CMAP, vmin=VMIN, vmax=VMAX)
         images.append(im)
 
-        ax.set_yticks(range(len(EVAL_EPS_ORDER)))
-        ax.set_yticklabels(ytick_labels_for_norm(attack_norm), fontsize=TICK_FONTSIZE)
+        ax.set_yticks(range(len(eval_eps_order)))
+        ax.set_yticklabels(ytick_labels_for_norm(attack_norm, eval_eps_order), fontsize=TICK_FONTSIZE)
         ax.set_ylabel(f"{attack_norm} eval eps", fontsize=LABEL_FONTSIZE)
 
         ax.set_xticks(np.arange(-0.5, len(model_labels), 1), minor=True)
-        ax.set_yticks(np.arange(-0.5, len(EVAL_EPS_ORDER), 1), minor=True)
+        ax.set_yticks(np.arange(-0.5, len(eval_eps_order), 1), minor=True)
         ax.grid(which="minor", color=GRID_COLOR, linestyle="-", linewidth=GRID_LINEWIDTH)
         ax.tick_params(which="minor", bottom=False, left=False)
 
@@ -206,9 +259,10 @@ def main() -> None:
     args = parse_args()
     out_png = args.out_dir / f"autoattack_eval_comparation_{args.plot_name}.png"
     out_svg = args.out_dir / f"autoattack_eval_comparation_{args.plot_name}.svg" if args.svg else None
-    data_by_norm = load_autoattack_results(args.models_root, args.models)
-    model_labels = [model_name_to_label(model_name) for model_name in args.models]
-    plot_comparation(data_by_norm, model_labels, args.plot_name, out_png, out_svg=out_svg, show=args.show)
+    entries = model_entries(args.models_root, args.models, args.checkpoint_kind)
+    data_by_norm = load_autoattack_results(args.models_root, entries, args.eval_eps_order)
+    model_labels = [label for _model_name, label, _csv_name in entries]
+    plot_comparation(data_by_norm, model_labels, args.eval_eps_order, args.plot_name, out_png, out_svg=out_svg, show=args.show)
     print(f"Saved AutoAttack comparation plot to {out_png}")
     if out_svg is not None:
         print(f"Saved AutoAttack comparation plot to {out_svg}")

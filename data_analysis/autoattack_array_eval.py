@@ -31,7 +31,7 @@ DEFAULT_MODELS_ROOT = Path("/home/ashtomer/projects/ares/results/models")
 DEFAULT_VAL_DIR = Path("/groups/golan_neurogroup/bml_group/datasets/imagenet/val")
 OUTPUT_CSV = "autoattack_sweep_results.csv"
 SELECTION_JSON = "autoattack_sweep_selection.json"
-RUN_ID = "autoattack_sweep_v1_raw224_seed0_8x16_linf-l2-l1_eps1-2-4-8-16"
+RUN_ID = "autoattack_sweep_v1_raw224_seed0_8x128_linf-l2-l1_eps1-2-4-6-8-12-16"
 EPOCH_KEYS = ("epoch", "train_epoch", "last_epoch", "current_epoch")
 CKPT_CANDIDATES = (
     "model_best.pth.tar",
@@ -40,8 +40,18 @@ CKPT_CANDIDATES = (
     "last.pth.tar",
     "last.pth",
 )
+CHECKPOINT_KIND_CANDIDATES = {
+    "best": ("model_best.pth.tar", "model_best.pth"),
+    "last": ("last.pth.tar", "last.pth", "last.pth.model"),
+    "advbest": ("model_best_adv.pth.tar",),
+}
+CHECKPOINT_KIND_SUFFIX = {
+    "best": "",
+    "last": "last",
+    "advbest": "advbest",
+}
 NORMS = ("linf", "l2", "l1")
-EPS_INPUTS = (1.0, 2.0, 4.0, 8.0, 16.0)
+EPS_INPUTS = (1.0, 2.0, 4.0, 6.0, 8.0, 12.0, 16.0)
 LINF_DIVISOR = 255.0
 L1_MULTIPLIER = 255.0 / 2.0
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
@@ -74,6 +84,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--selection-json", default=SELECTION_JSON)
     parser.add_argument("--run-id", default=RUN_ID)
     parser.add_argument(
+        "--checkpoint-kinds",
+        default="best",
+        help="Comma-separated checkpoint kinds to evaluate: best,last,advbest.",
+    )
+    parser.add_argument(
         "--eps-inputs",
         default=",".join(str(eps) for eps in EPS_INPUTS),
         help="Comma-separated epsilon inputs evaluated for every norm.",
@@ -81,6 +96,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force", action="store_true", help="Rerun even if this sweep CSV is complete.")
     parser.add_argument("--dry-run", action="store_true", help="Print selection/model info without running attacks.")
     parser.add_argument("--list-models", action="store_true", help="List eligible models and exit.")
+    parser.add_argument(
+        "--existing-csv-only",
+        action="store_true",
+        help="Select model folders that already contain the output CSV, without requiring epoch >= 199.",
+    )
     parser.add_argument("--max-settings", type=int, default=None, help="Debug: run only the first N settings.")
     return parser.parse_args()
 
@@ -90,6 +110,24 @@ def parse_eps_inputs(raw: str) -> tuple[float, ...]:
     if not values:
         raise ValueError("--eps-inputs must contain at least one numeric value")
     return values
+
+
+def parse_checkpoint_kinds(raw: str) -> tuple[str, ...]:
+    values = tuple(part.strip().lower() for part in raw.split(",") if part.strip())
+    if not values:
+        raise ValueError("--checkpoint-kinds must contain at least one kind")
+    unknown = [kind for kind in values if kind not in CHECKPOINT_KIND_CANDIDATES]
+    if unknown:
+        raise ValueError(f"Unsupported checkpoint kind(s): {', '.join(unknown)}")
+    return values
+
+
+def output_csv_for_checkpoint_kind(output_csv: str, checkpoint_kind: str) -> str:
+    suffix = CHECKPOINT_KIND_SUFFIX[checkpoint_kind]
+    if not suffix:
+        return output_csv
+    path = Path(output_csv)
+    return f"{path.stem}_{suffix}{path.suffix}"
 
 
 def set_seed(seed: int) -> None:
@@ -132,6 +170,14 @@ def model_dirs(root: Path) -> list[Path]:
 
 def find_checkpoint(model_dir: Path) -> Optional[Path]:
     for name in CKPT_CANDIDATES:
+        path = model_dir / name
+        if path.exists():
+            return path
+    return None
+
+
+def find_checkpoint_for_kind(model_dir: Path, checkpoint_kind: str) -> Optional[Path]:
+    for name in CHECKPOINT_KIND_CANDIDATES[checkpoint_kind]:
         path = model_dir / name
         if path.exists():
             return path
@@ -184,12 +230,27 @@ def extract_epoch_from_summary(model_dir: Path) -> Optional[int]:
 def eligible_models(root: Path) -> list[dict]:
     rows = []
     for model_dir in model_dirs(root):
-        ckpt = find_checkpoint(model_dir)
+        ckpt = find_checkpoint_for_kind(model_dir, "best")
         epoch = extract_epoch_from_summary(model_dir)
         if epoch is None and ckpt is not None:
             epoch = extract_epoch_from_checkpoint(ckpt)
         if ckpt is not None and epoch is not None and epoch >= 199:
             rows.append({"model_dir": model_dir, "checkpoint": ckpt, "epoch": epoch})
+    return rows
+
+
+def existing_csv_models(root: Path, output_csv: str) -> list[dict]:
+    rows = []
+    for model_dir in model_dirs(root):
+        if not (model_dir / output_csv).exists():
+            continue
+        ckpt = find_checkpoint_for_kind(model_dir, "best")
+        if ckpt is None:
+            continue
+        epoch = extract_epoch_from_summary(model_dir)
+        if epoch is None:
+            epoch = extract_epoch_from_checkpoint(ckpt)
+        rows.append({"model_dir": model_dir, "checkpoint": ckpt, "epoch": epoch})
     return rows
 
 
@@ -328,10 +389,16 @@ def build_selected_loader(
     num_batches: int,
     num_workers: int,
     seed: int,
+    selected_indices: Optional[list[int]] = None,
 ) -> tuple[DataLoader, list[int], list[int]]:
     ds = build_raw_dataset(val_dir, eval_cfg)
-    total_images = batch_size * num_batches
-    selected_indices = select_balanced_indices(ds, total_images, seed)
+    if selected_indices is None:
+        total_images = batch_size * num_batches
+        selected_indices = select_balanced_indices(ds, total_images, seed)
+    else:
+        bad_indices = [idx for idx in selected_indices if idx < 0 or idx >= len(ds)]
+        if bad_indices:
+            raise ValueError(f"Selection contains {len(bad_indices)} out-of-range indices for {ds.root}")
     selected_targets = [int(ds.samples[idx][1]) for idx in selected_indices]
     loader = DataLoader(
         Subset(ds, selected_indices),
@@ -342,6 +409,53 @@ def build_selected_loader(
         drop_last=False,
     )
     return loader, selected_indices, selected_targets
+
+
+def _json_selection_candidates(model_dir: Path, selection_json: str | Path) -> list[Path]:
+    raw_path = Path(selection_json)
+    candidates = []
+    if raw_path.is_absolute():
+        candidates.append(raw_path)
+    else:
+        candidates.append(PROJECT_ROOT / raw_path)
+        candidates.append(model_dir / raw_path.name)
+        candidates.append(model_dir / raw_path)
+
+    deduped = []
+    seen = set()
+    for path in candidates:
+        key = path.resolve(strict=False)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(path)
+    return deduped
+
+
+def load_existing_selection(model_dir: Path, csv_path: Path, selection_json: str) -> Optional[tuple[list[int], Path]]:
+    selection_refs: list[str] = []
+    if csv_path.exists():
+        try:
+            with csv_path.open("r", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    raw = str(row.get("selection_json") or "").strip()
+                    if raw and raw not in selection_refs:
+                        selection_refs.append(raw)
+        except Exception:
+            selection_refs = []
+    selection_refs.append(selection_json)
+
+    for ref in selection_refs:
+        for path in _json_selection_candidates(model_dir, ref):
+            if not path.exists():
+                continue
+            with path.open("r") as handle:
+                payload = json.load(handle)
+            indices = payload.get("selected_indices")
+            if not isinstance(indices, list):
+                continue
+            return [int(idx) for idx in indices], path
+    return None
 
 
 def eps_eval(norm: str, eps_input: float) -> float:
@@ -364,6 +478,31 @@ def expected_settings(
 ) -> list[tuple[str, float, float]]:
     settings = [(norm, eps_input, eps_eval(norm, eps_input)) for norm in NORMS for eps_input in eps_inputs]
     return settings[:max_settings] if max_settings is not None else settings
+
+
+def _setting_key(norm: str | None, eps_input: str | float | None) -> tuple[str, float]:
+    return str(norm or "").strip().lower(), round(float(eps_input), 10)
+
+
+def observed_settings(
+    csv_path: Path,
+    checkpoint_path: str | Path | None = None,
+    model_name: str | None = None,
+) -> set[tuple[str, float]]:
+    found = set()
+    if not csv_path.exists():
+        return found
+    with csv_path.open("r", newline="") as handle:
+        for row in csv.DictReader(handle):
+            if model_name is not None and row.get("model_name") != model_name:
+                continue
+            if not _checkpoint_matches(row.get("checkpoint_path"), checkpoint_path):
+                continue
+            try:
+                found.add(_setting_key(row.get("attack_norm"), row.get("epsilon_input")))
+            except (TypeError, ValueError):
+                continue
+    return found
 
 
 def _to_abs_norm(path: str | Path) -> str:
@@ -399,21 +538,12 @@ def is_complete_output(
 ) -> bool:
     if not csv_path.exists() or max_settings is not None:
         return False
-    expected = {(norm, eps_input) for norm, eps_input, _ in expected_settings(eps_inputs=eps_inputs)}
-    found = set()
+    expected = {_setting_key(norm, eps_input) for norm, eps_input, _ in expected_settings(eps_inputs=eps_inputs)}
     try:
-        with csv_path.open("r", newline="") as handle:
-            for row in csv.DictReader(handle):
-                if row.get("run_id") != run_id:
-                    return False
-                if model_name is not None and row.get("model_name") != model_name:
-                    continue
-                if not _checkpoint_matches(row.get("checkpoint_path"), checkpoint_path):
-                    continue
-                found.add((row.get("attack_norm"), float(row.get("epsilon_input", "nan"))))
+        found = observed_settings(csv_path, checkpoint_path=checkpoint_path, model_name=model_name)
     except Exception:
         return False
-    return found == expected
+    return expected.issubset(found)
 
 
 def save_selection(
@@ -507,11 +637,12 @@ def run_autoattack_with_fallback(adversary: AutoAttack, x: torch.Tensor, y: torc
         return torch.cat([adv1, adv2], dim=0)
 
 
-def write_rows(csv_path: Path, rows: list[dict]) -> None:
+def write_rows(csv_path: Path, rows: list[dict], replace_settings: Optional[set[tuple[str, float]]] = None) -> None:
     fieldnames = [
         "run_id",
         "timestamp",
         "model_name",
+        "checkpoint_kind",
         "checkpoint_path",
         "state_dict_used",
         "epoch",
@@ -526,10 +657,35 @@ def write_rows(csv_path: Path, rows: list[dict]) -> None:
         "seed",
         "selection_json",
     ]
+    existing_rows = []
+    if csv_path.exists():
+        with csv_path.open("r", newline="") as handle:
+            reader = csv.DictReader(handle)
+            if reader.fieldnames:
+                fieldnames = list(dict.fromkeys([*reader.fieldnames, *fieldnames]))
+            existing_rows = list(reader)
+
+    for row in rows:
+        fieldnames = list(dict.fromkeys([*fieldnames, *row.keys()]))
+
+    new_keys = {_setting_key(row.get("attack_norm"), row.get("epsilon_input")) for row in rows}
+    keys_to_replace = replace_settings if replace_settings is not None else new_keys
+    merged_rows = []
+    for row in existing_rows:
+        try:
+            key = _setting_key(row.get("attack_norm"), row.get("epsilon_input"))
+        except (TypeError, ValueError):
+            merged_rows.append(row)
+            continue
+        if key in keys_to_replace:
+            continue
+        merged_rows.append(row)
+    merged_rows.extend(rows)
+
     with csv_path.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(merged_rows)
 
 
 def selected_array_index(args: argparse.Namespace) -> int:
@@ -553,6 +709,7 @@ def run_autoattack_sweep_for_checkpoint(
     output_csv: str = OUTPUT_CSV,
     selection_json: str = SELECTION_JSON,
     run_id: str = RUN_ID,
+    checkpoint_kind: str = "best",
     eps_inputs: Iterable[float] = EPS_INPUTS,
     force: bool = False,
     dry_run: bool = False,
@@ -566,6 +723,8 @@ def run_autoattack_sweep_for_checkpoint(
     logger = logger or setup_logger(model_dir, dry_run)
     csv_path = model_dir / output_csv
     eps_inputs = tuple(eps_inputs)
+    settings = expected_settings(max_settings, eps_inputs=eps_inputs)
+    expected_keys = {_setting_key(norm, eps_input) for norm, eps_input, _ in settings}
 
     if is_complete_output(
         csv_path,
@@ -578,12 +737,30 @@ def run_autoattack_sweep_for_checkpoint(
         logger.info("Skipping complete matching sweep CSV: %s", csv_path)
         return None
 
+    existing = observed_settings(csv_path, checkpoint_path=checkpoint_path, model_name=model_dir.name)
+    if force:
+        settings_to_run = settings
+        replace_settings = expected_keys
+    else:
+        settings_to_run = [
+            (norm, eps_input, epsilon)
+            for norm, eps_input, epsilon in settings
+            if _setting_key(norm, eps_input) not in existing
+        ]
+        replace_settings = {_setting_key(norm, eps_input) for norm, eps_input, _ in settings_to_run}
+
+    if not settings_to_run:
+        logger.info("No missing AutoAttack settings for %s in %s", model_dir.name, csv_path)
+        return None
+
     if str(device) == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but not available")
 
     set_seed(seed)
     device_obj = torch.device(device)
     model, eval_cfg, state_key = load_model(checkpoint_path, device_obj)
+    existing_selection = load_existing_selection(model_dir, csv_path, selection_json)
+    selected_indices_override = existing_selection[0] if existing_selection is not None else None
     loader, selected_indices, selected_targets = build_selected_loader(
         val_dir,
         eval_cfg,
@@ -591,6 +768,7 @@ def run_autoattack_sweep_for_checkpoint(
         num_batches,
         num_workers,
         seed,
+        selected_indices=selected_indices_override,
     )
     validate_raw_batch(loader)
 
@@ -600,6 +778,8 @@ def run_autoattack_sweep_for_checkpoint(
         len(set(selected_targets)),
         selected_indices[:10],
     )
+    if existing_selection is not None:
+        logger.info("reusing AutoAttack selection: %s", existing_selection[1])
 
     epoch_value = epoch if epoch is not None else extract_epoch_from_checkpoint(checkpoint_path)
     if dry_run:
@@ -611,18 +791,21 @@ def run_autoattack_sweep_for_checkpoint(
             "num_images": len(selected_indices),
             "unique_classes": len(set(selected_targets)),
             "selected_indices_head": selected_indices[:20],
-            "settings": expected_settings(max_settings, eps_inputs=eps_inputs),
+            "settings": settings_to_run,
         }, indent=2))
         return None
 
-    selection_args = SimpleNamespace(seed=seed, batch_size=batch_size, num_batches=num_batches)
-    selection_path = save_selection(model_dir, selected_indices, selected_targets, selection_args, run_id, selection_json)
+    if existing_selection is not None:
+        selection_path = existing_selection[1]
+    else:
+        selection_args = SimpleNamespace(seed=seed, batch_size=batch_size, num_batches=num_batches)
+        selection_path = save_selection(model_dir, selected_indices, selected_targets, selection_args, run_id, selection_json)
     clean_acc = clean_accuracy(model, loader, device_obj)
     logger.info("clean_acc=%.4f", clean_acc * 100.0)
 
     timestamp = dt.datetime.now().isoformat(timespec="seconds")
     out_rows = []
-    for norm, eps_input, epsilon in expected_settings(max_settings, eps_inputs=eps_inputs):
+    for norm, eps_input, epsilon in settings_to_run:
         set_seed(seed)
         logger.info("running AutoAttack norm=%s epsilon_input=%s epsilon_eval=%s", norm, eps_input, epsilon)
         robust_acc = run_autoattack_setting(model, loader, device_obj, norm, epsilon, seed, logger)
@@ -630,6 +813,7 @@ def run_autoattack_sweep_for_checkpoint(
             "run_id": run_id,
             "timestamp": timestamp,
             "model_name": model_dir.name,
+            "checkpoint_kind": checkpoint_kind,
             "checkpoint_path": str(checkpoint_path),
             "state_dict_used": state_key,
             "epoch": epoch_value,
@@ -647,16 +831,20 @@ def run_autoattack_sweep_for_checkpoint(
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    write_rows(csv_path, out_rows)
-    logger.info("saved %d rows to %s", len(out_rows), csv_path)
+    write_rows(csv_path, out_rows, replace_settings=replace_settings)
+    logger.info("upserted %d rows to %s", len(out_rows), csv_path)
     return csv_path
 
 
 def main() -> None:
     args = parse_args()
     eps_inputs = parse_eps_inputs(args.eps_inputs)
+    checkpoint_kinds = parse_checkpoint_kinds(args.checkpoint_kinds)
     set_seed(args.seed)
-    rows = eligible_models(args.models_root)
+    if args.existing_csv_only:
+        rows = existing_csv_models(args.models_root, args.output_csv)
+    else:
+        rows = eligible_models(args.models_root)
 
     if args.list_models:
         for idx, row in enumerate(rows):
@@ -680,27 +868,46 @@ def main() -> None:
     logger = setup_logger(model_dir, args.dry_run)
 
     logger.info("eligible_models=%d selected_index=%d", len(rows), idx)
-    logger.info("model=%s epoch=%s checkpoint=%s", model_dir.name, selected["epoch"], selected["checkpoint"])
+    logger.info("model=%s checkpoint_kinds=%s", model_dir.name, ",".join(checkpoint_kinds))
 
-    run_autoattack_sweep_for_checkpoint(
-        checkpoint_path=selected["checkpoint"],
-        model_dir=model_dir,
-        val_dir=args.val_dir,
-        device=args.device,
-        batch_size=args.batch_size,
-        num_batches=args.num_batches,
-        num_workers=args.num_workers,
-        seed=args.seed,
-        output_csv=args.output_csv,
-        selection_json=args.selection_json,
-        run_id=args.run_id,
-        eps_inputs=eps_inputs,
-        force=args.force,
-        dry_run=args.dry_run,
-        max_settings=args.max_settings,
-        logger=logger,
-        epoch=selected["epoch"],
-    )
+    for checkpoint_kind in checkpoint_kinds:
+        checkpoint = find_checkpoint_for_kind(model_dir, checkpoint_kind)
+        if checkpoint is None:
+            logger.info("Skipping missing checkpoint kind=%s for model=%s", checkpoint_kind, model_dir.name)
+            continue
+        epoch = extract_epoch_from_summary(model_dir)
+        checkpoint_epoch = extract_epoch_from_checkpoint(checkpoint)
+        if checkpoint_epoch is not None:
+            epoch = checkpoint_epoch
+        output_csv = output_csv_for_checkpoint_kind(args.output_csv, checkpoint_kind)
+        logger.info(
+            "model=%s kind=%s epoch=%s checkpoint=%s output_csv=%s",
+            model_dir.name,
+            checkpoint_kind,
+            epoch,
+            checkpoint,
+            output_csv,
+        )
+        run_autoattack_sweep_for_checkpoint(
+            checkpoint_path=checkpoint,
+            model_dir=model_dir,
+            val_dir=args.val_dir,
+            device=args.device,
+            batch_size=args.batch_size,
+            num_batches=args.num_batches,
+            num_workers=args.num_workers,
+            seed=args.seed,
+            output_csv=output_csv,
+            selection_json=args.selection_json,
+            run_id=args.run_id,
+            checkpoint_kind=checkpoint_kind,
+            eps_inputs=eps_inputs,
+            force=args.force,
+            dry_run=args.dry_run,
+            max_settings=args.max_settings,
+            logger=logger,
+            epoch=epoch,
+        )
 
 
 if __name__ == "__main__":
