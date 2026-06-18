@@ -1,28 +1,33 @@
 #!/bin/bash
-#SBATCH --job-name=small_eps_autoattack
+#SBATCH --job-name=aa_eps6_12_backfill
 #SBATCH --time=7-00:00:00
-#SBATCH --partition=rtx6000
+#SBATCH --partition=rtx_pro_6000
 #SBATCH --qos=golan-neuro
 #SBATCH --gpus=1
-#SBATCH --array=0
+#SBATCH --array=0-106%4
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
-#SBATCH --output=/home/ashtomer/projects/ares/outs/autoattack_eval/%A_%a.out
+#SBATCH --output=/home/ashtomer/projects/ares/outs/autoattack_eval/%A/%a.out
 
 set -euo pipefail
 
 nvidia-smi
 
 module load anaconda
-source activate tomer_advtrain
+source activate tomer_advtrain_pro
 
 cd /home/ashtomer/projects/ares
 
 MODELS_ROOT=/groups/golan_neurogroup/bml_group/tomerash/advmodels/results/models
 VAL_DIR=/groups/golan_neurogroup/bml_group/datasets/imagenet/val
-MODEL_NAMES=(
-  convnext_small_gradnorm_l2_16_init1
-)
-MODEL_NAME="${MODEL_NAMES[${SLURM_ARRAY_TASK_ID}]}"
+AA_EPS_INPUTS="${AA_EPS_INPUTS:-6,12}"
+AA_OUTPUT_CSV="${AA_OUTPUT_CSV:-autoattack_sweep_results.csv}"
+AA_SELECTION_JSON="${AA_SELECTION_JSON:-autoattack_sweep_selection.json}"
+AA_RUN_ID="${AA_RUN_ID:-autoattack_sweep_v1_raw224_seed0_8x128_linf-l2-l1_eps6-12_backfill}"
+AA_EXISTING_CSV_ONLY="${AA_EXISTING_CSV_ONLY:-1}"
+AA_BATCH_SIZE="${AA_BATCH_SIZE:-128}"
+AA_NUM_BATCHES="${AA_NUM_BATCHES:-8}"
+AA_NUM_WORKERS="${AA_NUM_WORKERS:-6}"
+AA_SEED="${AA_SEED:-0}"
 
 if [[ ! -d "${MODELS_ROOT}" ]]; then
   echo "[ERROR] Models root is not available on host $(hostname): ${MODELS_ROOT}" >&2
@@ -34,16 +39,21 @@ if [[ ! -d "${VAL_DIR}" ]]; then
   exit 1
 fi
 
+EXTRA_ARGS=()
+if [[ "${AA_EXISTING_CSV_ONLY}" == "1" ]]; then
+  EXTRA_ARGS+=(--existing-csv-only)
+fi
+
 python data_analysis/autoattack_array_eval.py \
   --models-root "${MODELS_ROOT}" \
   --val-dir "${VAL_DIR}" \
-  --model-name "${MODEL_NAME}" \
-  --batch-size 128 \
-  --num-batches 8 \
-  --num-workers 6 \
-  --seed 0 \
+  --batch-size "${AA_BATCH_SIZE}" \
+  --num-batches "${AA_NUM_BATCHES}" \
+  --num-workers "${AA_NUM_WORKERS}" \
+  --seed "${AA_SEED}" \
   --device cuda \
-  --eps-inputs 1e-4,1e-3,1e-2,1e-1 \
-  --run-id small_eps_autoattack_sweep_v1_raw224_seed0_8x128_linf-l2-l1_eps1e-4-1e-3-1e-2-1e-1 \
-  --output-csv small_eps_autoattack_sweep_results.csv \
-  --selection-json small_eps_autoattack_sweep_selection.json
+  --eps-inputs "${AA_EPS_INPUTS}" \
+  --run-id "${AA_RUN_ID}" \
+  --output-csv "${AA_OUTPUT_CSV}" \
+  --selection-json "${AA_SELECTION_JSON}" \
+  "${EXTRA_ARGS[@]}"

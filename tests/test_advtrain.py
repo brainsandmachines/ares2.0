@@ -2,6 +2,7 @@ import contextlib
 import csv
 import math
 import types
+from pathlib import Path
 
 import pytest
 import torch
@@ -379,6 +380,86 @@ def test_maybe_run_final_eval_default_call(monkeypatch, tmp_path):
     assert kwargs["aa"] is False
     assert kwargs["pgd"] is True
     assert kwargs["plots"] is True
+
+
+def test_maybe_run_final_eval_passes_autoattack_eps_inputs(monkeypatch, tmp_path):
+    calls = []
+    fake_module = types.ModuleType("data_analysis.autoattack_array_eval")
+
+    def _is_complete_output(*_args, **_kwargs):
+        return False
+
+    def _run_autoattack_sweep_for_checkpoint(**kwargs):
+        calls.append(kwargs)
+
+    def _find_checkpoint_for_kind(model_dir, checkpoint_kind):
+        candidates = {
+            "best": "model_best.pth.tar",
+            "last": "last.pth.tar",
+            "advbest": "model_best_adv.pth.tar",
+        }
+        path = Path(model_dir) / candidates[checkpoint_kind]
+        return path if path.exists() else None
+
+    def _output_csv_for_checkpoint_kind(output_csv, checkpoint_kind):
+        suffixes = {"best": "", "last": "last", "advbest": "advbest"}
+        suffix = suffixes[checkpoint_kind]
+        if not suffix:
+            return output_csv
+        path = Path(output_csv)
+        return f"{path.stem}_{suffix}{path.suffix}"
+
+    fake_module.find_checkpoint_for_kind = _find_checkpoint_for_kind
+    fake_module.is_complete_output = _is_complete_output
+    fake_module.output_csv_for_checkpoint_kind = _output_csv_for_checkpoint_kind
+    fake_module.run_autoattack_sweep_for_checkpoint = _run_autoattack_sweep_for_checkpoint
+    monkeypatch.setitem(__import__("sys").modules, "data_analysis.autoattack_array_eval", fake_module)
+    monkeypatch.setattr(advt.torch.cuda, "is_available", lambda: True)
+
+    class _Logger:
+        def info(self, *_a, **_k):
+            return None
+
+        def warning(self, *_a, **_k):
+            return None
+
+        def error(self, *_a, **_k):
+            return None
+
+        def exception(self, *_a, **_k):
+            return None
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "model_best.pth.tar").write_bytes(b"x")
+
+    cfg = OmegaConf.merge(
+        _runtime_test_cfg(_compose_base_cfg()),
+        OmegaConf.create(
+            {
+                "final_eval": True,
+                "final_eval_autoattack": True,
+                "final_eval_pgd": False,
+                "final_eval_ckpt_name": "model_best.pth.tar",
+                "final_eval_val_dir": "",
+                "final_eval_out_dir": "",
+                "final_eval_aa_batch_size": 128,
+                "final_eval_aa_norm": None,
+                "final_eval_aa_eps": None,
+                "final_eval_aa_max_batches": 8,
+                "final_eval_aa_eps_inputs": "1,2,4,6,8,12,16",
+                "final_eval_aa_completion_csv": "autoattack_sweep_results.csv",
+                "final_eval_skip_if_complete": True,
+                "final_eval_num_workers": 8,
+            }
+        ),
+    )
+
+    advt._maybe_run_final_eval(cfg, str(output_dir), _Logger())
+
+    assert len(calls) == 1
+    assert calls[0]["eps_inputs"] == [1.0, 2.0, 4.0, 6.0, 8.0, 12.0, 16.0]
+    assert calls[0]["checkpoint_kind"] == "best"
 
 
 def test_maybe_run_final_eval_skips_when_pgd_csv_is_in_pgd_eval_subdir(monkeypatch, tmp_path):
