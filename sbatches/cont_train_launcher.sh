@@ -128,7 +128,7 @@ parse_cont_train_job() {
         fixed_start_epoch=""
     elif [[ "$protocol" == "ramp" ]]; then
         schedule_type="warmup_ramp_fixed"
-        epochs=40
+        epochs=35
         warmup_epochs=3
         ramp_start_epoch=4
         ramp_end_epoch=20
