@@ -51,3 +51,11 @@ final_eval_plot_x_col: pgd_constrained_eps
 final_eval_out_dir: pgd_eval
 final_eval_val_dir: ''
 final_eval_num_workers: 8
+
+# runtime probe (capped-batch 1-epoch timing inspection -> shared CSV)
+runtime_probe: False
+runtime_probe_csv: ''
+runtime_probe_protocol: ''
+runtime_probe_arch: ''
+runtime_probe_warmup_batches: 5
+runtime_probe_measure_batches: 20
