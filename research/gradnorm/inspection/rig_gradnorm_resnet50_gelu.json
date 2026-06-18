@@ -1,0 +1,24 @@
+{
+  "name": "rig_gradnorm_resnet50_gelu",
+  "display_name": "RIG GradNorm ResNet50+GeLU",
+  "checkpoint_path": "/home/ashtomer/projects/ares/research/gradnorm/models/rig_gradnorm_resnet50_gelu/gradnorm_resnet_gelu.pth.tar",
+  "checkpoint_sha256": "cc0a7a41e46a969b63ac14a8a4b91da32cedc50bc2d9a54656ecbc17b8452aa3",
+  "checkpoint_size_bytes": 409692278,
+  "loader": "rig_resnet50_gelu",
+  "builder": "timm:tv_resnet50",
+  "state_key": "state_dict_ema",
+  "strict_load": true,
+  "missing_keys": [],
+  "unexpected_keys": [],
+  "parameter_count": 25557032,
+  "checkpoint_top_level_keys": [
+    "arch",
+    "args",
+    "epoch",
+    "metric",
+    "optimizer",
+    "state_dict",
+    "state_dict_ema",
+    "version"
+  ]
+}

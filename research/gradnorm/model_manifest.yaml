@@ -1,0 +1,48 @@
+models:
+  - name: rig_gradnorm_resnet50_gelu
+    display_name: "RIG GradNorm ResNet50+GeLU"
+    source_repo: "https://github.com/adrianrm99/robustness_input_gradients"
+    source_eval: "https://raw.githubusercontent.com/adrianrm99/robustness_input_gradients/main/eval_white_box.py"
+    paper_page: "https://adriarm.github.io/_pages/robustness_input_gradients/"
+    architecture: "resnet50_gelu"
+    dataset: "imagenet1k"
+    loader: "rig_resnet50_gelu"
+    checkpoint:
+      type: "google_drive"
+      file_id: "1CvLhHaFVyqmqL6W0P_-H8iw2R_uk8MbM"
+      filename: "gradnorm_resnet_gelu.pth.tar"
+      sha256: null
+    objective_summary: "Cross-entropy on natural images plus a weighted input-gradient norm regularizer. The released ImageNet checkpoint uses a ResNet50 with GELU activations."
+    reported_metrics:
+      clean_acc_percent: 60.34
+      autoattack_linf_4_255_percent: 30.00
+
+  - name: tulip_resnet50_l2_lambda_0_1
+    display_name: "TULIP ResNet50 L2-lambda-0.1"
+    source_repo: "https://github.com/cfinlay/tulip"
+    source_imagenet: "https://github.com/cfinlay/tulip/tree/master/imagenet"
+    source_fetch_model: "https://raw.githubusercontent.com/cfinlay/tulip/master/imagenet/fetch_model.py"
+    architecture: "resnet50"
+    dataset: "imagenet1k"
+    loader: "tulip_resnet50"
+    checkpoint:
+      type: "url"
+      url: "https://www.dropbox.com/s/3g9bx1m1vzfr1wl/resnet50-L2-lambda-0.1.pth.tar?dl=1"
+      filename: "resnet50-L2-lambda-0.1.pth.tar"
+      sha256: "b63bdb2be8f4eaff21d23d250e751bb57ed8b9189160f46301f416086359ca90"
+    objective_summary: "Cross-entropy plus finite-difference Tikhonov squared L2 input-gradient regularization with lambda 0.1."
+
+  - name: tulip_resnet50_l2_lambda_1
+    display_name: "TULIP ResNet50 L2-lambda-1"
+    source_repo: "https://github.com/cfinlay/tulip"
+    source_imagenet: "https://github.com/cfinlay/tulip/tree/master/imagenet"
+    source_fetch_model: "https://raw.githubusercontent.com/cfinlay/tulip/master/imagenet/fetch_model.py"
+    architecture: "resnet50"
+    dataset: "imagenet1k"
+    loader: "tulip_resnet50"
+    checkpoint:
+      type: "url"
+      url: "https://www.dropbox.com/s/aioksw9silbm0mc/resnet50-L2-lambda-1.pth.tar?dl=1"
+      filename: "resnet50-L2-lambda-1.pth.tar"
+      sha256: "4073c3847088e7e4944b9a063bf8ad519ef3aac8e207e06194c68a081a46b992"
+    objective_summary: "Cross-entropy plus finite-difference Tikhonov squared L2 input-gradient regularization with lambda 1."
