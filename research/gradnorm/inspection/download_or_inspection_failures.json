@@ -1,0 +1,10 @@
+[
+  {
+    "name": "tulip_resnet50_l2_lambda_0_1",
+    "error": "FileNotFoundError: Missing checkpoint for inspection: /home/ashtomer/projects/ares/research/gradnorm/models/tulip_resnet50_l2_lambda_0_1/resnet50-L2-lambda-0.1.pth.tar"
+  },
+  {
+    "name": "tulip_resnet50_l2_lambda_1",
+    "error": "FileNotFoundError: Missing checkpoint for inspection: /home/ashtomer/projects/ares/research/gradnorm/models/tulip_resnet50_l2_lambda_1/resnet50-L2-lambda-1.pth.tar"
+  }
+]
