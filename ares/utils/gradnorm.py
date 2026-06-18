@@ -80,6 +80,39 @@ def compute_gradnorm_alpha(
     return min(max(alpha, 0.0), 1.0)
 
 
+def combine_gradnorm_objective(
+    ce_loss,
+    raw_loss_reg,
+    objective='current',
+    ce_weight=0.8,
+    gradnorm_weight=1.2,
+    max_reg_to_ce_ratio=1.0,
+):
+    """Combine CE and DBP terms for GradNorm training.
+
+    The default preserves the historical ARES objective. The weighted mode
+    matches the RIG-style objective when the cap is disabled.
+    """
+    if objective == 'current':
+        ce_component = ce_loss
+        weighted_reg = raw_loss_reg
+    elif objective == 'weighted':
+        ce_component = float(ce_weight) * ce_loss
+        weighted_reg = float(gradnorm_weight) * raw_loss_reg
+    else:
+        raise ValueError(f"Unsupported gradnorm objective: {objective}")
+
+    if max_reg_to_ce_ratio is not None and float(max_reg_to_ce_ratio) > 0:
+        reg_cap = float(max_reg_to_ce_ratio) * ce_loss.detach()
+        scale = (reg_cap / weighted_reg.detach().clamp_min(1e-12)).clamp(max=1.0)
+        loss_reg = weighted_reg * scale
+    else:
+        scale = raw_loss_reg.new_tensor(1.0)
+        loss_reg = weighted_reg
+
+    return ce_component + loss_reg, loss_reg, scale
+
+
 # --- Global Optimization Flags ---
 # Enable TensorFloat32 for ~2x-3x speedup on Ampere+ GPUs (RTX 30xx/40xx, A100)
 if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8:

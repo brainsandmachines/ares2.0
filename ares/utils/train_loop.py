@@ -11,7 +11,7 @@ from timm.utils import  reduce_tensor, dispatch_clip_grad
 # robust training functions
 from ares.utils.adv import adv_generator, trades_adv_generator, v1_adv_generator, v1_trades_adv_generator
 from ares.utils.metrics import AverageMeter
-from ares.utils.gradnorm import compute_gradnorm_alpha
+from ares.utils.gradnorm import combine_gradnorm_objective, compute_gradnorm_alpha
 
 
 def train_one_epoch(
@@ -130,18 +130,15 @@ def train_one_epoch(
                     attacks.get('alpha_scale_epochs', 9.0),
                     attacks.get('alpha_scale_init', 0.1),
                 )
-                max_ratio = attacks.get('gradnorm_max_reg_to_ce_ratio', 0.0)
                 raw_loss_reg = reg_loss_fn(gradient, input) * alpha
-
-                if max_ratio is not None and max_ratio > 0:
-                    reg_cap = max_ratio * ce_loss.detach()
-                    scale = (reg_cap / raw_loss_reg.detach().clamp_min(1e-12)).clamp(max=1.0)
-                    loss_reg = raw_loss_reg * scale
-                else:
-                    scale = raw_loss_reg.new_tensor(1.0)
-                    loss_reg = raw_loss_reg
-
-                loss = ce_loss + loss_reg
+                loss, loss_reg, scale = combine_gradnorm_objective(
+                    ce_loss,
+                    raw_loss_reg,
+                    objective=attacks.get('gradnorm_objective', 'current'),
+                    ce_weight=attacks.get('ce_weight', 0.8),
+                    gradnorm_weight=attacks.get('gradnorm_weight', 1.2),
+                    max_reg_to_ce_ratio=attacks.get('gradnorm_max_reg_to_ce_ratio', 0.0),
+                )
             else:
                 output = model(input)
                 loss = loss_fn(output, target)

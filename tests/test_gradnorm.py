@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from ares.utils.gradnorm import DBP
+from ares.utils.gradnorm import DBP, combine_gradnorm_objective
 
 
 def _expected_dbp(gradients, eps, std, penalty_norm):
@@ -40,3 +40,60 @@ def test_dbp_l2_matches_squared_l2_formula(grad_shape):
 def test_dbp_rejects_invalid_penalty_norm():
     with pytest.raises(ValueError, match="Unsupported gradnorm penalty norm"):
         DBP(penalty_norm="linf")
+
+
+def test_current_gradnorm_objective_matches_legacy_uncapped_formula():
+    ce_loss = torch.tensor(2.0)
+    raw_reg = torch.tensor(0.5)
+
+    loss, loss_reg, scale = combine_gradnorm_objective(
+        ce_loss,
+        raw_reg,
+        objective="current",
+        max_reg_to_ce_ratio=0,
+    )
+
+    assert torch.isclose(loss, torch.tensor(2.5))
+    assert torch.isclose(loss_reg, torch.tensor(0.5))
+    assert torch.isclose(scale, torch.tensor(1.0))
+
+
+def test_weighted_gradnorm_objective_uses_ce_and_reg_weights():
+    ce_loss = torch.tensor(2.0)
+    raw_reg = torch.tensor(0.5)
+
+    loss, loss_reg, scale = combine_gradnorm_objective(
+        ce_loss,
+        raw_reg,
+        objective="weighted",
+        ce_weight=0.8,
+        gradnorm_weight=1.2,
+        max_reg_to_ce_ratio=0,
+    )
+
+    assert torch.isclose(loss, torch.tensor(2.2))
+    assert torch.isclose(loss_reg, torch.tensor(0.6))
+    assert torch.isclose(scale, torch.tensor(1.0))
+
+
+def test_gradnorm_cap_scales_weighted_regularizer():
+    ce_loss = torch.tensor(2.0)
+    raw_reg = torch.tensor(10.0)
+
+    loss, loss_reg, scale = combine_gradnorm_objective(
+        ce_loss,
+        raw_reg,
+        objective="weighted",
+        ce_weight=0.8,
+        gradnorm_weight=1.2,
+        max_reg_to_ce_ratio=1.0,
+    )
+
+    assert torch.isclose(loss_reg, torch.tensor(2.0))
+    assert torch.isclose(loss, torch.tensor(3.6))
+    assert torch.isclose(scale, torch.tensor(1.0 / 6.0))
+
+
+def test_gradnorm_objective_rejects_unknown_mode():
+    with pytest.raises(ValueError, match="Unsupported gradnorm objective"):
+        combine_gradnorm_objective(torch.tensor(1.0), torch.tensor(1.0), objective="bad")
