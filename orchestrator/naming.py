@@ -42,7 +42,9 @@ def protocol_from_name(job_name: str) -> Optional[str]:
         return "gradnorm"
     if "trades" in core:
         return "trades"
-    if core.startswith("v1clean") or core.startswith("v1noise") or "_v1_" in core:
+    if (core.startswith("v1clean") or core.startswith("v1noise")
+            or core.startswith("v1_clean") or core.startswith("v1_noise")
+            or "_v1_" in core):
         return "v1"
     if "dvd" in core:
         return "dvd"
@@ -71,6 +73,6 @@ def model_dir_for(job_name: str, models_root: str) -> str:
     model_dir explicitly.
     """
     arch, core = split_arch(job_name)
-    if "v1clean" in core or "v1noise" in core:
+    if any(x in core for x in ("v1clean", "v1noise", "v1_clean", "v1_noise")):
         raise ValueError(f"v1 job '{job_name}' needs an explicit model_dir")
     return os.path.join(models_root, f"{arch}_{core}")

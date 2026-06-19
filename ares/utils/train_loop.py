@@ -12,6 +12,7 @@ from timm.utils import  reduce_tensor, dispatch_clip_grad
 from ares.utils.adv import adv_generator, trades_adv_generator, v1_adv_generator, v1_trades_adv_generator
 from ares.utils.metrics import AverageMeter
 from ares.utils.gradnorm import combine_gradnorm_objective, compute_gradnorm_alpha
+from ares.utils.dvd import apply_dvd_to_batch, build_dvd_state
 
 
 def train_one_epoch(
@@ -41,6 +42,7 @@ def train_one_epoch(
     end = time.time()
     last_idx = len(loader) - 1
     num_updates = epoch * len(loader)
+    dvd_state = build_dvd_state(cfg, len(loader))
     
     attack_domain = attacks.get('attack_domain', 'pixel')
     if attack_domain == 'pixel':
@@ -62,6 +64,8 @@ def train_one_epoch(
             raise ValueError("Input contains NaN or Inf values")
         last_batch = batch_idx == last_idx
         input, target = input.cuda(non_blocking=True), target.cuda(non_blocking=True)
+        if dvd_state is not None:
+            input = apply_dvd_to_batch(input, dvd_state, epoch, batch_idx, len(loader))
         if cfg.model.channels_last:
             input=input.contiguous(memory_format=torch.channels_last)
         

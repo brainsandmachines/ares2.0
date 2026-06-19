@@ -15,15 +15,32 @@ Backbone prefix
 Legacy standard training
 - `baseline_init<INIT>`
 
+DVD standard training
+- `dvd_p_init<INIT>`
+- `dvd_b_init<INIT>`
+- `dvd_s_init<INIT>`
+
 Legacy Madry adversarial training
 - `linf_<EPS>_init<INIT>`
 - `l2_<EPS>_init<INIT>`
 - `l1_<EPS>_init<INIT>`
 
+DVD Madry adversarial training
+- `dvd_p_linf_<EPS>_init<INIT>`
+- `dvd_b_l2_<EPS>_init<INIT>`
+- `dvd_s_l1_<EPS>_init<INIT>`
+- Alias style is also accepted, e.g. `dvd_b_madry_l2_<EPS>_init<INIT>`.
+
 Legacy TRADES adversarial training
 - `linftrades_<EPS>_init<INIT>`
 - `l2trades_<EPS>_init<INIT>`
 - `l1trades_<EPS>_init<INIT>`
+
+DVD TRADES adversarial training
+- `dvd_p_linftrades_<EPS>_init<INIT>`
+- `dvd_b_l2trades_<EPS>_init<INIT>`
+- `dvd_s_l1trades_<EPS>_init<INIT>`
+- Alias style is also accepted, e.g. `dvd_b_trades_l2_<EPS>_init<INIT>`.
 
 GradNorm
 - `gradnorm_l1_<EPS>_init<INIT>`
@@ -57,6 +74,7 @@ Rejected / unsupported job names
 Notes
 - `<EPS>` is the configured epsilon value encoded in the job name.
 - `<INIT>` is the experiment/init id encoded after `init`.
+- DVD variants map to `months_per_epoch`: `dvd_p=4`, `dvd_b=2`, `dvd_s=1`.
 - Backbone prefixes are optional and only recognized at the start of the job name.
 - Base uses the same batch-size policy as Small.
 - Large uses 3/4 of the selected Small/Base batch size.

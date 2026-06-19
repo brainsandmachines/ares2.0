@@ -50,6 +50,16 @@ CKPT_CANDIDATES = {
 CKPT_SUFFIX = {"best": "", "last": "last", "advbest": "advbest"}
 CONT_RE = re.compile(r"_cont[0-9.]+to[0-9.]+_(direct|ramp)_init[0-9]+$")
 
+# baseline > madry > trades > gradnorm > v1 > dvd (higher = picked first)
+PROTOCOL_PRIORITY = {
+    "baseline": 500,
+    "madry":    400,
+    "trades":   300,
+    "gradnorm": 200,
+    "v1":       100,
+    "dvd":       50,
+}
+
 
 def aa_csv_for_kind(kind: str) -> str:
     suffix = CKPT_SUFFIX[kind]
@@ -160,13 +170,15 @@ def import_models(db_path, scan_root, cluster_root, only=None, dry_run=False):
         results.append((entry, launcher, stage, status, epoch, total, cluster_dir))
         if dry_run:
             continue
+        proto = naming.protocol_from_name(job_name)
         db.upsert_model(
             model_id=job_name, launcher=launcher, job_name=job_name,
             model_dir=cluster_dir, warmup_epochs=warmup, linear_epochs=linear,
             plateau_epochs=plateau,
             arch=naming.arch_from_name(job_name),
-            protocol=naming.protocol_from_name(job_name),
+            protocol=proto,
             eps=naming.eps_from_name(job_name),
+            priority=PROTOCOL_PRIORITY.get(proto or "", 100),
         )
         db.update_epoch(job_name, epoch)
         if status == "COMPLETED":

@@ -71,6 +71,10 @@ def _auto_experiment_name(cfg):
     if str(model_cfg.model).startswith("convnext_") and str(model_cfg.model).endswith("_v1"):
         v1_noise_mode = model_cfg.get("v1_noise_mode", None)
         parts.append("noise" if v1_noise_mode is not None else "clean")
+    dvd_cfg = cfg.dataset.get("dvd", None) if cfg.get("dataset", None) is not None else None
+    if dvd_cfg is not None and bool(dvd_cfg.get("enabled", False)):
+        dvd_variant = str(dvd_cfg.get("variant", "dvd-b")).replace("-", "_")
+        parts.append(dvd_variant)
     if attacks.advtrain:
         attack_domain = attacks.get("attack_domain", "pixel")
         attack_eps = attacks.get("attack_eps", None)
