@@ -133,7 +133,7 @@ def parse_dirname(name: str):
     m = CONT_RE.search(name)
     if m:
         launcher = "eps_curriculum"
-        warmup, linear, plateau = (2, 0, 28) if m.group(1) == "direct" else (3, 17, 15)
+        warmup, linear, plateau = (2, 0, 28) if m.group(1) == "direct" else (4, 26, 10)
     else:
         launcher = "golan-trainmodels"
         warmup, linear, plateau = 0, 0, 150  # standard training length (bump to add more)
