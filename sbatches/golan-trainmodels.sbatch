@@ -4,15 +4,15 @@
 #SBATCH --partition=rtx_pro_6000
 #SBATCH --qos=golan-neuro
 #SBATCH --gpus=1
-#SBATCH --array=1-10%1
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
-#SBATCH --output=/home/ashtomer/projects/ares/outs/advtrain/golan_neuro/convnextsmall/%A/%a.out
+#SBATCH --output=/home/ashtomer/projects/ares/outs/advtrain/golan_neuro/convnextsmall/%j.out
 
 
 
 nvidia-smi
 source /home/ashtomer/projects/ares/sbatches/train_launcher_lib.sh
+source /home/ashtomer/projects/ares/sbatches/stage_runner.sh
 # -----------------------------
 # 1. Get GPU Memory (in MB)
 # -----------------------------
@@ -141,10 +141,12 @@ elif [[ -n "$attack_eps" ]]; then
     cmd+=("attacks.attack_eps=$attack_eps")
 fi
 
-"${cmd[@]}"
+# Walk the orchestrator stage machine (TRAIN -> AA_SWEEP -> PLOT_RESULTS).
+# Falls back to plain training when not orchestrated (ORCH_MODEL_ID unset).
+orch_pipeline "${cmd[@]}"
 
 status=$?
-echo "[INFO] Training exit status: $status"
+echo "[INFO] Pipeline exit status: $status"
 
 if [ "$status" -eq 0 ]; then
     echo "[INFO] Running checkpoint pruning for $model_name"

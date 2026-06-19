@@ -4,16 +4,16 @@
 #SBATCH --partition=rtx_pro_6000
 #SBATCH --qos=golan-neuro
 #SBATCH --gpus=1
-#SBATCH --array=1-10%1
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
-#SBATCH --output=/home/ashtomer/projects/ares/outs/advtrain/epsilon_curriculum/%A/%a.out
+#SBATCH --output=/home/ashtomer/projects/ares/outs/advtrain/epsilon_curriculum/%j.out
 
 set -euo pipefail
 
 nvidia-smi
 
 source /home/ashtomer/projects/ares/sbatches/cont_train_launcher.sh
+source /home/ashtomer/projects/ares/sbatches/stage_runner.sh
 
 GPU_TOTAL=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n 1)
 echo "[INFO] Detected GPU Memory: ${GPU_TOTAL} MB"
@@ -108,10 +108,12 @@ elif [[ "$advtrain" == "true" ]]; then
     cmd+=("attacks.attack_eps=$target_eps")
 fi
 
-"${cmd[@]}"
+# Walk the orchestrator stage machine (TRAIN -> AA_SWEEP -> PLOT_RESULTS).
+# Falls back to plain training when not orchestrated (ORCH_MODEL_ID unset).
+orch_pipeline "${cmd[@]}"
 
 status=$?
-echo "[INFO] Training exit status: $status"
+echo "[INFO] Pipeline exit status: $status"
 
 if [ "$status" -eq 0 ]; then
     echo "[INFO] Running checkpoint pruning for $model_name"

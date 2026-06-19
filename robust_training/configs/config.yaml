@@ -29,7 +29,9 @@ eval_metric: top1
 pin_mem: True
 
 # final evaluation (AutoAttack + PGD sweep)
-final_eval: True
+# Default OFF: a plain run does adversarial training only. The orchestrator's
+# AA_SWEEP stage explicitly turns this on (final_eval=True final_eval_autoattack=True).
+final_eval: False
 final_eval_ckpt_name: model_best.pth.tar
 final_eval_autoattack: True
 final_eval_aa_batch_size: 128
@@ -39,7 +41,7 @@ final_eval_aa_max_batches: 8
 final_eval_aa_eps_inputs: 1,2,4,6,8,12,16
 final_eval_aa_completion_csv: autoattack_sweep_results.csv
 final_eval_aa_checkpoint_kinds: best,last,advbest
-final_eval_pgd: True
+final_eval_pgd: False
 final_eval_pgd_eps: 1,2,4,8,16
 final_eval_pgd_norms: linf,l2,l1
 final_eval_pgd_attack_steps: 10

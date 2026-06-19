@@ -36,7 +36,7 @@ from ares.utils.continuation import (
     set_active_epsilon,
 )
 
-from job_manager.model_scheduler import Model_scheduler
+from orchestrator import progress as orch_progress
 
 def main(cfg: DictConfig):
     # distributed settings and logger
@@ -432,9 +432,8 @@ def main(cfg: DictConfig):
                     saver, epoch, eval_metrics, best_adv_metric, best_adv_epoch
                 )
             
-        # -------- DB update: end-of-epoch --------
-        # if sch is not None and cfg.model.model_id is not None and cfg.dist.rank == 0:
-        #     sch.update_progress_epoch_end(model_id=cfg.model.model_id, epoch=epoch+1)
+        # -------- orchestrator: atomic end-of-epoch progress (no-op if not tracked) --------
+        orch_progress.update_epoch(epoch + 1, rank=cfg.dist.rank)
 
         if cfg.dist.distributed:
             torch.distributed.barrier()
