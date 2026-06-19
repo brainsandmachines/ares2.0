@@ -1,0 +1,7 @@
+# Local runtime artifacts (the real DB lives on the shared Slurm mount).
+.env
+*.db
+*.db-journal
+*.log
+recommendations/
+__pycache__/
