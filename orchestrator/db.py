@@ -229,12 +229,12 @@ class OrchestratorDB:
             if status:
                 rows = conn.execute(
                     "SELECT * FROM models_queue WHERE status = ? "
-                    "ORDER BY priority ASC, model_id ASC",
+                    "ORDER BY priority DESC, model_id ASC",
                     (status,),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM models_queue ORDER BY priority ASC, model_id ASC"
+                    "SELECT * FROM models_queue ORDER BY priority DESC, model_id ASC"
                 ).fetchall()
         return [self._row_to_model(r) for r in rows]
 
@@ -242,7 +242,9 @@ class OrchestratorDB:
         """Deterministically pick the next PENDING row eligible for ``node``.
 
         A row is eligible if its ``cluster_node`` is unset (any node) or matches.
-        Ordering is fully deterministic: priority then model_id.
+        Ordering: eval stages before training (PLOT_RESULTS→AA_SWEEP→TRAIN),
+        then protocol priority DESC (higher number = higher priority), then
+        model_id for a stable tiebreak.
         """
         with self._connect() as conn:
             row = conn.execute(
@@ -250,7 +252,15 @@ class OrchestratorDB:
                 SELECT * FROM models_queue
                 WHERE status = 'PENDING'
                   AND (cluster_node IS NULL OR cluster_node = '' OR cluster_node = ?)
-                ORDER BY priority ASC, model_id ASC
+                ORDER BY
+                  CASE current_stage
+                    WHEN 'PLOT_RESULTS' THEN 0
+                    WHEN 'AA_SWEEP'     THEN 1
+                    WHEN 'TRAIN'        THEN 2
+                    ELSE 3
+                  END,
+                  priority DESC,
+                  model_id ASC
                 LIMIT 1
                 """,
                 (node,),

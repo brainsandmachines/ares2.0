@@ -40,12 +40,13 @@ def protocol_from_name(job_name: str) -> Optional[str]:
     core = split_arch(job_name)[1]
     if "gradnorm" in core:
         return "gradnorm"
-    if "trades" in core:
-        return "trades"
+    # v1 check before trades: v1clean_l2trades_* is v1, not trades
     if (core.startswith("v1clean") or core.startswith("v1noise")
             or core.startswith("v1_clean") or core.startswith("v1_noise")
             or "_v1_" in core):
         return "v1"
+    if "trades" in core:
+        return "trades"
     if "dvd" in core:
         return "dvd"
     if "baseline" in core:

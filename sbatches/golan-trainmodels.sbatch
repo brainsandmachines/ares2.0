@@ -33,6 +33,17 @@ export MASTER_PORT=$((10000 + RANDOM % 50000))
 
 jobname="$SLURM_JOB_NAME"
 
+# Early bypass for orchestrated jobs at PLOT_RESULTS or COMPLETED: these stages
+# don't use the training command, so skip parse_train_job (which would reject
+# legacy job names like gradnorm_16_init1 that only need plotting).
+if [[ -n "$ORCH_MODEL_ID" && -n "$ORCH_DB" ]]; then
+    _stage="$(python -m orchestrator.jobctl get current_stage 2>/dev/null)"
+    if [[ "$_stage" == "COMPLETED" || "$_stage" == "PLOT_RESULTS" ]]; then
+        orch_pipeline  # COMPLETED → exit 0; PLOT_RESULTS → plot + advance COMPLETED
+        exit $?
+    fi
+fi
+
 parse_train_job "$jobname" "$GPU_TOTAL" || exit 1
 
 MODELS_ROOT="${MODELS_ROOT:-/home/ashtomer/projects/ares/results/models}"
@@ -90,7 +101,7 @@ fi
 if [[ "$dvd_enabled" == "true" ]]; then
     python - <<'PY'
 import importlib
-for name in ("kornia", "dvd_scale_free"):
+for name in ("kornia", "dvd"):
     importlib.import_module(name)
 print("[INFO] DVD dependencies available")
 PY

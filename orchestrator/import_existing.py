@@ -123,6 +123,13 @@ def parse_dirname(name: str):
         job_name = name  # launchers take the full prefixed name as the job name
     else:
         return None
+    # Translate v1_clean_/v1_noise_ (directory convention) → v1clean_/v1noise_
+    # (launcher job-name convention).  The launcher sets is_v1=true only on the
+    # camelCase prefix; with the underscore form parse_train_job skips v1 setup.
+    if job_name.startswith("v1_clean_"):
+        job_name = "v1clean_" + job_name[len("v1_clean_"):]
+    elif job_name.startswith("v1_noise_"):
+        job_name = "v1noise_" + job_name[len("v1_noise_"):]
     m = CONT_RE.search(name)
     if m:
         launcher = "eps_curriculum"
