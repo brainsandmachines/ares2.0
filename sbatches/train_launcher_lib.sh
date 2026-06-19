@@ -41,6 +41,8 @@ parse_train_job() {
     gradnorm_penalty_norm="l1"
     crit="madry"
     is_v1=false
+    dvd_enabled=false
+    dvd_variant=""
     v1_noise_mode=""
     attack_domain="pixel"
     model_override=""
@@ -57,6 +59,14 @@ parse_train_job() {
         model_override="model=${model_arch}_v1"
     elif [[ "$model_size" != "small" ]]; then
         model_override="model=${model_arch}"
+    fi
+
+    if [[ "$job_core" =~ (^|_)dvd_([pbs])($|_) ]]; then
+        dvd_enabled=true
+        dvd_variant="dvd-${BASH_REMATCH[2]}"
+    elif [[ "$job_core" == *dvd* ]]; then
+        echo "[ERROR] DVD job names must use dvd_p, dvd_b, or dvd_s: $jobname" >&2
+        return 1
     fi
 
     if [[ "$job_core" == *gradnorm* ]]; then

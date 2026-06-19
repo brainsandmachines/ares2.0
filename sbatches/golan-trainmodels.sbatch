@@ -63,6 +63,8 @@ echo "attack_norm    : $attack_norm"
 echo "advtrain       : $advtrain"
 echo "gradnorm       : $gradnorm"
 echo "gradnorm_pen   : $gradnorm_penalty_norm"
+echo "dvd_enabled    : $dvd_enabled"
+echo "dvd_variant    : $dvd_variant"
 echo "is_v1          : $is_v1"
 echo "v1_noise_mode  : $v1_noise_mode"
 echo "attack_domain  : $attack_domain"
@@ -83,6 +85,19 @@ if [[ "$TRAIN_RESUME" == "none" ]]; then
 elif [[ "$TRAIN_RESUME" != "auto" ]]; then
     echo "[ERROR] TRAIN_RESUME must be 'auto' or 'none', got: $TRAIN_RESUME" >&2
     exit 1
+fi
+
+if [[ "$dvd_enabled" == "true" ]]; then
+    python - <<'PY'
+import importlib
+for name in ("kornia", "dvd_scale_free"):
+    importlib.import_module(name)
+print("[INFO] DVD dependencies available")
+PY
+    if [[ "$?" -ne 0 ]]; then
+        echo "[ERROR] DVD dependencies are missing from the selected training environment" >&2
+        exit 1
+    fi
 fi
 
 cmd=(
@@ -119,6 +134,13 @@ fi
 
 if [[ -n "$GRADNORM_MAX_REG_TO_CE_RATIO" ]]; then
     cmd+=("attacks.gradnorm_max_reg_to_ce_ratio=$GRADNORM_MAX_REG_TO_CE_RATIO")
+fi
+
+if [[ "$dvd_enabled" == "true" ]]; then
+    cmd+=(
+        "dataset.dvd.enabled=true"
+        "dataset.dvd.variant=$dvd_variant"
+    )
 fi
 
 if [[ "$advtrain" == "true" ]] && {

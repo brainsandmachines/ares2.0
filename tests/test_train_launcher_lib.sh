@@ -31,6 +31,8 @@ assert_parse() {
     local expected_crit="${11}"
     local expected_advtrain="${12}"
     local expected_gradnorm="${13}"
+    local expected_dvd_enabled="${14:-false}"
+    local expected_dvd_variant="${15:-}"
 
     parse_train_job "$jobname" "$gpu_total"
 
@@ -45,6 +47,8 @@ assert_parse() {
     assert_eq "$jobname crit" "$crit" "$expected_crit"
     assert_eq "$jobname advtrain" "$advtrain" "$expected_advtrain"
     assert_eq "$jobname gradnorm" "$gradnorm" "$expected_gradnorm"
+    assert_eq "$jobname dvd_enabled" "$dvd_enabled" "$expected_dvd_enabled"
+    assert_eq "$jobname dvd_variant" "$dvd_variant" "$expected_dvd_variant"
 }
 
 assert_eq "48GB env" "$(select_train_env 49140)" "tomer_advtrain"
@@ -95,6 +99,26 @@ assert_parse \
     "small" "gradnorm_l2_8_init3" "convnext_small_gradnorm_l2_8_init3" "" "96" \
     "false" "pixel" "8" "madry" "false" "true"
 
+assert_parse \
+    "dvd_b_init1" 49140 \
+    "small" "dvd_b_init1" "convnext_small_dvd_b_init1" "" "256" \
+    "false" "pixel" "" "madry" "false" "false" "true" "dvd-b"
+
+assert_parse \
+    "dvd_b_l2_16_init1" 49140 \
+    "small" "dvd_b_l2_16_init1" "convnext_small_dvd_b_l2_16_init1" "" "256" \
+    "false" "pixel" "16" "madry" "true" "false" "true" "dvd-b"
+
+assert_parse \
+    "convnext_base_dvd_s_linftrades_8_init2" 90000 \
+    "base" "dvd_s_linftrades_8_init2" "convnext_base_dvd_s_linftrades_8_init2" "model=convnext_base" "384" \
+    "false" "pixel" "8" "trades" "true" "false" "true" "dvd-s"
+
+assert_parse \
+    "dvd_b_trades_l2_8_init2" 49140 \
+    "small" "dvd_b_trades_l2_8_init2" "convnext_small_dvd_b_trades_l2_8_init2" "" "192" \
+    "false" "pixel" "8" "trades" "true" "false" "true" "dvd-b"
+
 if parse_train_job "v1noise_linf_8_init1" 49140 >/dev/null 2>&1; then
     fail "v1noise adversarial job should be rejected"
 fi
@@ -105,6 +129,10 @@ fi
 
 if parse_train_job "l2_8_init1" 21000 >/dev/null 2>&1; then
     fail "GPU memory below 22GB should be rejected"
+fi
+
+if parse_train_job "dvd_x_l2_8_init1" 49140 >/dev/null 2>&1; then
+    fail "invalid DVD variant should be rejected"
 fi
 
 echo "[OK] train launcher mapping tests passed"
