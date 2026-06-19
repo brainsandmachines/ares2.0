@@ -25,10 +25,10 @@ parse_train_job() {
 
     attack_eps=""
     experiment_num=""
-    if [[ "$job_core" =~ _([0-9]+)_init([0-9]+)$ ]]; then
+    if [[ "$job_core" =~ _([0-9]+)_init([0-9]+)(_from_[a-zA-Z0-9_]+)?$ ]]; then
         attack_eps="${BASH_REMATCH[1]}"
         experiment_num="${BASH_REMATCH[2]}"
-    elif [[ "$job_core" =~ _init([0-9]+)$ ]]; then
+    elif [[ "$job_core" =~ _init([0-9]+)(_from_[a-zA-Z0-9_]+)?$ ]]; then
         experiment_num="${BASH_REMATCH[1]}"
     else
         echo "[ERROR] Could not parse experiment_num from job name: $jobname" >&2
