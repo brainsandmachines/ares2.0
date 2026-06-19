@@ -30,6 +30,15 @@ export MASTER_PORT=$((10000 + RANDOM % 50000))
 jobname="$SLURM_JOB_NAME"
 MODELS_ROOT="${MODELS_ROOT:-/home/ashtomer/projects/ares/results/models}"
 
+# Early bypass for PLOT_RESULTS / COMPLETED: skip parse_cont_train_job entirely.
+if [[ -n "$ORCH_MODEL_ID" && -n "$ORCH_DB" ]]; then
+    _stage="$(python -m orchestrator.jobctl get current_stage 2>/dev/null)"
+    if [[ "$_stage" == "COMPLETED" || "$_stage" == "PLOT_RESULTS" ]]; then
+        orch_pipeline  # COMPLETED → exit 0; PLOT_RESULTS → plot + advance COMPLETED
+        exit $?
+    fi
+fi
+
 parse_cont_train_job "$jobname" "$GPU_TOTAL" "$MODELS_ROOT" || exit 1
 
 LRB=1.0e-3

@@ -178,16 +178,8 @@ class Orchestrator:
         return submissions
 
     def _next_unclaimed(self, node: str, claimed: set[str]):
-        """next_pending_for_node, skipping models already claimed this tick."""
-        # Small candidate scan keeps a single tick deterministic without a more
-        # complex SQL exclusion; the PENDING set per tick is tiny.
-        for row in self.db.list_models(status="PENDING"):
-            if row.model_id in claimed:
-                continue
-            if row.cluster_node and row.cluster_node != node:
-                continue
-            return row
-        return None
+        """Pick next PENDING for node, skipping already-claimed models this tick."""
+        return self.db.next_pending_for_node(node, exclude=claimed or None)
 
     def requeue_stale(self) -> int:
         seconds = int(self.cfg.stale_running_hours * 3600)

@@ -238,20 +238,32 @@ class OrchestratorDB:
                 ).fetchall()
         return [self._row_to_model(r) for r in rows]
 
-    def next_pending_for_node(self, node: str) -> Optional[ModelRow]:
+    def next_pending_for_node(
+        self,
+        node: str,
+        exclude: Optional[set] = None,
+    ) -> Optional["ModelRow"]:
         """Deterministically pick the next PENDING row eligible for ``node``.
 
         A row is eligible if its ``cluster_node`` is unset (any node) or matches.
         Ordering: eval stages before training (PLOT_RESULTS→AA_SWEEP→TRAIN),
         then protocol priority DESC (higher number = higher priority), then
         model_id for a stable tiebreak.
+        ``exclude`` is an optional set of model_ids already claimed this tick.
         """
+        exclude_ids = list(exclude) if exclude else []
+        ex_clause = (
+            f"AND model_id NOT IN ({','.join('?' * len(exclude_ids))})"
+            if exclude_ids
+            else ""
+        )
         with self._connect() as conn:
             row = conn.execute(
-                """
+                f"""
                 SELECT * FROM models_queue
                 WHERE status = 'PENDING'
                   AND (cluster_node IS NULL OR cluster_node = '' OR cluster_node = ?)
+                  {ex_clause}
                 ORDER BY
                   CASE current_stage
                     WHEN 'PLOT_RESULTS' THEN 0
@@ -263,7 +275,7 @@ class OrchestratorDB:
                   model_id ASC
                 LIMIT 1
                 """,
-                (node,),
+                (node, *exclude_ids),
             ).fetchone()
         return self._row_to_model(row) if row else None
 
