@@ -20,7 +20,7 @@ cd "$REPO"
 
 # 1. One reconciling/top-up pass (safe even if the daemon is also running:
 #    DB writes are serialized; tick is idempotent).
-"$PY" -m orchestrator.daemon_once || echo "[watchdog] run_once failed"
+"$PY" -m orchestrator.cli tick || echo "[watchdog] run_once failed"
 
 # 2. Ensure the daemon is alive.
 alive=0
