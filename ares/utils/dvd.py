@@ -46,7 +46,7 @@ def resolve_months_per_epoch(dvd_cfg: Any) -> float:
 
 
 def _import_dvd_backend(backend: str):
-    backend = str(backend or "scale_free").lower()
+    backend = str(backend or "paper").lower()
     if backend == "scale_free":
         try:
             from dvd_scale_free.dvd_scale_free.development import (  # type: ignore
@@ -102,7 +102,7 @@ def build_dvd_state(cfg: Any, len_train_loader: int) -> Optional[DVDState]:
     if dvd_cfg is None or not bool(dvd_cfg.get("enabled", False)):
         return None
 
-    backend = str(dvd_cfg.get("backend", "scale_free")).lower()
+    backend = str(dvd_cfg.get("backend", "paper")).lower()
     DVDConfig, DVDTransformer, generate_age_months_curve = _import_dvd_backend(backend)
     image_size = int(dvd_cfg.get("image_size", None) or cfg.dataset.input_size)
     config_kwargs = dict(

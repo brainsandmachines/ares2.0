@@ -5,7 +5,7 @@ timm==1.0.22
 hydra-core==1.3.2
 omegaconf==2.3.0
 kornia
-dvd_scale_free @ git+https://github.com/KietzmannLab/DVD.git@36e56374bb73f52a97fc6e3a39531cba2443bb2f
+dvd @ git+https://github.com/KietzmannLab/DVD.git@paper
 PyYAML==6.0.3
 gdown==5.2.0
 pandas==2.3.3

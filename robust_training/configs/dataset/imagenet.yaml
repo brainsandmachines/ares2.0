@@ -41,7 +41,7 @@ smoothing: 0.1
 # before adversarial example generation.
 dvd:
   enabled: false
-  backend: scale_free
+  backend: paper
   variant: dvd-b
   months_per_epoch: null
   time_order: chronological
