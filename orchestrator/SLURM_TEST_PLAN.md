@@ -5,6 +5,30 @@ Everything offline is already covered by `python -m pytest orchestrator/tests/`
 live cluster (Slurm + GPUs + torch) and so were **not** runnable during the
 rebuild. Run them in order; each lists the exact command and the pass criterion.
 
+## Results — run 2026-06-21 (cluster back online)
+
+Fast infra tests run against an **isolated scratch DB + dummy rows** (the live
+118-model production DB was left untouched):
+
+| # | Test | Result |
+|---|------|--------|
+| 1 | Controller array submits, `%N` concurrency cap holds | **PASS** — 24-task `%12` array peaked at exactly 12 running |
+| 2 | Atomic claim under real NFS concurrency (no double-claim) | **PASS** — 16 rows, 16 distinct claims, 8 losers got `None`, no slurm id owned >1 row |
+| 6 | Stale-requeue + liveness guard (real `squeue`/`sacct`) | **PASS** — dead owner released (`requeued=1`), live real-job owner left untouched |
+| 7/8 | Monitor top-up decision + `afterany` dependency + double-queue guard | **PASS** — dry-run picked `1-200%6`/`%8` per partition via real `squeue`; a real `--dependency=afterany` pool held `PENDING|Dependency` |
+| 9 | Deterministic classification + codex escalation + dedup | **PASS** — rules act deterministically; one real `codex` call wrote a report, repeat signature deduped (no 2nd call) |
+
+Still **deferred** — need a real multi-day training cycle (decision: fast infra
+tests only for now):
+
+| # | Test | Why deferred |
+|---|------|--------------|
+| 3 | Per-epoch DB writes + train→AA→plot handoffs | requires a full real model run |
+| 4 | `best_checkpoint` correctness from real AA CSVs | requires AA sweep outputs |
+| 5 | Resume-from-`next_epoch` after interruption | requires an interrupted real run |
+
+Run them in order; each lists the exact command and the pass criterion.
+
 Prereqs:
 - Code synced to the cluster: `git push` on botero, then
   `ssh slurm "cd /home/ashtomer/projects/ares && git pull"`.
