@@ -5,10 +5,9 @@ orchestrator via ``sbatch --export``). stdlib + ``orchestrator.db`` only, so it
 imports cleanly in the training conda env.
 
 Subcommands:
-    get <field>            print one row field (status|current_stage|
-                           total_epochs|current_epoch|model_dir|launcher|job_name)
-    advance <stage>        set current_stage (COMPLETED also sets status)
-    set-status <status>    set status
+    get <field>            print one row field (status|target_epoch|next_epoch|
+                           current_epoch|model_dir|launcher|job_name|best_checkpoint)
+    set-status <status>    set the pipeline status
     tracked                exit 0 if ORCH_DB+ORCH_MODEL_ID are set, else 1
 """
 
@@ -34,7 +33,6 @@ def main() -> None:
     ap = argparse.ArgumentParser(prog="jobctl")
     sub = ap.add_subparsers(dest="cmd", required=True)
     g = sub.add_parser("get"); g.add_argument("field")
-    a = sub.add_parser("advance"); a.add_argument("stage")
     s = sub.add_parser("set-status"); s.add_argument("status")
     sub.add_parser("tracked")
     args = ap.parse_args()
@@ -52,12 +50,10 @@ def main() -> None:
             print("", end="")
             return
         field = args.field
-        if field == "total_epochs":
-            print(row.total_epochs)
+        if field in ("total_epochs", "target_epoch"):
+            print(row.target_epoch)
         else:
             print(getattr(row, field))
-    elif args.cmd == "advance":
-        db.advance_stage(model_id, args.stage)
     elif args.cmd == "set-status":
         db.set_status(model_id, args.status)
 

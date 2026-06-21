@@ -1,13 +1,19 @@
 """Pluggable LLM-analyzer and email transports for the failure analyzer.
 
-Both are best-effort and optional: if the ``claude`` CLI or a mail transport
+Both are best-effort and optional: if the diagnosis CLI or a mail transport
 isn't available, the analyzer still writes the raw-traceback markdown report and
 the loop keeps running. Nothing here is on the critical scheduling path.
+
+The diagnosis CLI is ``codex`` by default (overridable via ``ORCH_LLM_CMD``):
+unknown, never-before-seen failure signatures are escalated to ``codex exec``
+exactly once (deduped upstream by error hash). Everything up to that escalation
+is deterministic.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 from typing import Callable, Optional
@@ -20,28 +26,42 @@ _LLM_PROMPT = (
     "You are debugging a failed ML training job on a SLURM cluster (ARES, "
     "adversarial robustness, PyTorch/Hydra). Given the traceback below, produce "
     "a concise markdown report with: (1) one-line root cause, (2) the most "
-    "likely fix, (3) any config/launcher lines to change. Be specific and short.\n\n"
+    "likely fix, (3) any config/launcher lines to change. Be specific and short. "
+    "Do not modify any files; this is a read-only diagnosis.\n\n"
     "Traceback:\n```\n{tb}\n```\n"
 )
 
 
+def _llm_argv(cmd: str) -> list[str]:
+    """Non-interactive argv for the configured diagnosis CLI (prompt via stdin)."""
+    base = os.path.basename(cmd)
+    if base == "codex":
+        # `codex exec` runs non-interactively and reads the prompt from stdin.
+        return [cmd, "exec", "--skip-git-repo-check"]
+    # claude and compatible CLIs accept a `-p` prompt; we pipe via stdin instead.
+    return [cmd, "-p"]
+
+
 def make_llm_client() -> Optional[Callable[[str], str]]:
-    """Return an LLM client backed by the local ``claude`` CLI, or None."""
-    claude = shutil.which("claude")
-    if not claude:
-        logger.info("no `claude` CLI on PATH; failure reports will be raw-only")
+    """Return a diagnosis client backed by the ``ORCH_LLM_CMD`` CLI (default codex)."""
+    cmd_name = os.environ.get("ORCH_LLM_CMD", "codex")
+    cmd = shutil.which(cmd_name)
+    if not cmd:
+        logger.info("no `%s` CLI on PATH; failure reports will be raw-only", cmd_name)
         return None
+    argv = _llm_argv(cmd)
 
     def _client(traceback_text: str) -> str:
         prompt = _LLM_PROMPT.format(tb=traceback_text[:8000])
         proc = subprocess.run(
-            [claude, "-p", prompt],
+            argv,
+            input=prompt,
             capture_output=True,
             text=True,
-            timeout=180,
+            timeout=300,
         )
         if proc.returncode != 0:
-            raise RuntimeError(f"claude CLI failed: {proc.stderr[:500]}")
+            raise RuntimeError(f"{cmd_name} CLI failed: {proc.stderr[:500]}")
         return proc.stdout.strip()
 
     return _client

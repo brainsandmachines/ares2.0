@@ -45,15 +45,16 @@ class Config:
     # --- where job .out/.err logs land, as seen from BOTERO (for failure reads) ---
     logs_root: str = "/home/ashtomer/projects/ares/outs"
 
-    # --- loop timing (configurable on the fly via .env) ---
-    interval_minutes: float = 20.0
-    stale_running_hours: float = 10.0
+    # --- controller array pools ---
+    array_size: int = 200          # tasks per pool: --array=1-<size>%<capacity>
+    min_remaining: int = 20        # top up when fewer tasks than this remain
 
-    # --- node capacities (default: 6 rtx_pro_6000 + 8 rtx6000) ---
+    # --- node capacities (default: 6 rtx_pro_6000 + 8 rtx6000; also the %N throttle) ---
     node_capacity: dict[str, int] = field(default_factory=lambda: dict(NODE_CAPACITY))
 
     # --- failure analyzer toggles ---
     enable_failure_analyzer: bool = True
+    failure_lookback_hours: float = 2.0
     recommendations_dir: str = "/home/tomer_a/Documents/ares/orchestrator/recommendations"
     alert_email: Optional[str] = "tomerash98@gmail.com"
 
@@ -72,11 +73,14 @@ class Config:
             cluster_user=g("ORCH_CLUSTER_USER", cls.cluster_user),
             cluster_repo=g("ORCH_CLUSTER_REPO", cls.cluster_repo),
             logs_root=g("ORCH_LOGS_ROOT", cls.logs_root),
-            interval_minutes=float(g("ORCH_INTERVAL_MINUTES", cls.interval_minutes)),
-            stale_running_hours=float(g("ORCH_STALE_HOURS", cls.stale_running_hours)),
+            array_size=int(g("ORCH_ARRAY_SIZE", cls.array_size)),
+            min_remaining=int(g("ORCH_MIN_REMAINING", cls.min_remaining)),
             enable_failure_analyzer=str(
                 g("ORCH_ENABLE_FAILURE_ANALYZER", "1")
             ).lower() in ("1", "true", "yes"),
+            failure_lookback_hours=float(
+                g("ORCH_FAILURE_LOOKBACK_HOURS", cls.failure_lookback_hours)
+            ),
             recommendations_dir=g("ORCH_RECOMMENDATIONS_DIR", cls.recommendations_dir),
             alert_email=g("ORCH_ALERT_EMAIL", cls.alert_email) or None,
         )

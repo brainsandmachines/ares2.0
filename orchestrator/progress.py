@@ -36,7 +36,11 @@ def _get_db(db_path: str) -> OrchestratorDB:
 
 
 def update_epoch(epoch: int, rank: int = 0) -> None:
-    """Atomically record ``current_epoch`` for the orchestrated model row."""
+    """Atomically record ``current_epoch``/``next_epoch`` for the model row.
+
+    The training loop passes ``epoch+1`` (completed-epoch count), which is also
+    the epoch to resume at -- the DB mirrors it into ``next_epoch``.
+    """
     if rank != 0:
         return
     tracked = _tracked()
@@ -47,3 +51,23 @@ def update_epoch(epoch: int, rank: int = 0) -> None:
         _get_db(db_path).update_epoch(model_id, int(epoch))
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("progress update failed (ignored): %s", exc)
+
+
+def advance_status(new_status: str, rank: int = 0) -> None:
+    """Transition the orchestrated row's pipeline status (in-job hook).
+
+    Used by the worker scripts to record stage handoffs:
+    training-complete -> AA_EVAL, AA-complete -> PLOTTING. A no-op for manual
+    runs (untracked) and for non-zero ranks. DB hiccups never reach training.
+    """
+    if rank != 0:
+        return
+    tracked = _tracked()
+    if tracked is None:
+        return
+    model_id, db_path = tracked
+    try:
+        _get_db(db_path).set_status(model_id, new_status)
+        logger.info("orch status -> %s for %s", new_status, model_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("status advance failed (ignored): %s", exc)
