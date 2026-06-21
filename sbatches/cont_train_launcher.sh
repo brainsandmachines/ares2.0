@@ -127,12 +127,13 @@ parse_cont_train_job() {
         ramp_end_epoch=""
         fixed_start_epoch=""
     elif [[ "$protocol" == "ramp" ]]; then
+        # 40-epoch ramp: 4 warmup (1-4), 26 linear ramp (5-30), 10 fixed (31-40).
         schedule_type="warmup_ramp_fixed"
-        epochs=35
-        warmup_epochs=3
-        ramp_start_epoch=4
-        ramp_end_epoch=20
-        fixed_start_epoch=21
+        epochs=40
+        warmup_epochs=4
+        ramp_start_epoch=5
+        ramp_end_epoch=30
+        fixed_start_epoch=31
         epochs="${CONT_EPOCHS:-$epochs}"
         warmup_epochs="${CONT_WARMUP_EPOCHS:-$warmup_epochs}"
         ramp_start_epoch="${CONT_RAMP_START_EPOCH:-$ramp_start_epoch}"

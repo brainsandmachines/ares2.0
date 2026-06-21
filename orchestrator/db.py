@@ -106,6 +106,7 @@ class ModelRow:
     best_score: Optional[float]
     last_error_hash: Optional[str]
     last_update_ts: Optional[int]
+    depends_on_model: Optional[str] = None
     arch: str = "convnext_small"
     protocol: Optional[str] = None
     eps: Optional[float] = None
@@ -213,6 +214,7 @@ class OrchestratorDB:
                     requeued        INTEGER NOT NULL DEFAULT 0,
                     best_checkpoint TEXT,
                     best_score      REAL,
+                    depends_on_model TEXT,
                     last_error_hash TEXT,
                     arch            TEXT NOT NULL DEFAULT 'convnext_small',
                     protocol        TEXT,
@@ -230,6 +232,7 @@ class OrchestratorDB:
                 ("requeued", "requeued INTEGER NOT NULL DEFAULT 0"),
                 ("best_checkpoint", "best_checkpoint TEXT"),
                 ("best_score", "best_score REAL"),
+                ("depends_on_model", "depends_on_model TEXT"),
                 ("arch", "arch TEXT NOT NULL DEFAULT 'convnext_small'"),
                 ("protocol", "protocol TEXT"),
                 ("eps", "eps REAL"),
@@ -314,6 +317,7 @@ class OrchestratorDB:
             best_score=row["best_score"],
             last_error_hash=row["last_error_hash"],
             last_update_ts=row["last_update_ts"],
+            depends_on_model=row["depends_on_model"],
             arch=row["arch"],
             protocol=row["protocol"],
             eps=row["eps"],
@@ -416,6 +420,19 @@ class OrchestratorDB:
                 WHERE slurm_job_id IS NULL
                   AND status IN ({','.join('?' * len(CLAIMABLE_STATUSES))})
                   AND (cluster_node IS NULL OR cluster_node = '' OR cluster_node = ?)
+                  -- Dependency gate: a fresh PENDING row that warm-starts from
+                  -- another model is only claimable once that source is FINISHED
+                  -- (and thus has a usable best checkpoint). A resuming row
+                  -- (already past PENDING) ignores the gate.
+                  AND (
+                    depends_on_model IS NULL
+                    OR status != 'PENDING'
+                    OR EXISTS (
+                      SELECT 1 FROM models_queue dep
+                      WHERE dep.model_id = models_queue.depends_on_model
+                        AND dep.status = 'FINISHED'
+                    )
+                  )
                 ORDER BY
                   CASE status
                     WHEN 'PLOTTING' THEN 0
@@ -467,11 +484,14 @@ class OrchestratorDB:
         protocol: Optional[str] = None,
         eps: Optional[float] = None,
         final_epoch: Optional[int] = None,
+        depends_on_model: Optional[str] = None,
     ) -> None:
         """Insert a queue row, leaving an existing row's runtime state intact.
 
         ``final_epoch`` defaults to the curriculum schedule sum but can be set
-        explicitly to override the desired endpoint.
+        explicitly to override the desired endpoint. ``depends_on_model`` names a
+        source model this row warm-starts from (continuation): a fresh PENDING row
+        is not claimable until that source is FINISHED.
         """
         if final_epoch is None:
             final_epoch = int(warmup_epochs) + int(linear_epochs) + int(plateau_epochs)
@@ -481,8 +501,8 @@ class OrchestratorDB:
                 (model_id, status, current_stage, cluster_node, launcher,
                  job_name, model_dir, warmup_epochs, linear_epochs,
                  plateau_epochs, final_epoch, arch, protocol, eps, priority,
-                 last_update_ts)
-            VALUES (?, 'PENDING', 'TRAIN', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 depends_on_model, last_update_ts)
+            VALUES (?, 'PENDING', 'TRAIN', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(model_id) DO UPDATE SET
                 launcher       = excluded.launcher,
                 job_name       = excluded.job_name,
@@ -495,7 +515,8 @@ class OrchestratorDB:
                 protocol       = excluded.protocol,
                 eps            = excluded.eps,
                 cluster_node   = excluded.cluster_node,
-                priority       = excluded.priority
+                priority       = excluded.priority,
+                depends_on_model = excluded.depends_on_model
             """,
             (
                 model_id,
@@ -511,6 +532,7 @@ class OrchestratorDB:
                 protocol,
                 None if eps is None else float(eps),
                 int(priority),
+                depends_on_model,
                 int(time.time()),
             ),
         )
