@@ -82,7 +82,8 @@ Watch a few rows move PENDING/AA_EVAL → TRAINING/… via `cli status`.
 ```bash
 crontab -e
 # uncomment the staged line:
-# 0 * * * * /home/tomer_a/miniconda3/envs/ares/bin/python -m orchestrator.monitor >> /home/tomer_a/Documents/ares/orchestrator/monitor.log 2>&1
+# 0 * * * * cd /home/tomer_a/Documents/ares && /home/tomer_a/miniconda3/envs/ares/bin/python -m orchestrator.monitor >> /home/tomer_a/Documents/ares/orchestrator/monitor.log 2>&1
+# (the `cd` is required -- cron starts in $HOME, where `python -m orchestrator.monitor` can't find the package)
 crontab -l    # confirm it is active
 tail -f ~/Documents/ares/orchestrator/monitor.log   # watch the first hourly tick
 ```
