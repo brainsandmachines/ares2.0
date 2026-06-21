@@ -167,6 +167,28 @@ def test_atomic_claim_no_double_claim(tmp_path):
     assert len(set(owners)) == n_models
 
 
+def test_pending_dependency_gate(tmp_path):
+    """A fresh PENDING cont row isn't claimable until its source is FINISHED."""
+    db = OrchestratorDB(str(tmp_path / "o.db"))
+    db.upsert_model("src", "golan-trainmodels", "l2_4_init1", "/d/src", 0, 0, 150)
+    db.upsert_model("cont", "golan-trainmodels", "l2_cont4to8_ramp_init1", "/d/cont",
+                    4, 26, 10, depends_on_model="src")
+    # src is claimable; cont is gated on src not being FINISHED.
+    assert db.claim_next("rtx6000", 1).model_id == "src"
+    assert db.claim_next("rtx6000", 2) is None          # cont still gated
+    db.mark_finished("src", "best", 50.0)               # source done -> dep satisfied
+    assert db.claim_next("rtx6000", 3).model_id == "cont"
+
+
+def test_resuming_cont_ignores_dependency_gate(tmp_path):
+    """A resuming (non-PENDING) cont row is claimable even if the source isn't done."""
+    db = OrchestratorDB(str(tmp_path / "o.db"))
+    db.upsert_model("cont", "golan-trainmodels", "l2_cont4to8_ramp_init1", "/d/cont",
+                    4, 26, 10, depends_on_model="src_not_in_db")
+    db.force_status("cont", STATUS_TRAINING)            # simulate a requeued resume
+    assert db.claim_next("rtx6000", 1).model_id == "cont"
+
+
 def test_legacy_status_migration(tmp_path):
     """Pre-rebuild rows upgrade in place: status by stage, owner cleared on
     non-terminal rows, current_epoch carried into next_epoch."""

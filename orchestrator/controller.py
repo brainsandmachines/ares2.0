@@ -143,6 +143,32 @@ def _run_streaming(cmd: list[str], env: dict, tail_lines: int = 400) -> tuple[in
     return proc.returncode, "".join(tail)
 
 
+# Map a row's best_checkpoint kind to the on-disk checkpoint file.
+_CKPT_FILE = {
+    "best": "model_best.pth.tar",
+    "last": "last.pth.tar",
+    "advbest": "model_best_adv.pth.tar",
+}
+
+
+def _continuation_ckpt(job: ModelRow) -> Optional[str]:
+    """For a cont-ramp job, the source model's best checkpoint to warm-start from.
+
+    The source is named by ``depends_on_model``; we use its DB ``best_checkpoint``
+    (set when it FINISHED) to pick the file, defaulting to model_best.pth.tar.
+    Returns None when untracked or the source is unknown, so run_stage falls back
+    to its own on-disk derivation.
+    """
+    db_path = os.environ.get("ORCH_DB")
+    if not job.depends_on_model or not db_path:
+        return None
+    src = OrchestratorDB(db_path).get_model_state(job.depends_on_model)
+    if src is None or not src.model_dir:
+        return None
+    fname = _CKPT_FILE.get(src.best_checkpoint or "", "model_best.pth.tar")
+    return os.path.join(src.model_dir, fname)
+
+
 def _default_run_stage(stage: str, job: ModelRow) -> tuple[int, str]:
     """Real stage execution: bash launcher for train/AA, python for plotting."""
     env = os.environ.copy()
@@ -151,6 +177,11 @@ def _default_run_stage(stage: str, job: ModelRow) -> tuple[int, str]:
         env["SLURM_JOB_NAME"] = job.job_name or job.model_id
         env["ORCH_TARGET_EPOCH"] = str(job.target_epoch)
         env["ORCH_STAGE_MODE"] = stage
+        # Continuation jobs warm-start from the source model's best checkpoint
+        # (resume from this job's own last.pth.tar takes precedence in training).
+        ckpt = _continuation_ckpt(job)
+        if ckpt:
+            env["CONTINUATION_CKPT"] = ckpt
         return _run_streaming(["bash", str(RUN_STAGE_SH), stage], env)
     # plot
     model_dir = job.model_dir or job.model_id
