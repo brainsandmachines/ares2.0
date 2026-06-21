@@ -63,6 +63,11 @@ class Config:
         here = os.path.dirname(os.path.abspath(__file__))
         env = _load_dotenv(dotenv_path or os.path.join(here, ".env"))
 
+        # Expose .env values to os.environ-based readers (notify's SMTP + LLM
+        # settings) without overriding anything already set in the real env.
+        for _k, _v in env.items():
+            os.environ.setdefault(_k, _v)
+
         def g(key: str, default):
             return env.get(key, default)
 
