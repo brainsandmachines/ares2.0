@@ -189,6 +189,23 @@ def test_resuming_cont_ignores_dependency_gate(tmp_path):
     assert db.claim_next("rtx6000", 1).model_id == "cont"
 
 
+def test_claim_rank_overrides_status_order(tmp_path):
+    """Ranked rows are claimed first, in rank order, ahead of unranked rows even
+    of higher status; once the list is exhausted, normal order resumes."""
+    db = OrchestratorDB(str(tmp_path / "o.db"))
+    db.upsert_model("aa", "golan-trainmodels", "l2_8_init1", "/d/aa", 0, 0, 250)
+    db.force_status("aa", STATUS_AA_EVAL)                      # normally beats PENDING
+    db.upsert_model("r2", "golan-trainmodels", "l2_8_init2", "/d/r2", 0, 0, 250)
+    db.upsert_model("r1", "golan-trainmodels", "l2_8_init3", "/d/r1", 0, 0, 250)
+    db.set_claim_rank("r1", 1)
+    db.set_claim_rank("r2", 2)
+    assert db.claim_next("rtx6000", 1).model_id == "r1"       # rank 1 first
+    assert db.claim_next("rtx6000", 2).model_id == "r2"       # rank 2 next
+    assert db.claim_next("rtx6000", 3).model_id == "aa"       # list done -> status order
+    db.set_claim_rank("r1", None)                             # clearing works
+    assert db.get_model_state("r1").claim_rank is None
+
+
 def test_legacy_status_migration(tmp_path):
     """Pre-rebuild rows upgrade in place: status by stage, owner cleared on
     non-terminal rows, current_epoch carried into next_epoch."""

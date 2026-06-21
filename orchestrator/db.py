@@ -107,6 +107,7 @@ class ModelRow:
     last_error_hash: Optional[str]
     last_update_ts: Optional[int]
     depends_on_model: Optional[str] = None
+    claim_rank: Optional[int] = None
     arch: str = "convnext_small"
     protocol: Optional[str] = None
     eps: Optional[float] = None
@@ -215,6 +216,7 @@ class OrchestratorDB:
                     best_checkpoint TEXT,
                     best_score      REAL,
                     depends_on_model TEXT,
+                    claim_rank      INTEGER,
                     last_error_hash TEXT,
                     arch            TEXT NOT NULL DEFAULT 'convnext_small',
                     protocol        TEXT,
@@ -233,6 +235,7 @@ class OrchestratorDB:
                 ("best_checkpoint", "best_checkpoint TEXT"),
                 ("best_score", "best_score REAL"),
                 ("depends_on_model", "depends_on_model TEXT"),
+                ("claim_rank", "claim_rank INTEGER"),
                 ("arch", "arch TEXT NOT NULL DEFAULT 'convnext_small'"),
                 ("protocol", "protocol TEXT"),
                 ("eps", "eps REAL"),
@@ -318,6 +321,7 @@ class OrchestratorDB:
             last_error_hash=row["last_error_hash"],
             last_update_ts=row["last_update_ts"],
             depends_on_model=row["depends_on_model"],
+            claim_rank=row["claim_rank"],
             arch=row["arch"],
             protocol=row["protocol"],
             eps=row["eps"],
@@ -434,6 +438,12 @@ class OrchestratorDB:
                     )
                   )
                 ORDER BY
+                  -- Explicit priority list first: ranked rows (claim_rank set)
+                  -- are claimed ahead of everything else, in ascending rank,
+                  -- overriding the status order. Once all ranked rows are done,
+                  -- selection falls back to the normal status + priority order.
+                  CASE WHEN claim_rank IS NULL THEN 1 ELSE 0 END,
+                  claim_rank ASC,
                   CASE status
                     WHEN 'PLOTTING' THEN 0
                     WHEN 'AA_EVAL'  THEN 1
@@ -586,6 +596,14 @@ class OrchestratorDB:
             "best_score = COALESCE(?, best_score), last_update_ts = ? "
             "WHERE model_id = ?",
             (kind, None if score is None else float(score), int(time.time()), model_id),
+        )
+
+    def set_claim_rank(self, model_id: str, rank: Optional[int]) -> int:
+        """Set (or clear with None) a row's explicit claim rank. Lower rank is
+        claimed first, ahead of all unranked rows and overriding status order."""
+        return self._write(
+            "UPDATE models_queue SET claim_rank = ?, last_update_ts = ? WHERE model_id = ?",
+            (None if rank is None else int(rank), int(time.time()), model_id),
         )
 
     def mark_finished(
