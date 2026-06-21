@@ -68,12 +68,48 @@ def make_llm_client() -> Optional[Callable[[str], str]]:
 
 
 def make_emailer(cfg: Config) -> Optional[Callable[[str, str], None]]:
-    """Return an emailer using the local ``mail`` command, or None."""
+    """Return an emailer, or None if no transport is configured.
+
+    Two transports, preferred in order:
+
+    1. **SMTP** (no local MTA needed) when ``ORCH_SMTP_HOST`` is set. Reads
+       ``ORCH_SMTP_PORT`` (default 587, STARTTLS), ``ORCH_SMTP_USER`` /
+       ``ORCH_SMTP_PASS`` (e.g. a Gmail address + app password), and optional
+       ``ORCH_SMTP_FROM`` (defaults to the user). This is the recommended way to
+       turn alerts on from botero, which has no mail daemon.
+    2. The local ``mail`` / ``mailx`` command, if one exists.
+    """
     if not cfg.alert_email:
         return None
+
+    host = os.environ.get("ORCH_SMTP_HOST")
+    if host:
+        port = int(os.environ.get("ORCH_SMTP_PORT", "587"))
+        user = os.environ.get("ORCH_SMTP_USER")
+        password = os.environ.get("ORCH_SMTP_PASS")
+        sender = os.environ.get("ORCH_SMTP_FROM") or user or cfg.alert_email
+
+        def _send_smtp(subject: str, body: str) -> None:
+            import smtplib
+            from email.message import EmailMessage
+
+            msg = EmailMessage()
+            msg["From"] = sender
+            msg["To"] = cfg.alert_email
+            msg["Subject"] = subject
+            msg.set_content(body)
+            with smtplib.SMTP(host, port, timeout=60) as smtp:
+                smtp.starttls()
+                if user and password:
+                    smtp.login(user, password)
+                smtp.send_message(msg)
+
+        return _send_smtp
+
     mail = shutil.which("mail") or shutil.which("mailx")
     if not mail:
-        logger.info("no `mail` command on PATH; skipping email alerts")
+        logger.info("no `mail` command on PATH and no ORCH_SMTP_HOST; "
+                    "skipping email alerts (reports still written to disk)")
         return None
 
     def _send(subject: str, body: str) -> None:

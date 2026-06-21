@@ -27,6 +27,10 @@ def _db(cfg: Config) -> OrchestratorDB:
 def cmd_status(cfg: Config, args) -> None:
     db = _db(cfg)
     rows = db.list_models(status=args.filter)
+    if getattr(args, "active", False):
+        # Only rows a controller task currently owns = actually running now.
+        rows = [r for r in rows if r.slurm_job_id is not None
+                and r.status in ACTIVE_STATUSES]
     hdr = (f"{'model_id':28} {'arch':6} {'proto':8} {'eps':>4} {'status':9} "
            f"{'epoch':>9} {'rq':>3} {'best':>8} {'job':>10}")
     print(hdr)
@@ -105,7 +109,11 @@ def main() -> None:
     ap.add_argument("--env", default=None, help="path to .env (default orchestrator/.env)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("status"); p.add_argument("--filter", default=None); p.set_defaults(fn=cmd_status)
+    p = sub.add_parser("status")
+    p.add_argument("--filter", default=None)
+    p.add_argument("--active", action="store_true",
+                   help="only models a controller is running right now")
+    p.set_defaults(fn=cmd_status)
     p = sub.add_parser("validate-model"); p.add_argument("model_id"); p.set_defaults(fn=cmd_validate)
     p = sub.add_parser("force-status")
     p.add_argument("model_id"); p.add_argument("status")
