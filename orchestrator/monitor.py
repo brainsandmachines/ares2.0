@@ -225,7 +225,17 @@ def run_once(cfg: Optional[Config] = None, dry_run: bool = False) -> None:
             capacity_check(db, cfg, partition, state)
 
     # 4. failures
-    inspect_failures(db, slurm, cfg, dry_run=dry_run)
+    n_failures = inspect_failures(db, slurm, cfg, dry_run=dry_run)
+
+    # 5. heartbeat: one line per pass so a healthy idle run is visible in the log
+    #    (otherwise a no-op run logs nothing and looks like it never ran).
+    summary = ", ".join(
+        f"{p} {states.get(p, PartitionState()).running}r/"
+        f"{states.get(p, PartitionState()).remaining}left"
+        for p in cfg.node_capacity
+    )
+    logger.info("monitor pass done%s -- %s; failures handled=%d",
+                " (dry-run)" if dry_run else "", summary, n_failures)
 
 
 def main() -> None:
