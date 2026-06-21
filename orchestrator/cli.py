@@ -88,6 +88,9 @@ def cmd_requeue(cfg: Config, args) -> None:
 
 
 def cmd_monitor(cfg: Config, args) -> None:
+    import logging
+    logging.basicConfig(level=logging.INFO,
+                        format="%(levelname)s %(name)s: %(message)s")
     from .monitor import run_once
     run_once(cfg, dry_run=args.dry_run)
 
