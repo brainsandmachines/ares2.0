@@ -2,6 +2,7 @@
 
 Examples:
     python orchestrator/show_db.py
+    python orchestrator/show_db.py --active          # models a controller is running now
     python orchestrator/show_db.py --status TRAINING
     python orchestrator/show_db.py --format markdown
     python orchestrator/show_db.py --all-columns --limit 100
@@ -75,12 +76,17 @@ def table_columns(conn: sqlite3.Connection) -> list[str]:
     return [str(r["name"]) for r in rows]
 
 
+# Statuses a controller can be actively working (mirror of db.ACTIVE_STATUSES).
+ACTIVE_STATUSES = ("TRAINING", "AA_EVAL", "PLOTTING")
+
+
 def fetch_rows(
     conn: sqlite3.Connection,
     *,
     status: str | None,
     limit: int | None,
     all_columns: bool,
+    active: bool = False,
 ) -> tuple[list[str], list[dict[str, object]]]:
     available = table_columns(conn)
     available_set = set(available)
@@ -124,10 +130,16 @@ def fetch_rows(
         """
 
     params: list[object] = []
-    where_sql = ""
+    clauses: list[str] = []
     if status:
-        where_sql = " WHERE status = ?"
+        clauses.append("status = ?")
         params.append(status)
+    if active:
+        # Owned by a live controller task and in a non-terminal stage = running now.
+        placeholders = ",".join("?" for _ in ACTIVE_STATUSES)
+        clauses.append(f"slurm_job_id IS NOT NULL AND status IN ({placeholders})")
+        params.extend(ACTIVE_STATUSES)
+    where_sql = (" WHERE " + " AND ".join(clauses)) if clauses else ""
 
     order_sql = " ORDER BY priority DESC, model_id ASC"
     limit_sql = ""
@@ -188,6 +200,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Show orchestrator DB rows as a table.")
     parser.add_argument("--db", type=Path, default=default_db_path(), help="SQLite DB path")
     parser.add_argument("--status", help="optional status filter, e.g. TRAINING")
+    parser.add_argument(
+        "--active",
+        action="store_true",
+        help="only models a controller is running right now (owned + non-terminal)",
+    )
     parser.add_argument("--limit", type=int, help="maximum rows to print")
     parser.add_argument("--all-columns", action="store_true", help="print every DB column")
     parser.add_argument("--max-width", type=int, default=32, help="max width per table cell")
@@ -205,6 +222,7 @@ def main() -> None:
             status=args.status,
             limit=args.limit,
             all_columns=args.all_columns,
+            active=args.active,
         )
 
     if args.format == "markdown":
