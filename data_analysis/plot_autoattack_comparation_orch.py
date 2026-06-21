@@ -44,6 +44,14 @@ from plot_autoattack_comparation import (  # noqa: E402
 _EPS_RE_CONT = re.compile(r"_cont[0-9.]+to([0-9.]+)_(?:direct|ramp)_init[0-9]+$")
 _EPS_RE_STD = re.compile(r"_([0-9]+(?:\.[0-9]+)?)_init[0-9]+$")
 
+# The eps grid AutoAttack actually sweeps. A model whose nominal eps is not one
+# of these has no matching column, so we score it at a representative sampled
+# eps instead. And an adversarial model whose name carries no norm token (e.g.
+# gradnorm_*) is scored under l2 by default.
+AA_EPS = (1.0, 2.0, 4.0, 6.0, 8.0, 12.0, 16.0)
+DEFAULT_EPS = 4.0
+DEFAULT_NORM = "l2"
+
 
 def norm_from_name(model_name: str) -> str | None:
     """Return 'linf' | 'l2' | 'l1' encoded in the name, or None (baseline/clean)."""
@@ -70,13 +78,24 @@ def best_checkpoint_kind(models_root: Path, model_name: str) -> tuple[str | None
     """Pick the best checkpoint kind AND its score for the model's threat model.
 
     Score is the AutoAttack ``robust_acc`` at the model's norm+eps (e.g.
-    ``..._l2_2_init1`` -> l2 accuracy at eps 2); baseline/clean models fall back
-    to clean accuracy. Returns ``(kind, score)`` or ``(None, None)`` if no CSVs
+    ``..._l2_2_init1`` -> l2 accuracy at eps 2). Defaults: an adversarial model
+    whose name has no norm token (e.g. ``gradnorm_*``) is scored under
+    ``l2``, and an eps that is not on the swept grid (``AA_EPS``) snaps to
+    ``DEFAULT_EPS`` (4). Baseline/clean models (no eps in the name) fall back to
+    clean accuracy. Returns ``(kind, score)`` or ``(None, None)`` if no CSVs
     exist. The score (in %) is what gets written to the DB alongside the kind.
     """
     norm = norm_from_name(model_name)
     eps = eps_from_name(model_name)
-    use_robust = bool(norm) and eps is not None and eps > 0
+    # No eps in the name -> clean-trained (baseline/clean): score by clean acc.
+    # Otherwise it's an adversarial model: default a missing norm to l2 (e.g.
+    # gradnorm_*) and snap an off-grid eps to a sampled AA eps.
+    use_robust = eps is not None and eps > 0
+    if use_robust:
+        if norm is None:
+            norm = DEFAULT_NORM
+        if not any(abs(float(eps) - e) < 1e-9 for e in AA_EPS):
+            eps = DEFAULT_EPS
 
     best_kind: str | None = None
     best_val: float | None = None
