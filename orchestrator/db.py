@@ -3,15 +3,16 @@
 The database (``models_queue``) is the single source of truth and lives on the
 shared Slurm mount, so it is written from two places:
 
-* the **botero orchestrator** (submits jobs, tops up GPUs, marks failures), and
-* the **cluster job** itself (atomic per-epoch ``current_epoch`` updates and
-  stage transitions).
+* the **botero cron monitor** (tops up array pools, classifies failures), and
+* the **cluster array task** itself (atomically *claims* a job, per-epoch
+  ``current_epoch`` updates, and status transitions).
 
-NFS POSIX locking is unreliable, so every write goes through ``_write`` which:
+NFS POSIX locking is unreliable, so every write goes through ``_write`` (and the
+multi-statement claim through ``_atomic``) which:
 
 * opens a short-lived connection with a generous ``busy_timeout``,
 * runs inside a ``BEGIN IMMEDIATE`` transaction (reserves the write lock up
-  front, the same pattern the legacy ``claim_next_waiting_model`` relied on), and
+  front), and
 * retries a bounded number of times on ``database is locked``.
 
 WAL mode is intentionally *not* used (it misbehaves on NFS); we stay on the
@@ -31,23 +32,48 @@ from dataclasses import dataclass
 from typing import Iterator, Optional
 
 # --------------------------------------------------------------------------
-# Status / stage vocabulary (kept as plain strings for easy SQL + logging).
+# Pipeline status vocabulary (single source of truth for a row's lifecycle).
+#
+#   PENDING -> TRAINING -> AA_EVAL -> PLOTTING -> FINISHED       (+ FAILED)
+#
+# Ownership invariant: ``slurm_job_id IS NULL`` means the row is unowned and
+# *claimable*; a non-NULL ``slurm_job_id`` means a live array task owns it.
 # --------------------------------------------------------------------------
 STATUS_PENDING = "PENDING"
-STATUS_RUNNING = "RUNNING"
-STATUS_COMPLETED = "COMPLETED"
+STATUS_TRAINING = "TRAINING"
+STATUS_AA_EVAL = "AA_EVAL"
+STATUS_PLOTTING = "PLOTTING"
+STATUS_FINISHED = "FINISHED"
 STATUS_FAILED = "FAILED"
-STATUSES = (STATUS_PENDING, STATUS_RUNNING, STATUS_COMPLETED, STATUS_FAILED)
+STATUSES = (
+    STATUS_PENDING,
+    STATUS_TRAINING,
+    STATUS_AA_EVAL,
+    STATUS_PLOTTING,
+    STATUS_FINISHED,
+    STATUS_FAILED,
+)
 
-STAGE_TRAIN = "TRAIN"
-STAGE_AA_SWEEP = "AA_SWEEP"
-STAGE_PLOT_RESULTS = "PLOT_RESULTS"
-STAGE_CUSTOM_TASK = "CUSTOM_TASK"
-STAGE_COMPLETED = "COMPLETED"
+# Non-terminal statuses a worker can claim, in claim-priority order
+# (plotting first, then aa, then training, then a fresh pending row).
+CLAIMABLE_STATUSES = (
+    STATUS_PLOTTING,
+    STATUS_AA_EVAL,
+    STATUS_TRAINING,
+    STATUS_PENDING,
+)
+# Statuses that mean "a worker is (supposed to be) actively processing this row"
+# -> these are scanned for staleness/requeue.
+ACTIVE_STATUSES = (STATUS_TRAINING, STATUS_AA_EVAL, STATUS_PLOTTING)
 
-# Deterministic forward pipeline. CUSTOM_TASK is optional and only entered when
-# explicitly set; the default happy path is TRAIN -> AA_SWEEP -> PLOT -> done.
-STAGE_PIPELINE = (STAGE_TRAIN, STAGE_AA_SWEEP, STAGE_PLOT_RESULTS, STAGE_COMPLETED)
+# Legacy (pre-rebuild) stage values, which are unambiguous markers of an old row
+# (the new schema never writes these beyond the default 'TRAIN'): a non-terminal
+# legacy row's current_stage tells us where to resume. Used by the one-time,
+# idempotent migration in init_db.
+_LEGACY_STAGE_TO_STATUS = {
+    "AA_SWEEP": STATUS_AA_EVAL,
+    "PLOT_RESULTS": STATUS_PLOTTING,
+}
 
 # Node groups (Slurm partitions) and their GPU capacities.
 NODE_RTX_PRO = "rtx_pro_6000"
@@ -70,27 +96,30 @@ class ModelRow:
     job_name: Optional[str]
     model_dir: Optional[str]
     current_epoch: int
+    next_epoch: int
+    final_epoch: Optional[int]
     warmup_epochs: int
     linear_epochs: int
     plateau_epochs: int
+    requeued: int
+    best_checkpoint: Optional[str]
+    best_score: Optional[float]
     last_error_hash: Optional[str]
+    last_update_ts: Optional[int]
     arch: str = "convnext_small"
     protocol: Optional[str] = None
     eps: Optional[float] = None
+    priority: int = 100
 
     @property
     def total_epochs(self) -> int:
-        """Total scheduled epochs = warmup + linear + plateau."""
+        """Scheduled epochs from the curriculum schedule (warmup+linear+plateau)."""
         return self.warmup_epochs + self.linear_epochs + self.plateau_epochs
 
-
-def next_stage(stage: str) -> str:
-    """Return the next stage in the deterministic pipeline (idempotent at end)."""
-    if stage not in STAGE_PIPELINE:
-        # CUSTOM_TASK or anything off-pipeline collapses to COMPLETED next.
-        return STAGE_COMPLETED
-    idx = STAGE_PIPELINE.index(stage)
-    return STAGE_PIPELINE[min(idx + 1, len(STAGE_PIPELINE) - 1)]
+    @property
+    def target_epoch(self) -> int:
+        """Authoritative run length: explicit ``final_epoch`` else the schedule sum."""
+        return int(self.final_epoch) if self.final_epoch else self.total_epochs
 
 
 class OrchestratorDB:
@@ -120,14 +149,32 @@ class OrchestratorDB:
 
         Returns the number of affected rows.
         """
+
+        def op(conn: sqlite3.Connection) -> int:
+            return conn.execute(sql, params).rowcount
+
+        return self._atomic(op)
+
+    def _atomic(self, op):
+        """Run ``op(conn)`` inside one ``BEGIN IMMEDIATE`` txn, with retries.
+
+        ``op`` may issue several statements (e.g. a SELECT then an UPDATE) and
+        returns the value propagated to the caller. The reserved write lock makes
+        the whole block atomic against other writers -- the basis of an
+        uncontended, race-free job claim across concurrent array tasks.
+        """
         last_err: Optional[Exception] = None
         for attempt in range(_MAX_RETRIES):
             try:
                 with self._connect() as conn:
                     conn.execute("BEGIN IMMEDIATE")
-                    cur = conn.execute(sql, params)
-                    conn.commit()
-                    return cur.rowcount
+                    try:
+                        result = op(conn)
+                        conn.commit()
+                        return result
+                    except Exception:
+                        conn.rollback()
+                        raise
             except sqlite3.OperationalError as e:
                 last_err = e
                 if "locked" in str(e).lower() or "busy" in str(e).lower():
@@ -158,9 +205,14 @@ class OrchestratorDB:
                     job_name        TEXT,
                     model_dir       TEXT,
                     current_epoch   INTEGER NOT NULL DEFAULT 0,
+                    next_epoch      INTEGER NOT NULL DEFAULT 0,
+                    final_epoch     INTEGER,
                     warmup_epochs   INTEGER NOT NULL DEFAULT 0,
                     linear_epochs   INTEGER NOT NULL DEFAULT 0,
                     plateau_epochs  INTEGER NOT NULL DEFAULT 0,
+                    requeued        INTEGER NOT NULL DEFAULT 0,
+                    best_checkpoint TEXT,
+                    best_score      REAL,
                     last_error_hash TEXT,
                     arch            TEXT NOT NULL DEFAULT 'convnext_small',
                     protocol        TEXT,
@@ -170,15 +222,21 @@ class OrchestratorDB:
                 )
                 """
             )
-            # Lightweight migration: add descriptive columns to a pre-existing DB.
+            # Lightweight migration: add columns to a pre-existing DB.
             existing = {r[1] for r in conn.execute("PRAGMA table_info(models_queue)")}
             for col, ddl in (
+                ("next_epoch", "next_epoch INTEGER NOT NULL DEFAULT 0"),
+                ("final_epoch", "final_epoch INTEGER"),
+                ("requeued", "requeued INTEGER NOT NULL DEFAULT 0"),
+                ("best_checkpoint", "best_checkpoint TEXT"),
+                ("best_score", "best_score REAL"),
                 ("arch", "arch TEXT NOT NULL DEFAULT 'convnext_small'"),
                 ("protocol", "protocol TEXT"),
                 ("eps", "eps REAL"),
             ):
                 if col not in existing:
                     conn.execute(f"ALTER TABLE models_queue ADD COLUMN {ddl}")
+            self._migrate_legacy(conn)
             # Global, deterministic dedup store for the failure analyzer: an
             # error signature is processed (LLM + email) at most once, ever.
             conn.execute(
@@ -192,6 +250,44 @@ class OrchestratorDB:
                 """
             )
             conn.commit()
+
+    @staticmethod
+    def _migrate_legacy(conn: sqlite3.Connection) -> None:
+        """Idempotently upgrade pre-rebuild rows to the new pipeline vocabulary.
+
+        Old model: claimable rows were ``PENDING``/``RUNNING`` and ``current_stage``
+        said where to resume (TRAIN/AA_SWEEP/PLOT_RESULTS/COMPLETED). We map by
+        stage, clear the (now-dead) Slurm owner on non-terminal rows so they are
+        immediately claimable, and carry ``current_epoch`` into ``next_epoch`` so
+        a resumed job restarts where it left off. PENDING+TRAIN is left untouched
+        (it is identical in both schemas), which keeps this safe to run on every
+        open.
+        """
+        # Carry the resume point for legacy rows (new column defaulted to 0).
+        conn.execute(
+            "UPDATE models_queue SET next_epoch = current_epoch "
+            "WHERE next_epoch = 0 AND current_epoch > 0"
+        )
+        # Terminal rows.
+        conn.execute(
+            "UPDATE models_queue SET status = ? "
+            "WHERE status = 'COMPLETED' OR current_stage = 'COMPLETED'",
+            (STATUS_FINISHED,),
+        )
+        # Non-terminal legacy eval stages -> resume at that stage, release owner.
+        for stage, status in _LEGACY_STAGE_TO_STATUS.items():
+            conn.execute(
+                "UPDATE models_queue SET status = ?, slurm_job_id = NULL "
+                "WHERE status IN ('PENDING', 'RUNNING') AND current_stage = ?",
+                (status, stage),
+            )
+        # A row left RUNNING+TRAIN by an old daemon: its job is dead now -> make it
+        # claimable as TRAINING (resumes from next_epoch).
+        conn.execute(
+            "UPDATE models_queue SET status = ?, slurm_job_id = NULL "
+            "WHERE status = 'RUNNING' AND current_stage = 'TRAIN'",
+            (STATUS_TRAINING,),
+        )
 
     # ------------------------------------------------------------------ #
     # Reads
@@ -208,19 +304,39 @@ class OrchestratorDB:
             job_name=row["job_name"],
             model_dir=row["model_dir"],
             current_epoch=row["current_epoch"],
+            next_epoch=row["next_epoch"],
+            final_epoch=row["final_epoch"],
             warmup_epochs=row["warmup_epochs"],
             linear_epochs=row["linear_epochs"],
             plateau_epochs=row["plateau_epochs"],
+            requeued=row["requeued"],
+            best_checkpoint=row["best_checkpoint"],
+            best_score=row["best_score"],
             last_error_hash=row["last_error_hash"],
+            last_update_ts=row["last_update_ts"],
             arch=row["arch"],
             protocol=row["protocol"],
             eps=row["eps"],
+            priority=row["priority"],
         )
 
     def get_model_state(self, model_id: str) -> Optional[ModelRow]:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM models_queue WHERE model_id = ?", (model_id,)
+            ).fetchone()
+        return self._row_to_model(row) if row else None
+
+    def get_by_slurm_job_id(self, slurm_job_id: int) -> Optional[ModelRow]:
+        """Find the row currently owned by a given Slurm task id (or None).
+
+        Used by the monitor to map a FAILED array task back to its DB row; only
+        a still-owned row matches, which makes acting on it idempotent (acting
+        clears ``slurm_job_id``).
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM models_queue WHERE slurm_job_id = ?", (int(slurm_job_id),)
             ).fetchone()
         return self._row_to_model(row) if row else None
 
@@ -238,46 +354,100 @@ class OrchestratorDB:
                 ).fetchall()
         return [self._row_to_model(r) for r in rows]
 
-    def next_pending_for_node(
-        self,
-        node: str,
-        exclude: Optional[set] = None,
-    ) -> Optional["ModelRow"]:
-        """Deterministically pick the next PENDING row eligible for ``node``.
-
-        A row is eligible if its ``cluster_node`` is unset (any node) or matches.
-        Ordering: eval stages before training (PLOT_RESULTS→AA_SWEEP→TRAIN),
-        then protocol priority DESC (higher number = higher priority), then
-        model_id for a stable tiebreak.
-        ``exclude`` is an optional set of model_ids already claimed this tick.
-        """
-        exclude_ids = list(exclude) if exclude else []
-        ex_clause = (
-            f"AND model_id NOT IN ({','.join('?' * len(exclude_ids))})"
-            if exclude_ids
-            else ""
-        )
+    def claimable_count(self, partition: str) -> int:
+        """How many rows are currently claimable for ``partition`` (unowned)."""
         with self._connect() as conn:
             row = conn.execute(
                 f"""
-                SELECT * FROM models_queue
-                WHERE status = 'PENDING'
+                SELECT COUNT(*) FROM models_queue
+                WHERE slurm_job_id IS NULL
+                  AND status IN ({','.join('?' * len(CLAIMABLE_STATUSES))})
                   AND (cluster_node IS NULL OR cluster_node = '' OR cluster_node = ?)
-                  {ex_clause}
+                """,
+                (*CLAIMABLE_STATUSES, partition),
+            ).fetchone()
+        return int(row[0])
+
+    def find_stale_candidates(self, thresholds: dict[str, int]) -> list[ModelRow]:
+        """Owned (ACTIVE) rows whose idle time exceeds the per-status threshold.
+
+        ``thresholds`` maps status -> seconds. The caller still confirms the
+        owning Slurm task is dead (via sacct/squeue) before requeuing.
+        """
+        now = int(time.time())
+        out: list[ModelRow] = []
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM models_queue WHERE slurm_job_id IS NOT NULL "
+                f"AND status IN ({','.join('?' * len(ACTIVE_STATUSES))})",
+                ACTIVE_STATUSES,
+            ).fetchall()
+        for r in rows:
+            thr = thresholds.get(r["status"])
+            if thr is None:
+                continue
+            last = r["last_update_ts"] or 0
+            if now - last > thr:
+                out.append(self._row_to_model(r))
+        return out
+
+    # ------------------------------------------------------------------ #
+    # Atomic claim (the core of the pull model)
+    # ------------------------------------------------------------------ #
+    def claim_next(self, partition: str, slurm_job_id: int) -> Optional[ModelRow]:
+        """Atomically claim the next eligible row for ``partition``.
+
+        Picks the highest-priority *unowned* non-terminal row (PLOTTING >
+        AA_EVAL > TRAINING > PENDING, then protocol ``priority`` DESC, then
+        ``model_id``), stamps it with ``slurm_job_id``, and -- only for a fresh
+        PENDING row -- advances status to TRAINING. Because the whole SELECT +
+        UPDATE runs under one ``BEGIN IMMEDIATE`` write lock, two concurrent
+        array tasks can never claim the same row.
+
+        Returns the claimed row (with its post-claim status) or None if the
+        queue has no eligible work for this partition.
+        """
+        now = int(time.time())
+
+        def op(conn: sqlite3.Connection) -> Optional[ModelRow]:
+            pick = conn.execute(
+                f"""
+                SELECT * FROM models_queue
+                WHERE slurm_job_id IS NULL
+                  AND status IN ({','.join('?' * len(CLAIMABLE_STATUSES))})
+                  AND (cluster_node IS NULL OR cluster_node = '' OR cluster_node = ?)
                 ORDER BY
-                  CASE current_stage
-                    WHEN 'PLOT_RESULTS' THEN 0
-                    WHEN 'AA_SWEEP'     THEN 1
-                    WHEN 'TRAIN'        THEN 2
-                    ELSE 3
+                  CASE status
+                    WHEN 'PLOTTING' THEN 0
+                    WHEN 'AA_EVAL'  THEN 1
+                    WHEN 'TRAINING' THEN 2
+                    WHEN 'PENDING'  THEN 3
+                    ELSE 4
                   END,
                   priority DESC,
                   model_id ASC
                 LIMIT 1
                 """,
-                (node, *exclude_ids),
+                (*CLAIMABLE_STATUSES, partition),
             ).fetchone()
-        return self._row_to_model(row) if row else None
+            if pick is None:
+                return None
+            new_status = (
+                STATUS_TRAINING if pick["status"] == STATUS_PENDING else pick["status"]
+            )
+            conn.execute(
+                "UPDATE models_queue SET slurm_job_id = ?, cluster_node = ?, "
+                "status = ?, last_update_ts = ? "
+                "WHERE model_id = ? AND slurm_job_id IS NULL",
+                (int(slurm_job_id), partition, new_status, now, pick["model_id"]),
+            )
+            # Re-read so the returned row reflects the post-claim state.
+            fresh = conn.execute(
+                "SELECT * FROM models_queue WHERE model_id = ?", (pick["model_id"],)
+            ).fetchone()
+            return self._row_to_model(fresh)
+
+        return self._atomic(op)
 
     # ------------------------------------------------------------------ #
     # Writes
@@ -296,15 +466,23 @@ class OrchestratorDB:
         arch: str = "convnext_small",
         protocol: Optional[str] = None,
         eps: Optional[float] = None,
+        final_epoch: Optional[int] = None,
     ) -> None:
-        """Insert a queue row, leaving an existing row's runtime state intact."""
+        """Insert a queue row, leaving an existing row's runtime state intact.
+
+        ``final_epoch`` defaults to the curriculum schedule sum but can be set
+        explicitly to override the desired endpoint.
+        """
+        if final_epoch is None:
+            final_epoch = int(warmup_epochs) + int(linear_epochs) + int(plateau_epochs)
         self._write(
             """
             INSERT INTO models_queue
                 (model_id, status, current_stage, cluster_node, launcher,
                  job_name, model_dir, warmup_epochs, linear_epochs,
-                 plateau_epochs, arch, protocol, eps, priority, last_update_ts)
-            VALUES (?, 'PENDING', 'TRAIN', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 plateau_epochs, final_epoch, arch, protocol, eps, priority,
+                 last_update_ts)
+            VALUES (?, 'PENDING', 'TRAIN', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(model_id) DO UPDATE SET
                 launcher       = excluded.launcher,
                 job_name       = excluded.job_name,
@@ -312,6 +490,7 @@ class OrchestratorDB:
                 warmup_epochs  = excluded.warmup_epochs,
                 linear_epochs  = excluded.linear_epochs,
                 plateau_epochs = excluded.plateau_epochs,
+                final_epoch    = excluded.final_epoch,
                 arch           = excluded.arch,
                 protocol       = excluded.protocol,
                 eps            = excluded.eps,
@@ -327,6 +506,7 @@ class OrchestratorDB:
                 int(warmup_epochs),
                 int(linear_epochs),
                 int(plateau_epochs),
+                int(final_epoch),
                 arch,
                 protocol,
                 None if eps is None else float(eps),
@@ -336,35 +516,16 @@ class OrchestratorDB:
         )
 
     def update_epoch(self, model_id: str, epoch: int) -> int:
-        """Atomic single-row per-epoch progress update (called from the job)."""
-        return self._write(
-            "UPDATE models_queue SET current_epoch = ?, last_update_ts = ? "
-            "WHERE model_id = ?",
-            (int(epoch), int(time.time()), model_id),
-        )
+        """Atomic per-epoch progress update (called from the training job).
 
-    def advance_stage(self, model_id: str, stage: str) -> int:
-        """Set ``current_stage`` (and mark COMPLETED status when appropriate)."""
-        status = STATUS_COMPLETED if stage == STAGE_COMPLETED else STATUS_RUNNING
+        The training loop passes ``epoch+1`` (the count of completed epochs),
+        which is also exactly the epoch to *resume* at, so we mirror it into
+        ``next_epoch``.
+        """
         return self._write(
-            "UPDATE models_queue SET current_stage = ?, status = ?, "
+            "UPDATE models_queue SET current_epoch = ?, next_epoch = ?, "
             "last_update_ts = ? WHERE model_id = ?",
-            (stage, status, int(time.time()), model_id),
-        )
-
-    def mark_running(self, model_id: str, slurm_job_id: int, node: str) -> int:
-        """Botero-side: a job was just submitted for this row."""
-        return self._write(
-            "UPDATE models_queue SET status = 'RUNNING', slurm_job_id = ?, "
-            "cluster_node = ?, last_update_ts = ? WHERE model_id = ?",
-            (int(slurm_job_id), node, int(time.time()), model_id),
-        )
-
-    def mark_failed(self, model_id: str, error_hash: Optional[str] = None) -> int:
-        return self._write(
-            "UPDATE models_queue SET status = 'FAILED', last_error_hash = "
-            "COALESCE(?, last_error_hash), last_update_ts = ? WHERE model_id = ?",
-            (error_hash, int(time.time()), model_id),
+            (int(epoch), int(epoch), int(time.time()), model_id),
         )
 
     def set_status(self, model_id: str, status: str) -> int:
@@ -375,12 +536,66 @@ class OrchestratorDB:
             (status, int(time.time()), model_id),
         )
 
-    def force_stage(self, model_id: str, stage: str, status: str = STATUS_PENDING) -> int:
-        """Operator override: jump a row to a stage and (re)queue it."""
+    def requeue(self, model_id: str) -> int:
+        """Release ownership so the row becomes claimable again (status kept).
+
+        Used both by the in-job stale scan and the monitor's preemption path.
+        Bumps the ``requeued`` counter so requeues are visible/auditable.
+        """
         return self._write(
-            "UPDATE models_queue SET current_stage = ?, status = ?, "
+            "UPDATE models_queue SET slurm_job_id = NULL, requeued = requeued + 1, "
             "last_update_ts = ? WHERE model_id = ?",
-            (stage, status, int(time.time()), model_id),
+            (int(time.time()), model_id),
+        )
+
+    def mark_failed(self, model_id: str, error_hash: Optional[str] = None) -> int:
+        return self._write(
+            "UPDATE models_queue SET status = 'FAILED', slurm_job_id = NULL, "
+            "last_error_hash = COALESCE(?, last_error_hash), last_update_ts = ? "
+            "WHERE model_id = ?",
+            (error_hash, int(time.time()), model_id),
+        )
+
+    def set_best_checkpoint(
+        self, model_id: str, kind: str, score: Optional[float] = None
+    ) -> int:
+        return self._write(
+            "UPDATE models_queue SET best_checkpoint = ?, "
+            "best_score = COALESCE(?, best_score), last_update_ts = ? "
+            "WHERE model_id = ?",
+            (kind, None if score is None else float(score), int(time.time()), model_id),
+        )
+
+    def mark_finished(
+        self,
+        model_id: str,
+        best_checkpoint: Optional[str] = None,
+        best_score: Optional[float] = None,
+    ) -> int:
+        """Terminal success: status FINISHED, release ownership, record the
+        winning checkpoint kind and its score."""
+        return self._write(
+            "UPDATE models_queue SET status = 'FINISHED', slurm_job_id = NULL, "
+            "best_checkpoint = COALESCE(?, best_checkpoint), "
+            "best_score = COALESCE(?, best_score), last_update_ts = ? "
+            "WHERE model_id = ?",
+            (
+                best_checkpoint,
+                None if best_score is None else float(best_score),
+                int(time.time()),
+                model_id,
+            ),
+        )
+
+    def force_status(self, model_id: str, status: str, release: bool = True) -> int:
+        """Operator override: jump a row to ``status`` (and clear ownership)."""
+        if status not in STATUSES:
+            raise ValueError(f"invalid status: {status}")
+        owner = "slurm_job_id = NULL, " if release else ""
+        return self._write(
+            f"UPDATE models_queue SET status = ?, {owner}last_update_ts = ? "
+            "WHERE model_id = ?",
+            (status, int(time.time()), model_id),
         )
 
     # ------------------------------------------------------------------ #
@@ -401,14 +616,4 @@ class OrchestratorDB:
             "(error_hash, first_model_id, report_path, created_ts) "
             "VALUES (?, ?, ?, ?)",
             (error_hash, model_id, report_path, int(time.time())),
-        )
-
-    def requeue_stale_running(self, threshold_seconds: int) -> int:
-        """Reset RUNNING rows with no progress past the threshold back to PENDING."""
-        cutoff = int(time.time()) - int(threshold_seconds)
-        return self._write(
-            "UPDATE models_queue SET status = 'PENDING', slurm_job_id = NULL "
-            "WHERE status = 'RUNNING' "
-            "AND (last_update_ts IS NULL OR last_update_ts < ?)",
-            (cutoff,),
         )

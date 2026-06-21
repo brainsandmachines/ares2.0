@@ -31,10 +31,10 @@ from typing import Optional
 
 from .db import (
     OrchestratorDB,
-    STAGE_AA_SWEEP,
-    STAGE_COMPLETED,
-    STAGE_PLOT_RESULTS,
-    STAGE_TRAIN,
+    STATUS_AA_EVAL,
+    STATUS_FINISHED,
+    STATUS_PENDING,
+    STATUS_PLOTTING,
 )
 from . import naming
 
@@ -141,20 +141,25 @@ def parse_dirname(name: str):
 
 
 def classify(model_dir: Path, total_epochs: int):
-    """Return (stage, status, current_epoch)."""
+    """Return (status, current_epoch) for the import's entry point.
+
+    A not-finished model is queued PENDING (claim flips it to TRAINING and
+    resumes from next_epoch); finished-but-not-evaluated rows enter at AA_EVAL
+    or PLOTTING directly; fully done rows are FINISHED.
+    """
     epoch = epoch_from_summary(model_dir) or 0
     if epoch < total_epochs:
-        return STAGE_TRAIN, "PENDING", epoch
+        return STATUS_PENDING, epoch
     pending_aa = [
         k for k in ("best", "last", "advbest")
         if ckpt_exists(model_dir, k) and not aa_complete(model_dir, k)
     ]
     if pending_aa:
-        return STAGE_AA_SWEEP, "PENDING", epoch
+        return STATUS_AA_EVAL, epoch
     plot = model_dir / f"autoattack_eval_comparation_{model_dir.name}.png"
     if not plot.exists():
-        return STAGE_PLOT_RESULTS, "PENDING", epoch
-    return STAGE_COMPLETED, "COMPLETED", epoch
+        return STATUS_PLOTTING, epoch
+    return STATUS_FINISHED, epoch
 
 
 def import_models(db_path, scan_root, cluster_root, only=None, dry_run=False):
@@ -172,9 +177,9 @@ def import_models(db_path, scan_root, cluster_root, only=None, dry_run=False):
             continue
         job_name, launcher, warmup, linear, plateau = parsed
         total = warmup + linear + plateau
-        stage, status, epoch = classify(model_dir, total)
+        status, epoch = classify(model_dir, total)
         cluster_dir = os.path.join(cluster_root, entry)
-        results.append((entry, launcher, stage, status, epoch, total, cluster_dir))
+        results.append((entry, launcher, status, epoch, total, cluster_dir))
         if dry_run:
             continue
         proto = naming.protocol_from_name(job_name)
@@ -188,10 +193,9 @@ def import_models(db_path, scan_root, cluster_root, only=None, dry_run=False):
             priority=PROTOCOL_PRIORITY.get(proto or "", 100),
         )
         db.update_epoch(job_name, epoch)
-        if status == "COMPLETED":
-            db.advance_stage(job_name, STAGE_COMPLETED)
-        else:
-            db.force_stage(job_name, stage, status=status)
+        # upsert leaves status PENDING; promote rows that resume past training.
+        if status != STATUS_PENDING:
+            db.force_status(job_name, status)
     return results
 
 
@@ -210,10 +214,10 @@ def main() -> None:
 
     rows = import_models(args.db, args.scan_root, args.cluster_root, only, args.dry_run)
     tag = "[dry-run] " if args.dry_run else ""
-    hdr = f"{'model_dir':40} {'launcher':18} {'stage':13} {'status':9} {'epoch':>11}"
+    hdr = f"{'model_dir':40} {'launcher':18} {'status':9} {'epoch':>11}"
     print(hdr); print("-" * len(hdr))
-    for name, launcher, stage, status, epoch, total, _ in rows:
-        print(f"{name:40.40} {launcher:18} {stage:13} {status:9} {f'{epoch}/{total}':>11}")
+    for name, launcher, status, epoch, total, _ in rows:
+        print(f"{name:40.40} {launcher:18} {status:9} {f'{epoch}/{total}':>11}")
     print(f"\n{tag}{len(rows)} models")
 
 

@@ -445,6 +445,12 @@ def main(cfg: DictConfig):
 
     if cfg.dist.rank == 0:
         _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run)
+        # orchestrator: a pure-training invocation (final_eval off) has finished
+        # its run -> hand the row off to the AutoAttack stage. No-op when the job
+        # is untracked (manual run) or when this is itself the AA invocation
+        # (final_eval=True), whose PLOTTING handoff lives in final_eval_helpers.
+        if not bool(cfg.get("final_eval", False)):
+            orch_progress.advance_status("AA_EVAL", rank=cfg.dist.rank)
 
 @hydra.main(config_path="configs", config_name="config", version_base="1.3")
 def hydra_main(cfg: DictConfig):
