@@ -75,6 +75,18 @@ _LEGACY_STAGE_TO_STATUS = {
     "PLOT_RESULTS": STATUS_PLOTTING,
 }
 
+# Forward map: keep the legacy ``current_stage`` column coherent with the
+# authoritative ``status`` so a finished row reads COMPLETED (not a stale
+# AA_SWEEP) wherever the old column is still displayed. Written by every status
+# mutator below. FAILED has no stage, so it leaves current_stage untouched.
+STATUS_TO_STAGE = {
+    STATUS_PENDING: "TRAIN",
+    STATUS_TRAINING: "TRAIN",
+    STATUS_AA_EVAL: "AA_SWEEP",
+    STATUS_PLOTTING: "PLOT_RESULTS",
+    STATUS_FINISHED: "COMPLETED",
+}
+
 # Node groups (Slurm partitions) and their GPU capacities.
 NODE_RTX_PRO = "rtx_pro_6000"
 NODE_RTX6000 = "rtx6000"
@@ -464,9 +476,10 @@ class OrchestratorDB:
             )
             conn.execute(
                 "UPDATE models_queue SET slurm_job_id = ?, cluster_node = ?, "
-                "status = ?, last_update_ts = ? "
+                "status = ?, current_stage = ?, last_update_ts = ? "
                 "WHERE model_id = ? AND slurm_job_id IS NULL",
-                (int(slurm_job_id), partition, new_status, now, pick["model_id"]),
+                (int(slurm_job_id), partition, new_status,
+                 STATUS_TO_STAGE.get(new_status, "TRAIN"), now, pick["model_id"]),
             )
             # Re-read so the returned row reflects the post-claim state.
             fresh = conn.execute(
@@ -563,9 +576,17 @@ class OrchestratorDB:
     def set_status(self, model_id: str, status: str) -> int:
         if status not in STATUSES:
             raise ValueError(f"invalid status: {status}")
+        stage = STATUS_TO_STAGE.get(status)
+        if stage is None:  # FAILED -> leave current_stage as-is
+            return self._write(
+                "UPDATE models_queue SET status = ?, last_update_ts = ? "
+                "WHERE model_id = ?",
+                (status, int(time.time()), model_id),
+            )
         return self._write(
-            "UPDATE models_queue SET status = ?, last_update_ts = ? WHERE model_id = ?",
-            (status, int(time.time()), model_id),
+            "UPDATE models_queue SET status = ?, current_stage = ?, "
+            "last_update_ts = ? WHERE model_id = ?",
+            (status, stage, int(time.time()), model_id),
         )
 
     def requeue(self, model_id: str) -> int:
@@ -615,8 +636,8 @@ class OrchestratorDB:
         """Terminal success: status FINISHED, release ownership, record the
         winning checkpoint kind and its score."""
         return self._write(
-            "UPDATE models_queue SET status = 'FINISHED', slurm_job_id = NULL, "
-            "best_checkpoint = COALESCE(?, best_checkpoint), "
+            "UPDATE models_queue SET status = 'FINISHED', current_stage = 'COMPLETED', "
+            "slurm_job_id = NULL, best_checkpoint = COALESCE(?, best_checkpoint), "
             "best_score = COALESCE(?, best_score), last_update_ts = ? "
             "WHERE model_id = ?",
             (
@@ -632,10 +653,17 @@ class OrchestratorDB:
         if status not in STATUSES:
             raise ValueError(f"invalid status: {status}")
         owner = "slurm_job_id = NULL, " if release else ""
+        stage = STATUS_TO_STAGE.get(status)
+        stage_set = "current_stage = ?, " if stage is not None else ""
+        params = [status]
+        if stage is not None:
+            params.append(stage)
+        params.append(int(time.time()))
+        params.append(model_id)
         return self._write(
-            f"UPDATE models_queue SET status = ?, {owner}last_update_ts = ? "
+            f"UPDATE models_queue SET status = ?, {stage_set}{owner}last_update_ts = ? "
             "WHERE model_id = ?",
-            (status, int(time.time()), model_id),
+            tuple(params),
         )
 
     # ------------------------------------------------------------------ #
