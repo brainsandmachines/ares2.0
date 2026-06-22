@@ -206,6 +206,30 @@ def test_claim_rank_overrides_status_order(tmp_path):
     assert db.get_model_state("r1").claim_rank is None
 
 
+def test_current_stage_tracks_status(tmp_path):
+    """The legacy current_stage column stays coherent with the pipeline status
+    through claim, the stage handoffs, and terminal completion."""
+    db = make_db(tmp_path)
+    db.claim_next("rtx6000", 1)                       # PENDING -> TRAINING
+    assert db.get_model_state("m1").current_stage == "TRAIN"
+    db.set_status("m1", STATUS_AA_EVAL)
+    assert db.get_model_state("m1").current_stage == "AA_SWEEP"
+    db.set_status("m1", STATUS_PLOTTING)
+    assert db.get_model_state("m1").current_stage == "PLOT_RESULTS"
+    db.mark_finished("m1", "best", 42.0)
+    row = db.get_model_state("m1")
+    assert row.status == STATUS_FINISHED and row.current_stage == "COMPLETED"
+
+
+def test_mark_failed_leaves_stage(tmp_path):
+    """FAILED has no pipeline stage, so current_stage is left untouched."""
+    db = make_db(tmp_path)
+    db.claim_next("rtx6000", 1)
+    db.set_status("m1", STATUS_AA_EVAL)
+    db.mark_failed("m1", "deadbeef")
+    assert db.get_model_state("m1").current_stage == "AA_SWEEP"
+
+
 def test_legacy_status_migration(tmp_path):
     """Pre-rebuild rows upgrade in place: status by stage, owner cleared on
     non-terminal rows, current_epoch carried into next_epoch."""
