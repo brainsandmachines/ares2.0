@@ -1,0 +1,6 @@
+# @package _global_
+# AIRCC cluster paths — activate with +machine=aircc
+
+dataset:
+  train_dir: /shared/cycle2_bgu_golan_prj/datasets/imagenet1k/train
+  eval_dir: /shared/cycle2_bgu_golan_prj/datasets/imagenet1k/val
