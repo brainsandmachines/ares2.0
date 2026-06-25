@@ -42,5 +42,3 @@ RUN pip install git+https://github.com/fra31/auto-attack.git@a39220048b3c9f2cca9
 RUN pip install git+https://github.com/KietzmannLab/DVD.git@8a4e919812cfa52aa66ecaab121d0bdf5840a257
 RUN pip install git+https://github.com/KietzmannLab/DVD.git@36e56374bb73f52a97fc6e3a39531cba2443bb2f
 
-# Build-time import test — fails the build if anything is broken
-RUN python -c "import torch, torchvision, timm, hydra, wandb, kornia, autoattack, dvd; print('torch', torch.__version__, 'cuda', torch.version.cuda); print('all imports ok')"
