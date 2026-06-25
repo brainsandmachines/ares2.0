@@ -2,10 +2,11 @@ FROM nvcr.io/nvidia/cuda:12.8.0-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
-    python3.11 python3.11-dev python3-pip git wget && \
-    update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 && \
-    update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1 && \
-    rm -rf /var/lib/apt/lists/*
+    python3.11 python3.11-dev curl git wget && \
+    rm -rf /var/lib/apt/lists/* && \
+    curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 && \
+    ln -sf /usr/bin/python3.11 /usr/local/bin/python && \
+    ln -sf /usr/local/bin/pip /usr/local/bin/pip3
 
 RUN pip install --upgrade pip
 
