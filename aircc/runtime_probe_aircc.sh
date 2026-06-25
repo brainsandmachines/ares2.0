@@ -151,7 +151,19 @@ for p_idx in "${!PROTOCOLS[@]}"; do
         ((task_id++)); continue
     fi
 
-    echo "[INFO] Max bsz (2x parallel): ${selected_bsz} — running timing probe (warmup=5, measure=20)"
+    echo "[INFO] Max bsz (2x parallel): ${selected_bsz}"
+
+    echo "[INFO] DataLoader num_workers sweep (4/6/8, pin_memory=True, 2 batches)"
+    DL_CSV="${REPO_ROOT}/research/runtime-arch-eval/aircc_dataloader_bench.csv"
+    python "${REPO_ROOT}/aircc/dataloader_bench.py" \
+        --train-dir "${TRAIN_DIR}" \
+        --batch-size "${selected_bsz}" \
+        --num-batches 2 \
+        --out-csv "${DL_CSV}" \
+        --protocol "${protocol_label}" \
+        --arch "${arch_label}"
+
+    echo "[INFO] Running timing probe (warmup=5, measure=20)"
     PROBE_DIR="${TASK_DIR}/probe_bsz_${selected_bsz}"
     run_parallel "${PROBE_DIR}" "${CSV_PATH}" 5 20 "${selected_bsz}"
     echo "[INFO] Probe done: exit=$?"
