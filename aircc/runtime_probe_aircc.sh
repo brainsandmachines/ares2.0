@@ -81,7 +81,8 @@ build_cmd() {
         runtime_probe_warmup_batches="${warmup}"
         runtime_probe_measure_batches="${measure}"
     )
-    [[ -n "${model_override:-}" ]] && cmd+=("${model_override}" "model.v1_noise_mode=${v1_noise_mode:-null}")
+    [[ -n "${model_override:-}" ]] && cmd+=("${model_override}")
+    [[ "${is_v1:-false}" == "true" ]] && cmd+=("model.v1_noise_mode=${v1_noise_mode:-null}")
     [[ "${is_v1:-false}" == "true" && "${advtrain}" == "true" ]] && cmd+=("attacks.v1_attack_eps=${attack_eps}")
     [[ "${is_v1:-false}" != "true" && -n "${attack_eps:-}" ]] && cmd+=("attacks.attack_eps=${attack_eps}")
 }
