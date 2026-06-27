@@ -3,7 +3,7 @@
 # Replicates runtime_epoch_inspection.sbatch inside the ares-train:v1 container.
 #
 # Default: convnext_small only (~90 min in sandbox).
-# PROBE_ARCHS="small base large" to run all three.
+# PROBE_ARCHS="small base large" to run all three (space-separated).
 
 set -uo pipefail
 
@@ -36,17 +36,16 @@ echo "[INFO] TRAIN_DIR=${TRAIN_DIR}"
 GPU_TOTAL=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n 1)
 echo "[INFO] GPU Memory: ${GPU_TOTAL} MB"
 
-PROTOCOLS=(linf_8_init1 l2_8_init1 l1_8_init1 linftrades_8_init1 l2trades_8_init1
-           l1trades_8_init1 gradnorm_l1_8_init1 gradnorm_l2_8_init1
-           v1clean_l2_8_init1 v1clean_l2trades_8_init1 baseline_init1)
-PLABELS=(madry_linf madry_l2 madry_l1 trades_linf trades_l2 trades_l1
-         gradnorm_l1 gradnorm_l2 v1madryl2 v1tradesl2 baseline)
+# 6 protocol families — one representative norm per family
+PROTOCOLS=(linf_8_init1  linftrades_8_init1  gradnorm_l1_8_init1  dvd_b_init1  v1clean_l2_8_init1  baseline_init1)
+PLABELS=(  madry          trades               gradnorm              dvd           v1_l2                baseline)
 ARCHS=(small base large)
 PREFIX=("" convnext_base_ convnext_large_)
 
 IFS=' ' read -ra PROBE_ARCHS_ARR <<< "${PROBE_ARCHS:-small}"
 
 CSV_PATH="${REPO_ROOT}/research/runtime-arch-eval/aircc_runtime_arch_eval.csv"
+DL_CSV="${REPO_ROOT}/research/runtime-arch-eval/aircc_dataloader_bench.csv"
 RUN_DIR="${REPO_ROOT}/outs/advtrain/runtime_arch_eval_aircc/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "${RUN_DIR}" "$(dirname "${CSV_PATH}")"
 
@@ -83,6 +82,7 @@ build_cmd() {
     )
     [[ -n "${model_override:-}" ]] && cmd+=("${model_override}")
     [[ "${is_v1:-false}" == "true" ]] && cmd+=("model.v1_noise_mode=${v1_noise_mode:-null}")
+    [[ "${compile_model:-false}" == "true" ]] && cmd+=("model.compile_model=True")
     [[ "${is_v1:-false}" == "true" && "${advtrain}" == "true" ]] && cmd+=("attacks.v1_attack_eps=${attack_eps}")
     [[ "${is_v1:-false}" != "true" && -n "${attack_eps:-}" ]] && cmd+=("attacks.attack_eps=${attack_eps}")
 }
@@ -109,6 +109,8 @@ run_parallel() {
     [[ $S0 -eq 0 && $S1 -eq 0 ]] && return 0 || return 1
 }
 
+declare -A dl_bench_done
+
 task_id=0
 for p_idx in "${!PROTOCOLS[@]}"; do
   for a_idx in "${!ARCHS[@]}"; do
@@ -122,6 +124,24 @@ for p_idx in "${!PROTOCOLS[@]}"; do
     parse_train_job "$jobname" "$GPU_TOTAL" || {
         echo "[ERROR] parse_train_job failed for ${jobname}"; ((task_id++)); continue
     }
+
+    # Compile only for madry + pixel-domain attacks (matches production policy)
+    compile_model=false
+    [[ "${advtrain}" == "true" && "${crit}" == "madry" && "${attack_domain}" == "pixel" ]] && compile_model=true
+    echo "[INFO] compile_model=${compile_model}"
+
+    # DataLoader bench runs once per arch, before any smoke warms the page cache
+    if [[ "${dl_bench_done[$arch_label]:-0}" == "0" ]]; then
+        echo "[INFO] DataLoader num_workers sweep for arch=${arch_label} (bsz=256, 10 batches)"
+        python "${REPO_ROOT}/aircc/dataloader_bench.py" \
+            --train-dir "${TRAIN_DIR}" \
+            --batch-size 256 \
+            --num-batches 10 \
+            --out-csv "${DL_CSV}" \
+            --protocol "arch_${arch_label}" \
+            --arch "${arch_label}"
+        dl_bench_done[$arch_label]=1
+    fi
 
     TASK_DIR="${RUN_DIR}/task_${task_id}_${protocol_label}_${arch_label}"
     SMOKE_ROOT="${TASK_DIR}/smoke"
@@ -152,17 +172,6 @@ for p_idx in "${!PROTOCOLS[@]}"; do
     fi
 
     echo "[INFO] Max bsz (2x parallel): ${selected_bsz}"
-
-    echo "[INFO] DataLoader num_workers sweep (4/6/8, pin_memory=True, 2 batches)"
-    DL_CSV="${REPO_ROOT}/research/runtime-arch-eval/aircc_dataloader_bench.csv"
-    python "${REPO_ROOT}/aircc/dataloader_bench.py" \
-        --train-dir "${TRAIN_DIR}" \
-        --batch-size "${selected_bsz}" \
-        --num-batches 2 \
-        --out-csv "${DL_CSV}" \
-        --protocol "${protocol_label}" \
-        --arch "${arch_label}"
-
     echo "[INFO] Running timing probe (warmup=5, measure=20)"
     PROBE_DIR="${TASK_DIR}/probe_bsz_${selected_bsz}"
     run_parallel "${PROBE_DIR}" "${CSV_PATH}" 5 20 "${selected_bsz}"
