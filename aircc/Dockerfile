@@ -1,18 +1,11 @@
-FROM nvcr.io/nvidia/cuda:12.8.0-devel-ubuntu22.04
+# NGC PyTorch 25.10 — PyTorch 2.9.0a0 + CUDA 13.0 + Triton patched for B200 (sm_100).
+# Using cuda:12.8 + pip torch==2.9.0+cu128 causes a Triton segfault on B200 during
+# torch.compile kernel codegen; this base image fixes it.
+FROM nvcr.io/nvidia/pytorch:25.10-py3
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y \
-    python3.11 python3.11-dev curl git wget && \
-    rm -rf /var/lib/apt/lists/* && \
-    curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 && \
-    ln -sf /usr/bin/python3.11 /usr/local/bin/python && \
-    ln -sf /usr/local/bin/pip /usr/local/bin/pip3
-
-RUN pip install --upgrade pip
-
-# PyTorch 2.9.0 with CUDA 12.8
-RUN pip install torch==2.9.0+cu128 torchvision==0.24.0+cu128 \
-    --index-url https://download.pytorch.org/whl/cu128
+RUN apt-get update && apt-get install -y git wget && \
+    rm -rf /var/lib/apt/lists/*
 
 # Core ML / CV packages (pinned to tomer_advtrain_pro versions)
 RUN pip install \
