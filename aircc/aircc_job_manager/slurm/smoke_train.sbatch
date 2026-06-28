@@ -28,7 +28,8 @@ mkdir -p aircc/aircc_job_manager/logs
 export PYTHONPATH="$REPO:${PYTHONPATH:-}"
 export MASTER_PORT=$((10000 + RANDOM % 50000))
 export AIRCC_MEM_FRACTION=0.47           # exercise the per-process memory cap
-export WANDB_MODE=offline                # don't pollute the project for a smoke test
+export WANDB_PROJECT=adv_train_aircc     # validate the wandb project end-to-end (online)
+# Needs wandb auth in the container: WANDB_API_KEY env or a mounted ~/.netrc.
 
 NAME="aircc_smoke_${SLURM_JOB_ID}"
 OUT="$REPO/results/aircc_smoke"
