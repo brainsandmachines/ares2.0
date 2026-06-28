@@ -60,6 +60,13 @@ V1 TRADES adversarial training on V1 features
 - `v1clean_l2trades_<EPS>_init<INIT>`
 - `v1clean_l1trades_<EPS>_init<INIT>`
 
+Continuation training
+- `<MODE>_cont<SRC>to<TGT>_init<INIT>`
+- Legacy `<MODE>_cont<SRC>to<TGT>_direct_init<INIT>` and
+  `<MODE>_cont<SRC>to<TGT>_ramp_init<INIT>` are accepted, but both map to
+  `<MODE>_cont<SRC>to<TGT>_init<INIT>` and use the same warmup/ramp/fixed
+  schedule.
+
 Rejected / unsupported job names
 - `gradnorm_<EPS>_init<INIT>`  (must specify `gradnorm_l1` or `gradnorm_l2`)
 - `v1clean_gradnorm_*`

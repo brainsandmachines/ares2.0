@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=linf_cont4to8_direct_init1
+#SBATCH --job-name=linf_cont4to8_init1
 #SBATCH --time=14-00:00:00
 #SBATCH --partition=rtx_pro_6000
 #SBATCH --qos=golan-neuro
@@ -41,13 +41,6 @@ fi
 
 parse_cont_train_job "$jobname" "$GPU_TOTAL" "$MODELS_ROOT" || exit 1
 
-LRB=1.0e-3
-if [[ "$target_eps" == "8" || "$target_eps" == "8.0" ]]; then
-    LRB=5.0e-4
-elif [[ "$target_eps" == "16" || "$target_eps" == "16.0" ]]; then
-    LRB=2.5e-4
-fi
-
 echo "JOB NAME        : $jobname"
 echo "model_size      : $model_size"
 echo "cont_mode       : $cont_mode"
@@ -63,7 +56,6 @@ echo "model_name      : $model_name"
 echo "source_model    : $source_model_name"
 echo "checkpoint      : $CONTINUATION_CKPT"
 echo "Batch size      : $BATCH_SIZE"
-echo "lrb             : $LRB"
 
 cmd=(
     python -m robust_training.adversarial_training
@@ -86,23 +78,20 @@ cmd=(
     model.resume="${MODELS_ROOT}/${model_name}/last.pth.tar"
     training.epochs="$epochs"
     training.batch_size="$BATCH_SIZE"
-    lr_scheduler.lrb="$LRB"
     hydra.run.dir="${MODELS_ROOT}/${model_name}/\${now:%Y-%m-%d}/\${now:%H-%M-%S}"
 )
 
-if [[ "$advtrain" == "true" && "$crit" == "madry" && "$attack_domain" == "pixel" ]]; then
+if [[ "$advtrain" == "true" && "$crit" == "madry" ]]; then
     cmd+=("model.compile_model=True")
     echo "compile_model  : True"
 fi
 
-if [[ "$protocol" == "ramp" ]]; then
-    cmd+=(
-        epsilon_schedule.warmup_epochs="$warmup_epochs"
-        epsilon_schedule.ramp_start_epoch="$ramp_start_epoch"
-        epsilon_schedule.ramp_end_epoch="$ramp_end_epoch"
-        epsilon_schedule.fixed_start_epoch="$fixed_start_epoch"
-    )
-fi
+cmd+=(
+    epsilon_schedule.warmup_epochs="$warmup_epochs"
+    epsilon_schedule.ramp_start_epoch="$ramp_start_epoch"
+    epsilon_schedule.ramp_end_epoch="$ramp_end_epoch"
+    epsilon_schedule.fixed_start_epoch="$fixed_start_epoch"
+)
 
 if [[ -n "$model_override" ]]; then
     cmd+=("$model_override")

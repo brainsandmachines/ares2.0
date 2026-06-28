@@ -9,7 +9,7 @@
 #     SLURM_JOB_NAME                  - the model's job name (drives parse_train_job)
 #     ORCH_TARGET_EPOCH               - authoritative run length (training.epochs)
 # Optional:
-#     CONTINUATION_CKPT               - for cont-ramp jobs, the source checkpoint to
+#     CONTINUATION_CKPT               - for continuation jobs, the source checkpoint to
 #                                       warm-start from (the controller sets it from
 #                                       the source model's DB best_checkpoint)
 #     ORCH_DRY_RUN                    - if set, print the built command and exit 0
@@ -36,20 +36,12 @@ export MASTER_PORT=$((10000 + RANDOM % 50000))
 jobname="$SLURM_JOB_NAME"
 MODELS_ROOT="${MODELS_ROOT:-$REPO/results/models}"
 
-if [[ "$jobname" =~ _cont[0-9.]+to[0-9.]+_(direct|ramp)_init[0-9]+$ ]]; then
+if [[ "$jobname" =~ _cont[0-9.]+to[0-9.]+(_(direct|ramp))?_init[0-9]+$ ]]; then
     # ===== continuation (epsilon-curriculum) job =====
     # CONTINUATION_CKPT may already be set by the controller (the source model's
     # DB best checkpoint); if not, parse_cont_train_job derives it from disk.
     source "$REPO/sbatches/cont_train_launcher.sh"
     parse_cont_train_job "$jobname" "$GPU_TOTAL" "$MODELS_ROOT" || exit 1
-
-    LRB=1.0e-3
-    if [[ "$target_eps" == "8" || "$target_eps" == "8.0" ]]; then
-        LRB=5.0e-4
-    elif [[ "$target_eps" == "16" || "$target_eps" == "16.0" ]]; then
-        LRB=2.5e-4
-    fi
-    LRB="${TRAIN_LRB:-$LRB}"
 
     echo "[run_stage] cont: source=$source_model_name ckpt=$CONTINUATION_CKPT target_eps=$target_eps epochs=$epochs"
 
@@ -77,22 +69,19 @@ if [[ "$jobname" =~ _cont[0-9.]+to[0-9.]+_(direct|ramp)_init[0-9]+$ ]]; then
         model.resume="${MODELS_ROOT}/${model_name}/last.pth.tar"
         training.epochs="$epochs"
         training.batch_size="$BATCH_SIZE"
-        lr_scheduler.lrb="$LRB"
         # Flat dir: unescaped ${now} expands to empty in bash, so output collapses
         # to ${MODELS_ROOT}/${model_name}/ -- the dir resume/AA/plot read from.
         hydra.run.dir="${MODELS_ROOT}/${model_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}"
     )
-    if [[ "$advtrain" == "true" && "$crit" == "madry" && "$attack_domain" == "pixel" ]]; then
+    if [[ "$advtrain" == "true" && "$crit" == "madry" ]]; then
         cmd+=("model.compile_model=True")
     fi
-    if [[ "$protocol" == "ramp" ]]; then
-        cmd+=(
-            epsilon_schedule.warmup_epochs="$warmup_epochs"
-            epsilon_schedule.ramp_start_epoch="$ramp_start_epoch"
-            epsilon_schedule.ramp_end_epoch="$ramp_end_epoch"
-            epsilon_schedule.fixed_start_epoch="$fixed_start_epoch"
-        )
-    fi
+    cmd+=(
+        epsilon_schedule.warmup_epochs="$warmup_epochs"
+        epsilon_schedule.ramp_start_epoch="$ramp_start_epoch"
+        epsilon_schedule.ramp_end_epoch="$ramp_end_epoch"
+        epsilon_schedule.fixed_start_epoch="$fixed_start_epoch"
+    )
     if [[ -n "$model_override" ]]; then
         cmd+=("$model_override")
         if [[ "$is_v1" == "true" ]]; then
@@ -111,13 +100,6 @@ else
     MODEL_NAME_SUFFIX="${MODEL_NAME_SUFFIX:-}"
     model_name="${model_name}${MODEL_NAME_SUFFIX}"
 
-    LRB=1.0e-3
-    if [[ "$attack_eps" == "8" ]]; then
-        LRB=5.0e-4
-    elif [[ "$attack_eps" == "16" ]]; then
-        LRB=2.5e-4
-    fi
-    LRB="${TRAIN_LRB:-$LRB}"
     BATCH_SIZE="${TRAIN_BATCH_SIZE:-$BATCH_SIZE}"
     INIT_FROM_MODEL="${INIT_FROM_MODEL:-}"
     INIT_FROM_CKPT="${INIT_FROM_CKPT:-model_best.pth.tar}"
@@ -154,7 +136,6 @@ PY
         model.resume="$RESUME_PATH"
         training.batch_size=$BATCH_SIZE
         training.epochs="$ORCH_TARGET_EPOCH"
-        lr_scheduler.lrb="$LRB"
         # Match golan-trainmodels.sbatch exactly: ${now:...} expands to empty here, so
         # output_dir collapses to ${MODELS_ROOT}/${model_name}/ -- the flat dir that
         # RESUME_PATH and the AA/plot stages read from. Do NOT escape it (that would
@@ -178,10 +159,7 @@ PY
     if [[ "$dvd_enabled" == "true" ]]; then
         cmd+=("dataset.dvd.enabled=true" "dataset.dvd.variant=$dvd_variant")
     fi
-    if [[ "$advtrain" == "true" ]] && {
-          [[ "$crit" == "madry" && "$attack_domain" == "pixel" ]] ||
-          [[ "$crit" == "trades" && "$attack_domain" == "v1_feature" && "$GPU_TOTAL" -gt 90000 ]]
-      }; then
+    if [[ "$advtrain" == "true" && "$crit" == "madry" ]]; then
         cmd+=("model.compile_model=True")
     fi
     if [[ -n "$model_override" ]]; then

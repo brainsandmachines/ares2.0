@@ -50,13 +50,6 @@ MODELS_ROOT="${MODELS_ROOT:-/home/ashtomer/projects/ares/results/models}"
 MODEL_NAME_SUFFIX="${MODEL_NAME_SUFFIX:-}"
 model_name="${model_name}${MODEL_NAME_SUFFIX}"
 
-LRB=1.0e-3
-if [[ "$attack_eps" == "8" ]]; then
-    LRB=5.0e-4
-elif [[ "$attack_eps" == "16" ]]; then
-    LRB=2.5e-4
-fi
-LRB="${TRAIN_LRB:-$LRB}"
 BATCH_SIZE="${TRAIN_BATCH_SIZE:-$BATCH_SIZE}"
 TRAIN_RESUME="${TRAIN_RESUME:-auto}"
 INIT_FROM_MODEL="${INIT_FROM_MODEL:-}"
@@ -82,7 +75,6 @@ echo "attack_domain  : $attack_domain"
 echo "model_name     : $model_name"
 echo "Batch size     : $BATCH_SIZE"
 echo "attack_crit    : $crit"
-echo "lrb            : $LRB"
 echo "models_root    : $MODELS_ROOT"
 echo "train_resume   : $TRAIN_RESUME"
 echo "init_from_model: $INIT_FROM_MODEL"
@@ -123,7 +115,6 @@ cmd=(
     model.experiment_name="$model_name"
     model.resume="$RESUME_PATH"
     training.batch_size=$BATCH_SIZE
-    lr_scheduler.lrb="$LRB"
     hydra.run.dir="${MODELS_ROOT}/$model_name/${now:%Y-%m-%d}/${now:%H-%M-%S}"
 )
 
@@ -154,13 +145,10 @@ if [[ "$dvd_enabled" == "true" ]]; then
     )
 fi
 
-if [[ "$advtrain" == "true" ]] && {
-      [[ "$crit" == "madry" && "$attack_domain" == "pixel" ]] ||
-      [[ "$crit" == "trades" && "$attack_domain" == "v1_feature" && "$GPU_TOTAL" -gt 90000 ]]
-  }; then
-      cmd+=("model.compile_model=True")
-      echo "compile_model  : True"
-  fi
+if [[ "$advtrain" == "true" && "$crit" == "madry" ]]; then
+    cmd+=("model.compile_model=True")
+    echo "compile_model  : True"
+fi
 
 
 if [[ -n "$model_override" ]]; then

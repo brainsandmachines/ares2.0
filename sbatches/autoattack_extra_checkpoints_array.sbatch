@@ -18,10 +18,10 @@ cd /home/ashtomer/projects/ares
 
 MODELS_ROOT="${MODELS_ROOT:-/groups/golan_neurogroup/bml_group/tomerash/advmodels/results/models}"
 VAL_DIR="${VAL_DIR:-/groups/golan_neurogroup/bml_group/datasets/imagenet/val}"
-AA_EPS_INPUTS="${AA_EPS_INPUTS:-1,2,4,6,8,12,16}"
+AA_EPS_INPUTS="${AA_EPS_INPUTS:-1,2,4,6,8,12}"
 AA_OUTPUT_CSV="${AA_OUTPUT_CSV:-autoattack_sweep_results.csv}"
 AA_SELECTION_JSON="${AA_SELECTION_JSON:-autoattack_sweep_selection.json}"
-AA_RUN_ID="${AA_RUN_ID:-autoattack_sweep_v1_raw224_seed0_8x16_linf-l2-l1_eps1-2-4-8-16_extra_ckpts}"
+AA_RUN_ID="${AA_RUN_ID:-autoattack_sweep_v1_raw224_seed0_8x16_linf-l2-l1_eps1-2-4-6-8-12_extra_ckpts}"
 AA_BATCH_SIZE="${AA_BATCH_SIZE:-32}"
 AA_NUM_BATCHES="${AA_NUM_BATCHES:-32}"
 AA_NUM_WORKERS="${AA_NUM_WORKERS:-6}"

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=aa_eps6_12_backfill
+#SBATCH --job-name=aa_eps1_12
 #SBATCH --time=7-00:00:00
 #SBATCH --partition=rtx_pro_6000
 #SBATCH --qos=golan-neuro
@@ -19,10 +19,10 @@ cd /home/ashtomer/projects/ares
 
 MODELS_ROOT=/groups/golan_neurogroup/bml_group/tomerash/advmodels/results/models
 VAL_DIR=/groups/golan_neurogroup/bml_group/datasets/imagenet/val
-AA_EPS_INPUTS="${AA_EPS_INPUTS:-6,12}"
+AA_EPS_INPUTS="${AA_EPS_INPUTS:-1,2,4,6,8,12}"
 AA_OUTPUT_CSV="${AA_OUTPUT_CSV:-autoattack_sweep_results.csv}"
 AA_SELECTION_JSON="${AA_SELECTION_JSON:-autoattack_sweep_selection.json}"
-AA_RUN_ID="${AA_RUN_ID:-autoattack_sweep_v1_raw224_seed0_8x128_linf-l2-l1_eps6-12_backfill}"
+AA_RUN_ID="${AA_RUN_ID:-autoattack_sweep_v1_raw224_seed0_8x128_linf-l2-l1_eps1-2-4-6-8-12}"
 AA_EXISTING_CSV_ONLY="${AA_EXISTING_CSV_ONLY:-1}"
 AA_BATCH_SIZE="${AA_BATCH_SIZE:-128}"
 AA_NUM_BATCHES="${AA_NUM_BATCHES:-8}"
