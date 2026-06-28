@@ -199,7 +199,7 @@ def test_sbatch_launch_modes_are_launchable(jobname, eps, exp_num, expected):
     "mode,eps,criterion,expect_regnorm,expected_eps,expected_random_start,gradnorm_penalty_norm",
     [
         ("linf", 16.0, "madry", False, 16.0 / 255.0, False, "l1"),
-        ("l1", 2.0, "madry", False, 2.0 * 255.0 / 2.0, False, "l1"),
+        ("l1", 2.0, "madry", False, 2.0 * 37.5, False, "l1"),
         ("l2", 4.0, "trades", False, 4.0, True, "l1"),
         ("gradnorm", 8.0, "madry", True, 8.0 / 255.0, False, "l1"),
         ("gradnorm", 8.0, "madry", True, 8.0 / 255.0, False, "l2"),
@@ -316,7 +316,7 @@ def test_final_eval_defaults_are_pgd_without_autoattack_with_plots():
     cfg = _compose_base_cfg()
 
     assert cfg.final_eval is True
-    assert cfg.final_eval_pgd is True
+    assert cfg.final_eval_pgd is False
     assert cfg.final_eval_autoattack is True
     assert cfg.final_eval_plots is True
 
@@ -362,7 +362,7 @@ def test_maybe_run_final_eval_default_call(monkeypatch, tmp_path):
                 "final_eval_aa_eps": None,
                 "final_eval_aa_max_batches": None,
                 "final_eval_pgd_batch_size": None,
-                "final_eval_pgd_eps": "0.5,1,2,4,8,16",
+                "final_eval_pgd_eps": "1,2,4,6,8,12",
                 "final_eval_pgd_norms": "linf,l2,l1",
                 "final_eval_pgd_attack_steps": 10,
                 "final_eval_pgd_max_batches": None,
@@ -447,7 +447,7 @@ def test_maybe_run_final_eval_passes_autoattack_eps_inputs(monkeypatch, tmp_path
                 "final_eval_aa_norm": None,
                 "final_eval_aa_eps": None,
                 "final_eval_aa_max_batches": 8,
-                "final_eval_aa_eps_inputs": "1,2,4,6,8,12,16",
+                "final_eval_aa_eps_inputs": "1,2,4,6,8,12",
                 "final_eval_aa_completion_csv": "autoattack_sweep_results.csv",
                 "final_eval_skip_if_complete": True,
                 "final_eval_num_workers": 8,
@@ -458,7 +458,7 @@ def test_maybe_run_final_eval_passes_autoattack_eps_inputs(monkeypatch, tmp_path
     advt._maybe_run_final_eval(cfg, str(output_dir), _Logger())
 
     assert len(calls) == 1
-    assert calls[0]["eps_inputs"] == [1.0, 2.0, 4.0, 6.0, 8.0, 12.0, 16.0]
+    assert calls[0]["eps_inputs"] == [1.0, 2.0, 4.0, 6.0, 8.0, 12.0]
     assert calls[0]["checkpoint_kind"] == "best"
 
 
@@ -497,7 +497,7 @@ def test_maybe_run_final_eval_skips_when_pgd_csv_is_in_pgd_eval_subdir(monkeypat
         w = csv.DictWriter(f, fieldnames=["checkpoint_path", "attack_norm", "epsilon_input"])
         w.writeheader()
         for norm in ("linf", "l2", "l1"):
-            for eps in (0.5, 1, 2, 4, 8, 16):
+            for eps in (1, 2, 4, 6, 8, 12):
                 w.writerow(
                     {
                         "checkpoint_path": str(ckpt),
@@ -522,7 +522,7 @@ def test_maybe_run_final_eval_skips_when_pgd_csv_is_in_pgd_eval_subdir(monkeypat
                 "final_eval_aa_eps": None,
                 "final_eval_aa_max_batches": None,
                 "final_eval_pgd_batch_size": None,
-                "final_eval_pgd_eps": "0.5,1,2,4,8,16",
+                "final_eval_pgd_eps": "1,2,4,6,8,12",
                 "final_eval_pgd_norms": "linf,l2,l1",
                 "final_eval_pgd_attack_steps": 10,
                 "final_eval_pgd_max_batches": None,
@@ -712,6 +712,7 @@ def test_main_v1_feature_trades_defaults(monkeypatch):
     def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_cfg, reg_loss_fn=None, **kwargs):
         train_call["attack_domain"] = in_cfg.attacks.attack_domain
         train_call["attack_criterion"] = in_cfg.attacks.attack_criterion
+        train_call["v1_attack_eps"] = in_cfg.attacks.v1_attack_eps
         train_call["v1_attack_step"] = in_cfg.attacks.v1_attack_step
         train_call["random_start"] = in_cfg.attacks.get("random_start", False)
         return {"loss": 0.1}
@@ -808,6 +809,7 @@ def test_main_v1_feature_l2_defaults(monkeypatch, criterion, expected_random_sta
     def _train_one_epoch_stub(epoch, model, loader, optimizer, train_loss_fn, in_cfg, reg_loss_fn=None, **kwargs):
         train_call["attack_domain"] = in_cfg.attacks.attack_domain
         train_call["attack_criterion"] = in_cfg.attacks.attack_criterion
+        train_call["v1_attack_eps"] = in_cfg.attacks.v1_attack_eps
         train_call["v1_attack_step"] = in_cfg.attacks.v1_attack_step
         train_call["random_start"] = in_cfg.attacks.get("random_start", False)
         return {"loss": 0.1}
@@ -845,7 +847,8 @@ def test_main_v1_feature_l2_defaults(monkeypatch, criterion, expected_random_sta
 
     assert train_call["attack_domain"] == "v1_feature"
     assert train_call["attack_criterion"] == criterion
-    assert math.isclose(train_call["v1_attack_step"], 4.0, rel_tol=1e-8)
+    assert math.isclose(train_call["v1_attack_eps"], 60.0, rel_tol=1e-8)
+    assert math.isclose(train_call["v1_attack_step"], 40.0, rel_tol=1e-8)
     assert train_call["random_start"] is expected_random_start
 
 
@@ -998,6 +1001,28 @@ def test_auto_experiment_name_uses_v1_attack_eps_for_feature_domain():
 
     assert experiment_name == "convnext_small_v1_clean_linf_16_init1"
     assert group_name == "v1feat_linf_madry"
+
+
+def test_auto_experiment_name_denormalizes_v1_l2_feature_epsilon():
+    cfg = OmegaConf.create(
+        {
+            "model": {"model": "convnext_small_v1", "v1_noise_mode": None, "experiment_num": 1, "experiment_name": None},
+            "attacks": {
+                "advtrain": True,
+                "attack_domain": "v1_feature",
+                "attack_norm": "l2",
+                "attack_criterion": "madry",
+                "attack_eps": 1.0,
+                "v1_attack_eps": 20.0,
+                "gradnorm": False,
+            },
+        }
+    )
+
+    experiment_name, group_name = _auto_experiment_name(cfg)
+
+    assert experiment_name == "convnext_small_v1_clean_l2_2_init1"
+    assert group_name == "v1feat_l2_madry"
 
 
 def test_auto_experiment_name_marks_v1_noise_runs():

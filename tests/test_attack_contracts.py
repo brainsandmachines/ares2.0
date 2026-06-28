@@ -41,11 +41,11 @@ def test_attack_defaults_contract():
 
 @pytest.mark.parametrize(
     "attack_domain,attack_norm,eps_field,eps_value,expected_step",
-    [
-        ("pixel", "l2", "attack_eps", 4.0, 8.0 / 3.0),
-        ("v1_feature", "l2", "v1_attack_eps", 6.0, 12.0 / 3.0),
-    ],
-)
+        [
+            ("pixel", "l2", "attack_eps", 4.0, 8.0 / 3.0),
+            ("v1_feature", "l2", "v1_attack_eps", 6.0, 120.0 / 3.0),
+        ],
+    )
 def test_l2_default_step_derivation_contract(
     monkeypatch,
     attack_domain,

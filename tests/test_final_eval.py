@@ -22,11 +22,11 @@ def test_make_validate_args_exposes_l1_apgd_settings():
         l1_apgd_min_step_scale=0.01,
     )
 
-    assert args.attack_norm == "l1"
-    assert args.l1_step_mode == "l1_apgd"
-    assert args.l1_apgd_rho == 0.05
-    assert args.l1_apgd_use_halving is True
-    assert args.l1_apgd_min_step_scale == 0.01
+    assert args.attacks.attack_norm == "l1"
+    assert args.attacks.l1_step_mode == "l1_apgd"
+    assert args.attacks.l1_apgd_rho == 0.05
+    assert args.attacks.l1_apgd_use_halving is True
+    assert args.attacks.l1_apgd_min_step_scale == 0.01
 
 
 def test_create_model_from_checkpoint_uses_timm_for_standard_model(monkeypatch):
@@ -164,7 +164,7 @@ def test_run_final_evaluation_writes_custom_pgd_csv(monkeypatch, tmp_path):
                 "init": "1",
                 "attack_norm": "l1",
                 "epsilon_input": 1.0,
-                "epsilon_eval": 127.5,
+                "epsilon_eval": 37.5,
                 "attack_steps": 10,
                 "attack_step": 25.5,
                 "l1_step_mode": "l1_apgd",

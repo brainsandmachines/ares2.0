@@ -17,6 +17,15 @@ def _build_cfg():
     )
 
 
+def test_imagenet_default_keeps_mixup_enabled_for_full_training():
+    cfg = _build_cfg()
+
+    assert cfg.dataset.mixup_active is True
+    assert cfg.dataset.mixup > 0
+    assert cfg.dataset.mixup_prob > 0
+    assert cfg.dataset.mixup_off_epoch == 0
+
+
 def test_build_dataset_preserves_transform_and_mixup_contract(monkeypatch):
     cfg = _build_cfg()
     transform_calls = []
