@@ -89,7 +89,7 @@ def test_topup_submits_when_low_and_work_exists(tmp_path):
     sbatch = [c for c in runner.calls if "sbatch" in c][0]
     assert "--array=1-200%6" in sbatch
     assert "--partition=rtx_pro_6000" in sbatch
-    assert "--dependency=afterany:501" in sbatch
+    assert "--dependency" not in sbatch
 
 
 def test_topup_skips_when_enough_remaining(tmp_path):
@@ -109,14 +109,17 @@ def test_topup_skips_when_no_claimable_work(tmp_path):
     assert monitor.maybe_topup(db, slurm, cfg, "rtx_pro_6000", state) is None
 
 
-def test_topup_skips_when_dependent_already_queued(tmp_path):
+def test_topup_submits_even_when_dependent_pool_is_queued(tmp_path):
     db = OrchestratorDB(str(tmp_path / "o.db"))
     _seed(db, 5)
     cfg = _cfg(tmp_path)
-    slurm = SlurmClient(cfg, runner=FakeRunner())
+    runner = FakeRunner()
+    slurm = SlurmClient(cfg, runner=runner)
     state = monitor.PartitionState(running=1, pending=1, latest_array_id=501,
                                    has_queued_dependent=True)
-    assert monitor.maybe_topup(db, slurm, cfg, "rtx_pro_6000", state) is None
+    assert monitor.maybe_topup(db, slurm, cfg, "rtx_pro_6000", state) == 9001
+    sbatch = [c for c in runner.calls if "sbatch" in c][0]
+    assert "--dependency" not in sbatch
 
 
 def test_topup_bootstrap_without_dependency(tmp_path):
@@ -130,7 +133,7 @@ def test_topup_bootstrap_without_dependency(tmp_path):
     assert new_id == 9001
     sbatch = [c for c in runner.calls if "sbatch" in c][0]
     assert "--array=1-200%8" in sbatch            # rtx6000 concurrency
-    assert "--dependency" not in sbatch           # nothing to chain to
+    assert "--dependency" not in sbatch
 
 
 def test_capacity_check(tmp_path):

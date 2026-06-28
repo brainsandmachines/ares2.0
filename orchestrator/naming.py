@@ -20,7 +20,8 @@ ARCHES = (ARCH_SMALL, ARCH_BASE, ARCH_LARGE)
 PROTOCOLS = ("madry", "trades", "gradnorm", "v1", "dvd", "baseline")
 
 _ARCH_PREFIX = {"convnext_base_": ARCH_BASE, "convnext_large_": ARCH_LARGE}
-_CONT_EPS_RE = re.compile(r"_cont[0-9.]+to([0-9.]+)_(?:direct|ramp)_init[0-9]+$")
+_CONT_EPS_RE = re.compile(r"_cont[0-9.]+to([0-9.]+)(?:_(?:direct|ramp))?_init[0-9]+$")
+_CONT_PROTOCOL_SUFFIX_RE = re.compile(r"(_cont[0-9.]+to[0-9.]+)_(?:direct|ramp)(_init[0-9]+)$")
 _STD_EPS_RE = re.compile(r"_([0-9]+(?:\.[0-9]+)?)_init[0-9]+$")
 
 
@@ -67,12 +68,24 @@ def eps_from_name(job_name: str) -> Optional[float]:
     return None                            # baseline / clean
 
 
+def normalize_continuation_name(job_name: str) -> str:
+    """Drop legacy _direct/_ramp continuation suffixes from a job name."""
+    arch, core = split_arch(job_name)
+    core = _CONT_PROTOCOL_SUFFIX_RE.sub(r"\1\2", core)
+    if arch == ARCH_BASE:
+        return f"convnext_base_{core}"
+    if arch == ARCH_LARGE:
+        return f"convnext_large_{core}"
+    return core
+
+
 def model_dir_for(job_name: str, models_root: str) -> str:
     """{models_root}/convnext_<size>_<job_core>, matching the launchers.
 
     Raises for v1 names, whose on-disk folder embeds extra tags — those must set
     model_dir explicitly.
     """
+    job_name = normalize_continuation_name(job_name)
     arch, core = split_arch(job_name)
     if any(x in core for x in ("v1clean", "v1noise", "v1_clean", "v1_noise")):
         raise ValueError(f"v1 job '{job_name}' needs an explicit model_dir")

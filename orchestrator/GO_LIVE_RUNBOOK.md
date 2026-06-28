@@ -90,7 +90,8 @@ tail -f ~/Documents/ares/orchestrator/monitor.log   # watch the first hourly tic
 
 ### 6. Steady-state verification (first 24–48h)
 - `cli status` shows models advancing PENDING→TRAINING→AA_EVAL→PLOTTING→FINISHED.
-- `monitor.log` tops up pools when remaining < 20 (afterany-chained, no double-queue).
+- `monitor.log` tops up pools when remaining < 20; Slurm array `%N` throttles
+  controller concurrency.
 - Finished `..._l2_2_init1` rows have `best_ckpt` + `best_score` (Test 4 in the
   test plan — first real confirmation of the deferred end-to-end checks 3/4/5).
 - Any `FAILED` rows: deterministic reports in `orchestrator/recommendations/`;

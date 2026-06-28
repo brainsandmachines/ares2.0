@@ -152,7 +152,7 @@ _CKPT_FILE = {
 
 
 def _continuation_ckpt(job: ModelRow) -> Optional[str]:
-    """For a cont-ramp job, the source model's best checkpoint to warm-start from.
+    """For a continuation job, the source model's best checkpoint to warm-start from.
 
     The source is named by ``depends_on_model``; we use its DB ``best_checkpoint``
     (set when it FINISHED) to pick the file, defaulting to model_best.pth.tar.

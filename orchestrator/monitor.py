@@ -4,9 +4,8 @@ Run once per hour from cron. In the pull model the controller array tasks claim
 and process work themselves, so the monitor only has to:
 
   1. Top up: if a partition has fewer than ORCH_MIN_REMAINING controller tasks
-     left (and there is claimable DB work, and no dependent pool is already
-     queued), submit the next pool as an ``afterany`` dependency of the latest
-     one so pools run back-to-back without stacking concurrency.
+     left and there is claimable DB work, submit another controller pool
+     immediately so free GPUs are not left idle behind a Slurm dependency.
   2. Settle: if a new pool was submitted, wait 30s so step 3 sees steady state.
   3. Capacity check: confirm the number of running controller tasks matches the
      expected cap (min(partition capacity, work available)); if not, wait 30s
@@ -136,18 +135,13 @@ def maybe_topup(
         logger.info("%s: %d tasks left but no claimable work; not topping up",
                     partition, state.remaining)
         return None
-    if state.has_queued_dependent:
-        logger.info("%s: dependent pool already queued; not topping up", partition)
-        return None
     spec = _array_spec(cfg, partition)
-    dep = state.latest_array_id
     if dry_run:
-        logger.info("[dry-run] %s: would submit %s (afterany=%s)", partition, spec, dep)
+        logger.info("[dry-run] %s: would submit %s", partition, spec)
         return None
-    new_id = slurm.submit_controller_array(partition, spec, dependency_job_id=dep)
-    logger.info("%s: submitted controller pool %s array=%s afterany=%s "
-                "(remaining=%d, claimable=%d)",
-                partition, new_id, spec, dep, state.remaining, claimable)
+    new_id = slurm.submit_controller_array(partition, spec)
+    logger.info("%s: submitted controller pool %s array=%s (remaining=%d, claimable=%d)",
+                partition, new_id, spec, state.remaining, claimable)
     return new_id
 
 

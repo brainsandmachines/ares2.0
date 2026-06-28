@@ -48,7 +48,7 @@ CKPT_CANDIDATES = {
     "advbest": ("model_best_adv.pth.tar",),
 }
 CKPT_SUFFIX = {"best": "", "last": "last", "advbest": "advbest"}
-CONT_RE = re.compile(r"_cont[0-9.]+to[0-9.]+_(direct|ramp)_init[0-9]+$")
+CONT_RE = re.compile(r"_cont[0-9.]+to[0-9.]+(?:_(?:direct|ramp))?_init[0-9]+$")
 
 # baseline > madry > trades > gradnorm > v1 > dvd (higher = picked first)
 PROTOCOL_PRIORITY = {
@@ -133,7 +133,8 @@ def parse_dirname(name: str):
     m = CONT_RE.search(name)
     if m:
         launcher = "eps_curriculum"
-        warmup, linear, plateau = (2, 0, 28) if m.group(1) == "direct" else (4, 26, 10)
+        job_name = naming.normalize_continuation_name(job_name)
+        warmup, linear, plateau = 4, 21, 15
     else:
         launcher = "golan-trainmodels"
         warmup, linear, plateau = 0, 0, 150  # standard training length (bump to add more)
