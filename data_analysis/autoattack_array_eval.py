@@ -27,11 +27,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from ares.utils.epsilon_schedule import DEFAULT_EPS_INPUTS, L1_EPS_MULTIPLIER, LINF_EPS_DIVISOR
+
 DEFAULT_MODELS_ROOT = Path("/home/ashtomer/projects/ares/results/models")
 DEFAULT_VAL_DIR = Path("/groups/golan_neurogroup/bml_group/datasets/imagenet/val")
 OUTPUT_CSV = "autoattack_sweep_results.csv"
 SELECTION_JSON = "autoattack_sweep_selection.json"
-RUN_ID = "autoattack_sweep_v1_raw224_seed0_8x128_linf-l2-l1_eps1-2-4-6-8-12-16"
+RUN_ID = "autoattack_sweep_v1_raw224_seed0_8x128_linf-l2-l1_eps1-2-4-6-8-12"
 EPOCH_KEYS = ("epoch", "train_epoch", "last_epoch", "current_epoch")
 CKPT_CANDIDATES = (
     "model_best.pth.tar",
@@ -51,9 +53,9 @@ CHECKPOINT_KIND_SUFFIX = {
     "advbest": "advbest",
 }
 NORMS = ("linf", "l2", "l1")
-EPS_INPUTS = (1.0, 2.0, 4.0, 6.0, 8.0, 12.0, 16.0)
-LINF_DIVISOR = 255.0
-L1_MULTIPLIER = 255.0 / 2.0
+EPS_INPUTS = DEFAULT_EPS_INPUTS
+LINF_DIVISOR = LINF_EPS_DIVISOR
+L1_MULTIPLIER = L1_EPS_MULTIPLIER
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 

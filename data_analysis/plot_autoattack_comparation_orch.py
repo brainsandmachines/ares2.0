@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from ares.utils.epsilon_schedule import DEFAULT_EPS_INPUTS
+
 # Reuse the original module wholesale (same-dir import when run as a script).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # repo root for orchestrator
@@ -48,7 +50,7 @@ _EPS_RE_STD = re.compile(r"_([0-9]+(?:\.[0-9]+)?)_init[0-9]+$")
 # of these has no matching column, so we score it at a representative sampled
 # eps instead. And an adversarial model whose name carries no norm token (e.g.
 # gradnorm_*) is scored under l2 by default.
-AA_EPS = (1.0, 2.0, 4.0, 6.0, 8.0, 12.0, 16.0)
+AA_EPS = DEFAULT_EPS_INPUTS
 DEFAULT_EPS = 4.0
 DEFAULT_NORM = "l2"
 

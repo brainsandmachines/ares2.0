@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from ares.utils.epsilon_schedule import DEFAULT_EPS_INPUTS, L1_EPS_MULTIPLIER, LINF_EPS_DIVISOR
 
 DEFAULT_CSV = "data_analysis/pgd_validation_results.csv"
 DEFAULT_OUT_DIR = "data_analysis/plots"
@@ -14,16 +15,16 @@ DEFAULT_MODELS_DIR = "/home/ashtomer/projects/ares/results/models"
 NORM_ORDER = ["linf", "l2", "l1"]
 HEATMAP_EVAL_ORDER = ["linf", "l2", "l1_apgd"]
 EXCLUDED_NON_MADRY = ("gradnorm", "trades")
-HEATMAP_EPS_ORDER = [1.0, 2.0, 4.0, 8.0, 16.0]
-HEATMAP_MODEL_ORDER = ["baseline", 1.0, 2.0, 4.0, 8.0, 16.0]
+HEATMAP_EPS_ORDER = list(DEFAULT_EPS_INPUTS)
+HEATMAP_MODEL_ORDER = ["baseline", *DEFAULT_EPS_INPUTS]
 PLOT_CATEGORIES = ["madry", "trades", "gradnorm"]
 CATEGORY_TRAIN_FAMILIES = {
     "madry": ["linf", "l2", "l1"],
     "trades": ["linf", "l2"],
     "gradnorm": ["gradnorm"],
 }
-LINF_DIVISOR = 255.0
-L1_MULTIPLIER = 255.0 / 2.0
+LINF_DIVISOR = LINF_EPS_DIVISOR
+L1_MULTIPLIER = L1_EPS_MULTIPLIER
 
 
 def parse_args() -> argparse.Namespace:

@@ -24,6 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from ares.utils.validate import validate
+from ares.utils.epsilon_schedule import DEFAULT_EPS_INPUTS, L1_EPS_MULTIPLIER, LINF_EPS_DIVISOR
 from data_analysis.plot_pgd_validation import save_norm_plot
 
 try:
@@ -33,15 +34,15 @@ except Exception:  # pragma: no cover - only needed when AA installed
 
 
 DEFAULT_OUT_DIR = "data_analysis/final_eval"
-DEFAULT_PGD_EPS = "1,2,4,8,16"
+DEFAULT_PGD_EPS = ",".join(str(int(eps)) for eps in DEFAULT_EPS_INPUTS)
 DEFAULT_PGD_NORMS = "linf,l2,l1"
 DEFAULT_PGD_ATTACK_STEPS = 10
 DEFAULT_PGD_BATCH_SIZE = 32
 DEFAULT_PGD_OUTPUT_CSV = "pgd_validation_results.csv"
 DEFAULT_AA_BATCH_SIZE = 32
 DEFAULT_NUM_WORKERS = 8
-LINF_DIVISOR = 255.0
-L1_MULTIPLIER = 255.0 / 2.0
+LINF_DIVISOR = LINF_EPS_DIVISOR
+L1_MULTIPLIER = L1_EPS_MULTIPLIER
 
 
 class NormalizeWrapper(torch.nn.Module):
@@ -71,13 +72,13 @@ def parse_args() -> argparse.Namespace:
     # AutoAttack
     parser.add_argument("--aa", action="store_true", help="Run AutoAttack eval")
     parser.add_argument("--aa-batch-size", type=int, default=DEFAULT_AA_BATCH_SIZE)
-    parser.add_argument("--aa-norm", choices=["Linf", "L2"], default=None, help="Override AA norm")
+    parser.add_argument("--aa-norm", choices=["Linf", "L2", "L1"], default=None, help="Override AA norm")
     parser.add_argument("--aa-eps", type=float, default=None, help="Override AA epsilon")
     parser.add_argument("--aa-max-batches", type=int, default=None, help="Limit AA to N batches (debug)")
 
     # PGD sweep
     parser.add_argument("--pgd", action="store_true", help="Run PGD epsilon sweep")
-    parser.add_argument("--pgd-eps", default=DEFAULT_PGD_EPS, help="Comma list, e.g. '1,2,4,8,16'")
+    parser.add_argument("--pgd-eps", default=DEFAULT_PGD_EPS, help="Comma list, e.g. '1,2,4,6,8,12'")
     parser.add_argument("--pgd-norms", default=DEFAULT_PGD_NORMS, help="Comma list, e.g. 'linf,l2,l1'")
     parser.add_argument("--pgd-attack-steps", type=int, default=DEFAULT_PGD_ATTACK_STEPS)
     parser.add_argument("--pgd-batch-size", type=int, default=DEFAULT_PGD_BATCH_SIZE)
@@ -312,6 +313,8 @@ def parse_attack_from_path(checkpoint_path: str) -> Tuple[bool, Optional[str], O
         norm = "Linf"
     elif "l2" in parent_name or "l2" in file_name:
         norm = "L2"
+    elif "l1" in parent_name or "l1" in file_name:
+        norm = "L1"
 
     if norm is None:
         raise ValueError("Cannot detect norm from checkpoint name. Pass --aa-norm and --aa-eps.")
@@ -323,7 +326,12 @@ def parse_attack_from_path(checkpoint_path: str) -> Tuple[bool, Optional[str], O
         raise ValueError("Cannot extract eps from checkpoint name. Pass --aa-norm and --aa-eps.")
 
     eps_raw = float(m.group(1))
-    eps = eps_raw / 255.0 if norm == "Linf" else eps_raw
+    if norm == "Linf":
+        eps = eps_raw / LINF_DIVISOR
+    elif norm == "L1":
+        eps = eps_raw * L1_MULTIPLIER
+    else:
+        eps = eps_raw
     return False, norm, eps
 
 
