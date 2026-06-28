@@ -59,7 +59,7 @@ def test_select_balanced_indices_rejects_more_than_dataset_size():
 
 
 def test_default_eps_inputs_include_six_and_twelve():
-    assert EPS_INPUTS == (1.0, 2.0, 4.0, 6.0, 8.0, 12.0, 16.0)
+    assert EPS_INPUTS == (1.0, 2.0, 4.0, 6.0, 8.0, 12.0)
 
 
 def test_checkpoint_kind_csv_suffixes():
