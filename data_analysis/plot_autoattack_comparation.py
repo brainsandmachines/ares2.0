@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from ares.utils.epsilon_schedule import DEFAULT_PLOT_EPS_INPUTS, L1_EPS_MULTIPLIER
+
 # to run this file, use this exmaple:
 # python data_analysis/plot_autoattack_comparation.py     --plot_name "v1_models"      --models     convnext_small_v1_clean_init1     convnext_small_v1_noise_init1    convnext_small_v1_clean_l2_4_init1      convnext_small_v1_clean_l2_40_init1
 
@@ -22,7 +24,7 @@ CSV_NAME = "autoattack_sweep_results.csv"
 CHECKPOINT_KINDS = ("best", "last", "advbest")
 CHECKPOINT_KIND_SUFFIX = {"best": "", "last": "last", "advbest": "advbest"}
 ATTACK_NORMS = ["l1", "l2", "linf"]
-EVAL_EPS_ORDER = [0, 1, 2, 4, 6, 8, 12, 16]
+EVAL_EPS_ORDER = list(DEFAULT_PLOT_EPS_INPUTS)
 
 TITLE_TEMPLATE = "{plot_name}"
 COLORBAR_LABEL = "Accuracy (%)"
@@ -183,7 +185,7 @@ def trim_float(value: float) -> str:
 
 def ytick_labels_for_norm(attack_norm: str, eval_eps_order: list[float]) -> list[str]:
     if attack_norm == "l1":
-        return [trim_float(eps * 255 / 2) for eps in eval_eps_order]
+        return [trim_float(eps * L1_EPS_MULTIPLIER) for eps in eval_eps_order]
     if attack_norm == "linf":
         return ["0" if eps == 0 else f"{trim_float(eps)}/255" for eps in eval_eps_order]
     return [trim_float(eps) for eps in eval_eps_order]

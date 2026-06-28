@@ -12,6 +12,8 @@ import datetime
 import logging
 import numpy as np
 
+from ares.utils.epsilon_schedule import L1_EPS_MULTIPLIER, LINF_EPS_DIVISOR
+
 
 
 def n_batch_loader(loader, n=8):
@@ -66,6 +68,8 @@ def parse_attack_from_path(checkpoint_path):
         norm = "Linf"
     elif "l2" in name:
         norm = "L2"
+    elif "l1" in name:
+        norm = "L1"
     else:
         raise ValueError("Cannot detect norm from checkpoint name.")
 
@@ -79,7 +83,9 @@ def parse_attack_from_path(checkpoint_path):
 
     # ---------- Convert to true epsilon ----------
     if norm == "Linf":
-        eps = eps_raw / 255
+        eps = eps_raw / LINF_EPS_DIVISOR
+    elif norm == "L1":
+        eps = eps_raw * L1_EPS_MULTIPLIER
     else:  # L2
         eps = eps_raw
 
