@@ -79,24 +79,17 @@ class SlurmClient:
                     continue
         return failed
 
-    def submit_controller_array(
-        self,
-        partition: str,
-        array_spec: str,
-        dependency_job_id: Optional[int] = None,
-    ) -> int:
+    def submit_controller_array(self, partition: str, array_spec: str) -> int:
         """Submit one controller array pool; return its (array) job id.
 
-        ``array_spec`` is e.g. ``1-200%6``. ``dependency_job_id`` chains the new
-        pool ``afterany`` the previous one so pools run back-to-back, never
-        piling up concurrent capacity.
+        ``array_spec`` is e.g. ``1-200%6``. Pools are submitted immediately;
+        Slurm's array throttle controls concurrency.
         """
         export = f"ALL,ORCH_DB={self.cfg.db_path_cluster}"
-        dep = f"--dependency=afterany:{dependency_job_id} " if dependency_job_id else ""
         remote = (
             f"cd {self.cfg.cluster_repo} && "
             f"sbatch --parsable --job-name={CONTROLLER_JOB_NAME} "
-            f"--partition={partition} --array={array_spec} {dep}"
+            f"--partition={partition} --array={array_spec} "
             f"--export={export} {CONTROLLER_SBATCH}"
         )
         out = self._ssh(remote).strip()

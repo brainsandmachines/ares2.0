@@ -15,7 +15,7 @@ Fast infra tests run against an **isolated scratch DB + dummy rows** (the live
 | 1 | Controller array submits, `%N` concurrency cap holds | **PASS** — 24-task `%12` array peaked at exactly 12 running |
 | 2 | Atomic claim under real NFS concurrency (no double-claim) | **PASS** — 16 rows, 16 distinct claims, 8 losers got `None`, no slurm id owned >1 row |
 | 6 | Stale-requeue + liveness guard (real `squeue`/`sacct`) | **PASS** — dead owner released (`requeued=1`), live real-job owner left untouched |
-| 7/8 | Monitor top-up decision + `afterany` dependency + double-queue guard | **PASS** — dry-run picked `1-200%6`/`%8` per partition via real `squeue`; a real `--dependency=afterany` pool held `PENDING|Dependency` |
+| 7/8 | Monitor top-up decision + capacity check | **PASS** — dry-run picked `1-200%6`/`%8` per partition via real `squeue`; pools are submitted without Slurm dependencies |
 | 9 | Deterministic classification + codex escalation + dedup | **PASS** — rules act deterministically; one real `codex` call wrote a report, repeat signature deduped (no 2nd call) |
 
 Still **deferred** — need a real multi-day training cycle (decision: fast infra
@@ -114,7 +114,7 @@ the first logged epoch ≈ the pre-cancel `next_epoch`.
 **Pass:** alive owners survive; dead owners past threshold are released exactly
 once (`requeued` increments by 1, not repeatedly).
 
-## 7. Hourly monitor: top-up with afterany dependency, no double-queue
+## 7. Hourly monitor: immediate top-up
 
 Let a pool drain below `ORCH_MIN_REMAINING` (20) tasks, then:
 ```bash
@@ -123,10 +123,9 @@ ssh slurm "squeue -u ashtomer -r -o '%i|%T|%j|%r' | grep orch-controller"
 ```
 **Pass:**
 - a new pool is submitted **per partition** with `--array=1-200%6` (pro) /
-  `%8` (rtx6000) and `--dependency=afterany:<latest pool id>`.
-- the dependent pool stays PENDING with reason `Dependency` until the prior pool
-  finishes; a second `monitor` run does **not** queue another (double-queue
-  guard), and tops up nothing while ≥20 tasks remain.
+  `%8` (rtx6000) and no `--dependency`.
+- new controller tasks may start immediately when GPUs are free; Slurm's `%N`
+  array throttle controls per-pool concurrency.
 
 ## 8. Capacity check
 

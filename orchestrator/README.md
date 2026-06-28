@@ -11,8 +11,7 @@ failures. Replaces the archived push-daemon (`orchestrator/legacy/`).
 BOTERO cron (hourly: python -m orchestrator.monitor)
   per partition [rtx_pro_6000 %6, rtx6000 %8]:
     1. top up   -> if <ORCH_MIN_REMAINING controller tasks left AND claimable work
-                   AND no dependent pool queued: sbatch controller array
-                   (--array=1-200%N --dependency=afterany:<latest>)
+                   sbatch controller array immediately (--array=1-200%N)
     2. settle   -> sleep 30s if a pool was submitted
     3. capacity -> running tasks == min(capacity, available work)?  (recheck once)
     4. failures -> map FAILED tasks -> DB row; classify deterministically;

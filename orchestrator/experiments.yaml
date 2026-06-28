@@ -8,8 +8,7 @@
 #
 # total scheduled epochs = warmup_epochs + linear_epochs + plateau_epochs
 #   standard training (fixed eps):   0 / 0 / 150            (150 total; bump to add more)
-#   curriculum `direct`:             2 / 0 / 28             (30 total)
-#   curriculum `ramp`:               4 / 26 / 10            (40 total; warmup→ramp ends ep30→plateau)
+#   continuation:                    4 / 21 / 15            (40 total; warmup→ramp ends ep25→plateau)
 #
 # arch / protocol / eps are descriptive columns. They are AUTO-DERIVED from the
 # job_name if omitted (arch from the convnext_*_ prefix; protocol = madry|trades|
@@ -44,11 +43,9 @@ experiments:
   # ---- 1 clean baseline ----
   - {launcher: golan-trainmodels, job_name: baseline_init1, warmup_epochs: 0, linear_epochs: 0, plateau_epochs: 150}
 
-  # ---- curriculum continuation examples (eps_curriculum launcher) ----
-  # direct: source eps 4 -> target eps 8, fixed schedule, 30 epochs
-  - {launcher: eps_curriculum, job_name: linf_cont4to8_direct_init1, warmup_epochs: 2, linear_epochs: 0, plateau_epochs: 28}
-  # ramp: source eps 4 -> target eps 8, warmup/ramp/fixed schedule, 40 epochs (warmup→ramp ends ep30→plateau)
-  - {launcher: eps_curriculum, job_name: linf_cont4to8_ramp_init1, warmup_epochs: 4, linear_epochs: 26, plateau_epochs: 10}
+  # ---- continuation example (eps_curriculum launcher) ----
+  # source eps 4 -> target eps 8, warmup/ramp/fixed schedule, 40 epochs (warmup→ramp ends ep25→plateau)
+  - {launcher: eps_curriculum, job_name: linf_cont4to8_init1, warmup_epochs: 4, linear_epochs: 21, plateau_epochs: 15}
 
   # ---- examples of other protocols / arches (uncomment & adapt when selected) ----
   # trades:   - {launcher: golan-trainmodels, job_name: l2trades_8_init1, plateau_epochs: 150}

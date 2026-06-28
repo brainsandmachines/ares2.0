@@ -27,6 +27,7 @@ def test_eps_from_name():
     assert naming.eps_from_name("linf_16_init2") == 16.0
     assert naming.eps_from_name("baseline_init1") is None
     # curriculum: target epsilon
+    assert naming.eps_from_name("linf_cont4to8_init1") == 8.0
     assert naming.eps_from_name("linf_cont4to8_ramp_init1") == 8.0
     assert naming.eps_from_name("convnext_base_l2_2_init1") == 2.0
 
@@ -35,6 +36,14 @@ def test_model_dir_for():
     root = "/r/models"
     assert naming.model_dir_for("l2_8_init1", root) == "/r/models/convnext_small_l2_8_init1"
     assert naming.model_dir_for("convnext_base_l2_8_init1", root) == "/r/models/convnext_base_l2_8_init1"
+    assert naming.model_dir_for("l2_cont4to8_init1", root) == "/r/models/convnext_small_l2_cont4to8_init1"
+    assert naming.model_dir_for("l2_cont4to8_direct_init1", root) == "/r/models/convnext_small_l2_cont4to8_init1"
+
+
+def test_normalize_continuation_name_drops_legacy_protocol_suffix():
+    assert naming.normalize_continuation_name("l2_cont4to8_direct_init1") == "l2_cont4to8_init1"
+    assert naming.normalize_continuation_name("l2_cont4to8_ramp_init1") == "l2_cont4to8_init1"
+    assert naming.normalize_continuation_name("convnext_base_l2_cont4to8_ramp_init1") == "convnext_base_l2_cont4to8_init1"
 
 
 def test_upsert_stores_new_columns(tmp_path):
