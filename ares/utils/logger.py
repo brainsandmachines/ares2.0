@@ -4,6 +4,8 @@ import logging
 import ares
 from torch.utils._contextlib import _DecoratorContextManager
 
+from ares.utils.epsilon_schedule import L1_EPS_MULTIPLIER, LINF_EPS_DIVISOR, denormalize_epsilon
+
 class CustomFormatter(logging.Formatter):
     """Class for custom formatter."""
     def format(self, record):
@@ -83,28 +85,31 @@ def _auto_experiment_name(cfg):
 
         if attacks.attack_norm=="linf":
             if attacks.attack_criterion=="madry":
-                parts.append(f"linf_{int(attack_eps*255)}")
+                parts.append(f"linf_{int(attack_eps*LINF_EPS_DIVISOR)}")
                 group_name = "v1feat_linf_madry" if attack_domain == "v1_feature" else "linf_madry"
             elif attacks.attack_criterion=="trades":
-                parts.append(f"linftrades_{int(attack_eps*255)}")
+                parts.append(f"linftrades_{int(attack_eps*LINF_EPS_DIVISOR)}")
                 group_name = "v1feat_linf_trades" if attack_domain == "v1_feature" else "linf_trades"
             else:
                 raise ValueError(f"Unknown attack criterion: {attacks.attack_criterion}")
         elif attacks.attack_norm=="l2":
+            l2_eps = attack_eps
+            if attack_domain == "v1_feature":
+                l2_eps = denormalize_epsilon(attack_eps, "l2", attack_domain=attack_domain)
             if attacks.attack_criterion=="madry":
-                parts.append(f"l2_{attack_eps}")
+                parts.append(f"l2_{l2_eps:g}")
                 group_name = "v1feat_l2_madry" if attack_domain == "v1_feature" else "l2_madry"
             elif attacks.attack_criterion=="trades":
-                parts.append(f"l2trades_{attack_eps}")
+                parts.append(f"l2trades_{l2_eps:g}")
                 group_name = "v1feat_l2_trades" if attack_domain == "v1_feature" else "l2_trades"
             else:
                 raise ValueError(f"Unknown attack criterion: {attacks.attack_criterion}")
         elif attacks.attack_norm=="l1":
             if attacks.attack_criterion=="madry":
-                parts.append(f"l1_{int(attack_eps/(255/2))}")
+                parts.append(f"l1_{int(attack_eps/L1_EPS_MULTIPLIER)}")
                 group_name = "v1feat_l1_madry" if attack_domain == "v1_feature" else "l1_madry"
             elif attacks.attack_criterion=="trades":
-                parts.append(f"l1trades_{int(attack_eps/(255/2))}")
+                parts.append(f"l1trades_{int(attack_eps/L1_EPS_MULTIPLIER)}")
                 group_name = "v1feat_l1_trades" if attack_domain == "v1_feature" else "l1_trades"
             else:
                 raise ValueError(f"Unknown attack criterion: {attacks.attack_criterion}")

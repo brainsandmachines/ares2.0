@@ -25,7 +25,7 @@ from ares.utils.train_loop import train_one_epoch
 from ares.utils.validate import validate
 from ares.utils.runtime_probe import PhaseTimer, append_runtime_row
 from ares.utils.final_eval_helpers import _maybe_run_final_eval
-from ares.utils.epsilon_schedule import build_epsilon_schedule, normalize_epsilon
+from ares.utils.epsilon_schedule import L1_EPS_MULTIPLIER, LINF_EPS_DIVISOR, build_epsilon_schedule, normalize_epsilon
 from ares.utils.continuation import (
     active_attack_eps_field,
     capture_attack_step_auto,
@@ -37,6 +37,7 @@ from ares.utils.continuation import (
 )
 
 from orchestrator import progress as orch_progress
+from aircc.aircc_job_manager import progress as aircc_progress
 
 def main(cfg: DictConfig):
     # distributed settings and logger
@@ -49,7 +50,16 @@ def main(cfg: DictConfig):
         cfg.runtime = {}
         cfg.hydra_config_yaml = OmegaConf.to_yaml(cfg, resolve=True)
     distributed_init(cfg)
-    
+
+    # aircc job manager: cap this process to a fraction of GPU memory so 2 parallel
+    # training procs can share one B200 without OOM-ing each other. No-op if unset.
+    _aircc_mem_frac = os.environ.get("AIRCC_MEM_FRACTION")
+    if _aircc_mem_frac and torch.cuda.is_available():
+        try:
+            torch.cuda.set_per_process_memory_fraction(float(_aircc_mem_frac), cfg.dist.device_id)
+        except Exception:
+            pass
+
     attack_domain = cfg.attacks.get('attack_domain', 'pixel')
     v1_noise_mode = cfg.model.get('v1_noise_mode', None)
     is_convnext_v1 = str(cfg.model.model).startswith('convnext_') and str(cfg.model.model).endswith('_v1')
@@ -70,14 +80,14 @@ def main(cfg: DictConfig):
     if attack_domain == 'pixel':
         if cfg.attacks.attack_norm == 'linf':
             if cfg.attacks.attack_eps is not None:
-                cfg.attacks.attack_eps = float(cfg.attacks.attack_eps) / 255.0
+                cfg.attacks.attack_eps = float(cfg.attacks.attack_eps) / LINF_EPS_DIVISOR
             if cfg.attacks.attack_step is not None:
-                cfg.attacks.attack_step = float(cfg.attacks.attack_step) / 255.0
+                cfg.attacks.attack_step = float(cfg.attacks.attack_step) / LINF_EPS_DIVISOR
         elif cfg.attacks.attack_norm == 'l1':
             if cfg.attacks.attack_step is None:
                 cfg.attacks.attack_step = 1.0
             if cfg.attacks.attack_eps is not None:
-                cfg.attacks.attack_eps = float(cfg.attacks.attack_eps) * 255.0 / 2.0
+                cfg.attacks.attack_eps = float(cfg.attacks.attack_eps) * L1_EPS_MULTIPLIER
 
         if (
             cfg.attacks.attack_norm == 'linf'
@@ -94,14 +104,21 @@ def main(cfg: DictConfig):
     else:
         if cfg.attacks.attack_norm == 'linf':
             if cfg.attacks.v1_attack_eps is not None:
-                cfg.attacks.v1_attack_eps = float(cfg.attacks.v1_attack_eps) / 255.0
+                cfg.attacks.v1_attack_eps = float(cfg.attacks.v1_attack_eps) / LINF_EPS_DIVISOR
             if cfg.attacks.v1_attack_step is not None:
-                cfg.attacks.v1_attack_step = float(cfg.attacks.v1_attack_step) / 255.0
+                cfg.attacks.v1_attack_step = float(cfg.attacks.v1_attack_step) / LINF_EPS_DIVISOR
         elif cfg.attacks.attack_norm == 'l1':
             if cfg.attacks.v1_attack_step is None:
                 cfg.attacks.v1_attack_step = 1.0
             if cfg.attacks.v1_attack_eps is not None:
-                cfg.attacks.v1_attack_eps = float(cfg.attacks.v1_attack_eps) * 255.0 / 2.0
+                cfg.attacks.v1_attack_eps = float(cfg.attacks.v1_attack_eps) * L1_EPS_MULTIPLIER
+        elif cfg.attacks.attack_norm == 'l2':
+            if cfg.attacks.v1_attack_eps is not None:
+                cfg.attacks.v1_attack_eps = normalize_epsilon(
+                    float(cfg.attacks.v1_attack_eps),
+                    cfg.attacks.attack_norm,
+                    attack_domain=attack_domain,
+                )
         if (
             cfg.attacks.attack_norm == 'linf'
             and cfg.attacks.v1_attack_step is None
@@ -266,7 +283,11 @@ def main(cfg: DictConfig):
     target_epsilon_internal = None
     if epsilon_schedule is not None:
         target_epsilon_user = float(epsilon_schedule.target_epsilon)
-        target_epsilon_internal = normalize_epsilon(target_epsilon_user, cfg.attacks.attack_norm)
+        target_epsilon_internal = normalize_epsilon(
+            target_epsilon_user,
+            cfg.attacks.attack_norm,
+            attack_domain=attack_domain,
+        )
     
     if cfg.dist.rank == 0:
         decreasing=True if eval_metric=='loss' else False
@@ -290,7 +311,7 @@ def main(cfg: DictConfig):
             run_name = experiment_name
 
         wandb.init(
-            project="robust-training",
+            project=os.environ.get("WANDB_PROJECT", "robust-training"),
             entity="ashtomer-ben-gurion-university-of-the-negev",
             id=run_id,  
             resume="allow",
@@ -434,6 +455,11 @@ def main(cfg: DictConfig):
             
         # -------- orchestrator: atomic end-of-epoch progress (no-op if not tracked) --------
         orch_progress.update_epoch(epoch + 1, rank=cfg.dist.rank)
+        # -------- aircc job manager: end-of-epoch progress (no-op if not tracked) --------
+        aircc_progress.update_epoch(
+            epoch + 1, rank=cfg.dist.rank,
+            checkpoint=os.path.join(output_dir, 'last.pth.tar') if output_dir is not None else None,
+        )
 
         if cfg.dist.distributed:
             torch.distributed.barrier()

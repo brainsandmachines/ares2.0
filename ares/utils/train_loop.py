@@ -13,6 +13,7 @@ from ares.utils.adv import adv_generator, trades_adv_generator, v1_adv_generator
 from ares.utils.metrics import AverageMeter
 from ares.utils.gradnorm import combine_gradnorm_objective, compute_gradnorm_alpha
 from ares.utils.dvd import apply_dvd_to_batch, build_dvd_state
+from aircc.aircc_job_manager import progress as aircc_progress
 
 
 def train_one_epoch(
@@ -218,6 +219,8 @@ def train_one_epoch(
                 log_msg += 'Eps: {:.6g}  '.format(float(att_eps))
             log_msg += 'Data: {data_time.val:.3f} ({data_time.avg:.3f})'.format(data_time=data_time_m)
             _logger.info(log_msg)
+            # aircc job manager: heartbeat at every log interval (no-op if untracked)
+            aircc_progress.heartbeat(rank=dist.rank)
             if attacks.gradnorm and batch_idx % (cfg.log_interval * 20) == 0:
                 ce_val = ce_loss.detach().item()
                 raw_reg_val = raw_loss_reg.detach().item()
