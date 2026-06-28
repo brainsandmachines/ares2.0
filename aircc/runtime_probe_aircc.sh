@@ -93,11 +93,11 @@ run_parallel() {
     mkdir -p "${dir}/proc_0" "${dir}/proc_1"
 
     build_cmd "${bsz}" "${dir}/proc_0" "${csv}" "${warmup}" "${measure}" 0
-    MASTER_PORT=${MASTER_PORT} "${cmd[@]}" > "${dir}/proc_0.log" 2>&1 &
+    MASTER_PORT=${MASTER_PORT} MASTER_ADDR=127.0.0.1 WORLD_SIZE=1 RANK=0 "${cmd[@]}" > "${dir}/proc_0.log" 2>&1 &
     PID0=$!
 
     build_cmd "${bsz}" "${dir}/proc_1" "${csv}" "${warmup}" "${measure}" 1
-    MASTER_PORT=$((MASTER_PORT + 1)) "${cmd[@]}" > "${dir}/proc_1.log" 2>&1 &
+    MASTER_PORT=$((MASTER_PORT + 1)) MASTER_ADDR=127.0.0.1 WORLD_SIZE=1 RANK=0 "${cmd[@]}" > "${dir}/proc_1.log" 2>&1 &
     PID1=$!
 
     wait $PID0; S0=$?

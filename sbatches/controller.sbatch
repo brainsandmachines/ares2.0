@@ -10,9 +10,8 @@
 #SBATCH --output=/home/ashtomer/projects/ares/outs/orch_controller/%A_%a.out
 #
 # Controller array worker pool. One task = one GPU = one claimed model run.
-# The botero monitor overrides --partition and --array (e.g. 1-200%8 on rtx6000)
-# and chains pools with --dependency=afterany; the directives above are defaults
-# for a manual submit.
+# The botero monitor overrides --partition and --array (e.g. 1-200%8 on rtx6000);
+# the directives above are defaults for a manual submit.
 #
 # Each task: requeue stale -> atomically claim one DB job -> run its remaining
 # pipeline (train -> AA -> plot) -> exit. ORCH_DB is exported by the submitter

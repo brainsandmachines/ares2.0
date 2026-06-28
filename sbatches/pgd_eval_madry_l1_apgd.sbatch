@@ -20,7 +20,7 @@ MODELS_ROOT="${MODELS_ROOT:-${REPO_ROOT}/results/models}"
 VAL_DIR="${VAL_DIR:-/groups/golan_neurogroup/bml_group/datasets/imagenet/val/}"
 OUT_SUBDIR="${OUT_SUBDIR:-pgd_eval_l1_apgd}"
 OUT_CSV="${OUT_CSV:-pgd_validation_results_l1_apgd.csv}"
-PGD_EPS="${PGD_EPS:-1,2,4,8,16}"
+PGD_EPS="${PGD_EPS:-1,2,4,6,8,12}"
 PGD_BATCH_SIZE="${PGD_BATCH_SIZE:-256}"
 L1_APGD_RHO="${L1_APGD_RHO:-0.05}"
 

@@ -24,16 +24,16 @@ parse_cont_train_job() {
         job_core="${jobname#convnext_large_}"
     fi
 
-    if [[ ! "$job_core" =~ ^(.+)_cont([0-9]+(\.[0-9]+)?)to([0-9]+(\.[0-9]+)?)_(direct|ramp)_init([0-9]+)$ ]]; then
-        echo "[ERROR] Continuation job must look like <mode>_cont<SRC>to<TGT>_<direct|ramp>_init<N>: $jobname" >&2
+    if [[ ! "$job_core" =~ ^(.+)_cont([0-9]+(\.[0-9]+)?)to([0-9]+(\.[0-9]+)?)(_(direct|ramp))?_init([0-9]+)$ ]]; then
+        echo "[ERROR] Continuation job must look like <mode>_cont<SRC>to<TGT>_init<N>: $jobname" >&2
         return 1
     fi
 
     cont_mode="${BASH_REMATCH[1]}"
     source_eps="${BASH_REMATCH[2]}"
     target_eps="${BASH_REMATCH[4]}"
-    protocol="${BASH_REMATCH[6]}"
-    experiment_num="${BASH_REMATCH[7]}"
+    protocol="cont"
+    experiment_num="${BASH_REMATCH[8]}"
 
     attack_norm=""
     crit="madry"
@@ -82,13 +82,13 @@ parse_cont_train_job() {
         attack_domain="v1_feature"
         model_override="model=${model_arch}_v1"
         source_model_name="${model_arch}_v1_${v1_tag}_${mode_core}_${source_eps}_init${experiment_num}"
-        model_name="${model_arch}_v1_${v1_tag}_${mode_core}_cont${source_eps}to${target_eps}_${protocol}_init${experiment_num}"
+        model_name="${model_arch}_v1_${v1_tag}_${mode_core}_cont${source_eps}to${target_eps}_init${experiment_num}"
     else
         if [[ "$model_size" != "small" ]]; then
             model_override="model=${model_arch}"
         fi
         source_model_name="${model_arch}_${mode_core}_${source_eps}_init${experiment_num}"
-        model_name="${model_arch}_${mode_core}_cont${source_eps}to${target_eps}_${protocol}_init${experiment_num}"
+        model_name="${model_arch}_${mode_core}_cont${source_eps}to${target_eps}_init${experiment_num}"
     fi
 
     if [ "$gpu_total" -ge 90000 ]; then
@@ -119,30 +119,19 @@ parse_cont_train_job() {
     fi
     BATCH_SIZE=$BATCH_PER_GPU
 
-    if [[ "$protocol" == "direct" ]]; then
-        schedule_type="fixed"
-        epochs=30
-        warmup_epochs=2
-        ramp_start_epoch=""
-        ramp_end_epoch=""
-        fixed_start_epoch=""
-    elif [[ "$protocol" == "ramp" ]]; then
-        # 40-epoch ramp: 4 warmup (1-4), 26 linear ramp (5-30), 10 fixed (31-40).
-        schedule_type="warmup_ramp_fixed"
-        epochs=40
-        warmup_epochs=4
-        ramp_start_epoch=5
-        ramp_end_epoch=30
-        fixed_start_epoch=31
-        epochs="${CONT_EPOCHS:-$epochs}"
-        warmup_epochs="${CONT_WARMUP_EPOCHS:-$warmup_epochs}"
-        ramp_start_epoch="${CONT_RAMP_START_EPOCH:-$ramp_start_epoch}"
-        ramp_end_epoch="${CONT_RAMP_END_EPOCH:-$ramp_end_epoch}"
-        fixed_start_epoch="${CONT_FIXED_START_EPOCH:-$fixed_start_epoch}"
-    else
-        echo "[ERROR] Unsupported continuation protocol: $protocol" >&2
-        return 1
-    fi
+    # Single continuation schedule: 4 warmup epochs, ramp through epoch 25,
+    # then fixed target epsilon from epoch 26 through epoch 40.
+    schedule_type="warmup_ramp_fixed"
+    epochs=40
+    warmup_epochs=4
+    ramp_start_epoch=5
+    ramp_end_epoch=25
+    fixed_start_epoch=26
+    epochs="${CONT_EPOCHS:-$epochs}"
+    warmup_epochs="${CONT_WARMUP_EPOCHS:-$warmup_epochs}"
+    ramp_start_epoch="${CONT_RAMP_START_EPOCH:-$ramp_start_epoch}"
+    ramp_end_epoch="${CONT_RAMP_END_EPOCH:-$ramp_end_epoch}"
+    fixed_start_epoch="${CONT_FIXED_START_EPOCH:-$fixed_start_epoch}"
 
     if [[ -z "${CONTINUATION_CKPT:-}" ]]; then
         local adv_ckpt="${models_root}/${source_model_name}/model_best_adv.pth.tar"
