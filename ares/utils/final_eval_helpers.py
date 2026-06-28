@@ -4,6 +4,11 @@ from pathlib import Path
 
 import torch
 
+from ares.utils.epsilon_schedule import DEFAULT_EPS_INPUTS
+
+
+DEFAULT_EPS_INPUTS_CSV = ",".join(str(int(eps)) for eps in DEFAULT_EPS_INPUTS)
+
 
 def _parse_csv_list(value):
     if value is None:
@@ -80,7 +85,7 @@ def _is_pgd_eval_complete(cfg, out_dir, ckpt_path, _logger):
     csv_name = cfg.get("final_eval_pgd_completion_csv", "pgd_validation_results.csv")
 
     expected_norms = [n.lower() for n in _parse_csv_list(cfg.get("final_eval_pgd_norms", "linf,l2,l1"))]
-    expected_eps = _parse_float_list(cfg.get("final_eval_pgd_eps", "0.5,1,2,4,8,16"))
+    expected_eps = _parse_float_list(cfg.get("final_eval_pgd_eps", DEFAULT_EPS_INPUTS_CSV))
     expected_pairs = {(n, round(float(e), 10)) for n in expected_norms for e in expected_eps}
 
     observed_pairs = set()
@@ -173,6 +178,38 @@ def _is_aa_eval_complete(cfg, out_dir, ckpt_path, parse_attack_from_path, _logge
     return False
 
 
+def _maybe_plot_aa_checkpoint_comparison(output_dir, aa_eps_inputs, _logger):
+    """Generate the best/last/advbest AA heatmap plot right after the sweep completes."""
+    try:
+        from data_analysis.plot_autoattack_comparation import (
+            load_autoattack_results,
+            model_entries,
+            plot_comparation,
+        )
+    except Exception as exc:
+        _logger.warning("AA checkpoint comparison plot skipped (import failed): %s", exc)
+        return
+
+    try:
+        models_root = Path(output_dir).parent
+        model_name = Path(output_dir).name
+        eval_eps_order = sorted({0.0} | set(aa_eps_inputs))
+
+        # Collect whichever checkpoint CSVs actually exist.
+        entries = model_entries(models_root, [model_name], "all")
+        if not entries:
+            _logger.info("AA comparison plot: no checkpoint CSVs found under %s, skipping.", output_dir)
+            return
+
+        data_by_norm = load_autoattack_results(models_root, entries, eval_eps_order)
+        model_labels = [label for _name, label, _csv in entries]
+        out_png = Path(output_dir) / f"autoattack_eval_comparation_{model_name}.png"
+        plot_comparation(data_by_norm, model_labels, eval_eps_order, model_name, out_png)
+        _logger.info("Saved AA checkpoint comparison plot to %s", out_png)
+    except Exception as exc:
+        _logger.warning("AA checkpoint comparison plot failed (ignored): %s", exc)
+
+
 def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
     if not cfg.get("final_eval", False):
         return
@@ -207,7 +244,7 @@ def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
     try:
         aa_bs = cfg.get("final_eval_aa_batch_size", None) or 64
         aa_num_batches = cfg.get("final_eval_aa_max_batches", None) or 2
-        aa_eps_inputs = _parse_float_list(cfg.get("final_eval_aa_eps_inputs", "1,2,4,6,8,12,16"))
+        aa_eps_inputs = _parse_float_list(cfg.get("final_eval_aa_eps_inputs", DEFAULT_EPS_INPUTS_CSV))
         aa_csv_name = cfg.get("final_eval_aa_completion_csv", "autoattack_sweep_results.csv")
         aa_checkpoint_kinds = _parse_checkpoint_kinds(cfg.get("final_eval_aa_checkpoint_kinds", "best,last,advbest"))
         pgd_bs = cfg.get("final_eval_pgd_batch_size", None) or cfg.training.batch_size
@@ -292,7 +329,7 @@ def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
                     aa_eps=None,
                     aa_max_batches=None,
                     pgd_batch_size=int(pgd_bs),
-                    pgd_eps=_parse_float_list(cfg.get("final_eval_pgd_eps", "0.5,1,2,4,8,16")),
+                    pgd_eps=_parse_float_list(cfg.get("final_eval_pgd_eps", DEFAULT_EPS_INPUTS_CSV)),
                     pgd_norms=_parse_csv_list(cfg.get("final_eval_pgd_norms", "linf,l2,l1")),
                     pgd_attack_steps=int(cfg.get("final_eval_pgd_attack_steps", 10)),
                     pgd_max_batches=cfg.get("final_eval_pgd_max_batches", None),
@@ -328,6 +365,15 @@ def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
                     force=not bool(cfg.get("final_eval_skip_if_complete", True)),
                     logger=_logger,
                 )
+            _maybe_plot_aa_checkpoint_comparison(output_dir, aa_eps_inputs, _logger)
+            # aircc job manager: pick the best checkpoint by the model's threat
+            # model and record it in the AIRCC DB. No-op when the job is untracked
+            # (AIRCC_MODEL_ID/AIRCC_DB unset).
+            try:
+                from aircc.aircc_job_manager import progress as _aircc_progress
+                _aircc_progress.write_best_checkpoint(output_dir)
+            except Exception:  # pragma: no cover - never block on the handoff
+                _logger.warning("aircc best-checkpoint write failed (ignored)")
             # orchestrator: AutoAttack sweep finished -> hand the row off to the
             # plotting stage. Local import keeps final_eval_helpers importable
             # without the orchestrator package; no-op when the job is untracked.

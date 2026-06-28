@@ -2,6 +2,13 @@ from dataclasses import dataclass
 from typing import Optional
 
 
+LINF_EPS_DIVISOR = 255.0
+L1_EPS_MULTIPLIER = 37.5
+V1_FEATURE_L2_EPS_MULTIPLIER = 10.0
+DEFAULT_EPS_INPUTS = (1.0, 2.0, 4.0, 6.0, 8.0, 12.0)
+DEFAULT_PLOT_EPS_INPUTS = (0.0, *DEFAULT_EPS_INPUTS)
+
+
 @dataclass(frozen=True)
 class EpsilonSchedule:
     schedule_type: str
@@ -65,22 +72,26 @@ def build_epsilon_schedule(cfg) -> Optional[EpsilonSchedule]:
     )
 
 
-def normalize_epsilon(epsilon: float, attack_norm: str) -> float:
+def normalize_epsilon(epsilon: float, attack_norm: str, attack_domain: str = "pixel") -> float:
     if attack_norm == "linf":
-        return float(epsilon) / 255.0
+        return float(epsilon) / LINF_EPS_DIVISOR
     if attack_norm == "l1":
-        return float(epsilon) * 255.0 / 2.0
+        return float(epsilon) * L1_EPS_MULTIPLIER
     if attack_norm == "l2":
+        if attack_domain == "v1_feature":
+            return float(epsilon) * V1_FEATURE_L2_EPS_MULTIPLIER
         return float(epsilon)
     raise ValueError(f"Unsupported attack norm: {attack_norm}")
 
 
-def denormalize_epsilon(epsilon: float, attack_norm: str) -> float:
+def denormalize_epsilon(epsilon: float, attack_norm: str, attack_domain: str = "pixel") -> float:
     if attack_norm == "linf":
-        return float(epsilon) * 255.0
+        return float(epsilon) * LINF_EPS_DIVISOR
     if attack_norm == "l1":
-        return float(epsilon) / (255.0 / 2.0)
+        return float(epsilon) / L1_EPS_MULTIPLIER
     if attack_norm == "l2":
+        if attack_domain == "v1_feature":
+            return float(epsilon) / V1_FEATURE_L2_EPS_MULTIPLIER
         return float(epsilon)
     raise ValueError(f"Unsupported attack norm: {attack_norm}")
 

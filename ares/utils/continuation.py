@@ -31,7 +31,8 @@ def configure_initial_schedule_target(cfg):
 
 
 def set_active_epsilon(cfg, epsilon_user):
-    eps_internal = normalize_epsilon(float(epsilon_user), cfg.attacks.attack_norm)
+    attack_domain = cfg.attacks.get('attack_domain', 'pixel')
+    eps_internal = normalize_epsilon(float(epsilon_user), cfg.attacks.attack_norm, attack_domain=attack_domain)
     eps_field = active_attack_eps_field(cfg)
     step_field = active_attack_step_field(cfg)
     it_field = active_attack_it_field(cfg)
@@ -43,9 +44,11 @@ def set_active_epsilon(cfg, epsilon_user):
 
 
 def current_active_epsilon_user(cfg):
+    attack_domain = cfg.attacks.get('attack_domain', 'pixel')
     return denormalize_epsilon(
         cfg.attacks[active_attack_eps_field(cfg)],
         cfg.attacks.attack_norm,
+        attack_domain=attack_domain,
     )
 
 
