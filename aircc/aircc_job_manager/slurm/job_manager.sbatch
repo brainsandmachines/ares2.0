@@ -20,7 +20,9 @@
 #SBATCH --container-mounts=/shared/cycle2_bgu_golan_prj:/shared/cycle2_bgu_golan_prj
 #SBATCH --output=/shared/cycle2_bgu_golan_prj/ashtomer/ares/aircc/aircc_job_manager/logs/jm_%A_%a.out
 #SBATCH --error=/shared/cycle2_bgu_golan_prj/ashtomer/ares/aircc/aircc_job_manager/logs/jm_%A_%a.err
-# No #SBATCH --time: run until the partition max / cancellation.
+#SBATCH --time=90-00:00:00      # request the full 2-month allocation (90d ceiling).
+# The job manager is effectively infinite; if Slurm caps wall time below this, the
+# task is killed at the cap and another array index resumes from the SQLite state.
 # The whole job runs in the sbatch-level container (no srun), so WORLD_SIZE is
 # unset; the 2 training procs per GPU run single-process (lifecycle also forces it).
 
