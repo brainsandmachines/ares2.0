@@ -95,6 +95,15 @@ def run(row: dict, models_root: Path, db, *, val_dir: Optional[str] = None,
     env["AIRCC_MEM_FRACTION"] = MEM_FRACTION
     env["WANDB_PROJECT"] = WANDB_PROJECT
     env["MASTER_PORT"] = str(10000 + random.randint(0, 49999))
+    # Each of the 2 per-GPU training procs is its OWN single-process run. Slurm/srun
+    # exports WORLD_SIZE/RANK/LOCAL_RANK into our env; clear them so dist.py takes the
+    # single-process path (tcp://localhost:$MASTER_PORT) instead of env:// rendezvous.
+    env["WORLD_SIZE"] = "1"
+    env.pop("RANK", None)
+    env.pop("LOCAL_RANK", None)
+    # Prevent orchestrator DB hooks from firing inside an AIRCC-managed run.
+    env.pop("ORCH_MODEL_ID", None)
+    env.pop("ORCH_DB", None)
     if val_dir:
         env["AIRCC_VAL_DIR"] = val_dir
 
