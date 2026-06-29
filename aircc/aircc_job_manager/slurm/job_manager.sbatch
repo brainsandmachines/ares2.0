@@ -7,7 +7,9 @@
 #   1) generate CSVs once (committed):  python -m aircc.aircc_job_manager.generate_csvs
 #   2) seed selectively (after review):  python -m aircc.aircc_job_manager.seed_db \
 #                                           --db "$AIRCC_DB" --arch convnext_base --init 1
-#   3) submit:                           sbatch aircc/aircc_job_manager/slurm/job_manager.sbatch
+#   3) submit (image on the CLI -- its '#' can't live in a #SBATCH directive):
+#        sbatch --container-image='docker://cr.me-west1.nebius.cloud#i00xvqa4fe98d1s7pc/ares-train:v2' \
+#               aircc/aircc_job_manager/slurm/job_manager.sbatch
 #
 #SBATCH --job-name=aircc_jm
 #SBATCH --array=1-200%16
@@ -15,13 +17,12 @@
 #SBATCH --qos=sandbox_owner_780
 #SBATCH --account=cycle2_bgu_golan_prj
 #SBATCH --gres=gpu:1
-#SBATCH --container-image=docker://cr.me-west1.nebius.cloud#i00xvqa4fe98d1s7pc/ares-train:v2
 #SBATCH --container-mounts=/shared/cycle2_bgu_golan_prj:/shared/cycle2_bgu_golan_prj
 #SBATCH --output=/shared/cycle2_bgu_golan_prj/ashtomer/ares/aircc/aircc_job_manager/logs/jm_%A_%a.out
 #SBATCH --error=/shared/cycle2_bgu_golan_prj/ashtomer/ares/aircc/aircc_job_manager/logs/jm_%A_%a.err
 # No #SBATCH --time: run until the partition max / cancellation.
-# Override the image without editing this file:
-#   sbatch --container-image=<other .sqsh or docker://tag> job_manager.sbatch
+# The whole job runs in the sbatch-level container (no srun), so WORLD_SIZE is
+# unset; the 2 training procs per GPU run single-process (lifecycle also forces it).
 
 set -euo pipefail
 
