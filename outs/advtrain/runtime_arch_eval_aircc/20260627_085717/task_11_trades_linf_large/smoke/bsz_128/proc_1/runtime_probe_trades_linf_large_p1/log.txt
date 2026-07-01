@@ -1,0 +1,16 @@
+[2026-06-27 09:35:23 ARES 2.0] INFO: Runtime distributed=False, world_size=1, rank=0, local_rank=0, device_id=0
+[2026-06-27 09:35:23 ARES 2.0] INFO: Experiment: runtime_probe_trades_linf_large_p1
+[2026-06-27 09:35:23 ARES 2.0] INFO: Results directory: /shared/cycle2_bgu_golan_prj/ashtomer/ares/outs/advtrain/runtime_arch_eval_aircc/20260627_085717/task_11_trades_linf_large/smoke/bsz_128/proc_1/runtime_probe_trades_linf_large_p1
+[2026-06-27 09:35:23 ARES 2.0] INFO: Using seed: 1162205356
+[2026-06-27 09:35:23 ARES 2.0] INFO: Creating model: convnext_large
+[2026-06-27 09:35:29 ARES 2.0] INFO: Model convnext_large created, param count:197767336
+[2026-06-27 09:35:30 ARES 2.0] INFO: Optimizer: AdamW
+[2026-06-27 09:35:30 ARES 2.0] INFO: Using native Torch AMP. Training in mixed precision.
+[2026-06-27 09:36:07 ARES 2.0] INFO: GradNorm start: 1
+[2026-06-27 09:36:07 ARES 2.0] INFO: GradNorm penalty norm: l1, GradNorm alpha scaling: init=0.1, scale_epochs=9, max_reg_to_ce_ratio=1.0
+[2026-06-27 09:36:07 ARES 2.0] INFO: Reg losses: None
+[2026-06-27 09:36:08 ARES 2.0] INFO: Weights & Biases logging initialized for run: runtime_probe_trades_linf_large_p1 in group: default
+[2026-06-27 09:36:08 ARES 2.0] INFO: Start training for 1 epochs
+[2026-06-27 09:36:08 ARES 2.0] INFO: gradclip: None
+[2026-06-27 09:36:40 ARES 2.0] INFO: Train: [0/1] [   0/10009 (  0%)]  Loss: 7.256 (7.26)  Batch Time: 32.076s,    3.99/s  (32.076s,    3.99/s)  LR: 1.000e-06  Data: 1.981 (1.981)
+[2026-06-27 09:36:43 ARES 2.0] INFO: [runtime_probe] trades_linf/large train=302583.5s eval=30.5s full=302614.0s -> /shared/cycle2_bgu_golan_prj/ashtomer/ares/outs/advtrain/runtime_arch_eval_aircc/20260627_085717/task_11_trades_linf_large/smoke/bsz_128/smoke.csv

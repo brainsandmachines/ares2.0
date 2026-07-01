@@ -13,14 +13,15 @@
 #
 #SBATCH --job-name=aircc_jm
 #SBATCH --array=1-200%16
-#SBATCH --partition=compute-gpu
+#SBATCH --partition=power-gpu
 #SBATCH --qos=owner_780
 #SBATCH --account=cycle2_bgu_golan_prj
 #SBATCH --gres=gpu:1
 #SBATCH --container-mounts=/shared/cycle2_bgu_golan_prj:/shared/cycle2_bgu_golan_prj
+#SBATCH --container-image='docker://cr.me-west1.nebius.cloud#i00xvqa4fe98d1s7pc/ares-train:v2'
 #SBATCH --output=/shared/cycle2_bgu_golan_prj/ashtomer/ares/aircc/aircc_job_manager/logs/jm_%A_%a.out
 #SBATCH --error=/shared/cycle2_bgu_golan_prj/ashtomer/ares/aircc/aircc_job_manager/logs/jm_%A_%a.err
-# No #SBATCH --time: compute-gpu does not require one -- run unbounded (partition
+#SBATCH --time=62-00:00:00
 # default). The job manager is effectively infinite; if a task ever dies, another
 # array index resumes from the SQLite state + on-disk checkpoints.
 # The whole job runs in the sbatch-level container (no srun), so WORLD_SIZE is

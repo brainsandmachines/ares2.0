@@ -1,0 +1,2 @@
+epoch,train_loss,train_grad_global,train_grad_avg,train_grad_max,eval_loss,eval_top1,eval_top5,eval_advloss,eval_advtop1,eval_advtop5,lr
+0,7.206911392211914,inf,inf,inf,7.2178125,0.0833333396911621,0.5416666936874389,0,0,0,1.280650479616307e-06

@@ -1,0 +1,3 @@
+protocol,arch,bsz,optimizer,compile,fullepochruntime,train_runtime,eval_runtime
+gradnorm,base,256,adamw,False,124439.267,124421.438,17.829
+gradnorm,base,256,adamw,False,124110.395,124090.465,19.929

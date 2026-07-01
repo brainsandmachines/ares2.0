@@ -1,0 +1,2 @@
+protocol,arch,bsz,optimizer,compile,fullepochruntime,train_runtime,eval_runtime
+madry_linf,large,512,adamw,False,170738.451,170718.481,19.97

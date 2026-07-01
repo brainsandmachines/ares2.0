@@ -1,0 +1,5 @@
+[2026-06-27 08:53:01 ARES 2.0] INFO: Runtime distributed=False, world_size=1, rank=0, local_rank=0, device_id=0
+[2026-06-27 08:53:01 ARES 2.0] INFO: Experiment: runtime_probe_trades_linf_large_p0
+[2026-06-27 08:53:01 ARES 2.0] INFO: Results directory: /shared/cycle2_bgu_golan_prj/ashtomer/ares/outs/advtrain/runtime_arch_eval_aircc/20260627_084854/task_11_trades_linf_large/smoke/bsz_128/proc_0/runtime_probe_trades_linf_large_p0
+[2026-06-27 08:53:01 ARES 2.0] INFO: Using seed: 2380964216
+[2026-06-27 08:53:01 ARES 2.0] INFO: Creating model: convnext_large

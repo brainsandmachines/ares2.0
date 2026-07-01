@@ -1,0 +1,17 @@
+[2026-06-28 10:51:47 ARES 2.0] INFO: Runtime distributed=False, world_size=1, rank=0, local_rank=0, device_id=0
+[2026-06-28 10:51:47 ARES 2.0] INFO: Experiment: runtime_probe_trades_base_p1
+[2026-06-28 10:51:47 ARES 2.0] INFO: Results directory: /shared/cycle2_bgu_golan_prj/ashtomer/ares/outs/advtrain/runtime_arch_eval_aircc/20260628_100938/task_4_trades_base/probe_bsz_384/proc_1/runtime_probe_trades_base_p1
+[2026-06-28 10:51:47 ARES 2.0] INFO: Using seed: 3385510261
+[2026-06-28 10:51:47 ARES 2.0] INFO: Creating model: convnext_base
+[2026-06-28 10:51:51 ARES 2.0] INFO: Model convnext_base created, param count:88591464
+[2026-06-28 10:51:51 ARES 2.0] INFO: Optimizer: AdamW
+[2026-06-28 10:51:51 ARES 2.0] INFO: Using native Torch AMP. Training in mixed precision.
+[2026-06-28 10:52:30 ARES 2.0] INFO: GradNorm start: 1
+[2026-06-28 10:52:30 ARES 2.0] INFO: GradNorm penalty norm: l1, GradNorm alpha scaling: init=0.1, scale_epochs=9, max_reg_to_ce_ratio=1.0
+[2026-06-28 10:52:30 ARES 2.0] INFO: Reg losses: None
+[2026-06-28 10:52:30 ARES 2.0] INFO: Weights & Biases logging initialized for run: runtime_probe_trades_base_p1 in group: default
+[2026-06-28 10:52:30 ARES 2.0] INFO: Start training for 1 epochs
+[2026-06-28 10:52:30 ARES 2.0] INFO: gradclip: None
+[2026-06-28 10:52:59 ARES 2.0] INFO: Train: [0/1] [   0/3336 (  0%)]  Loss: 7.133 (7.13)  Batch Time: 29.060s,   13.21/s  (29.060s,   13.21/s)  LR: 1.000e-06  Data: 5.312 (5.312)
+[2026-06-28 10:53:49 ARES 2.0] INFO: Test: [   0/130]  Time: 6.405 (6.405)  Loss:  6.9883 (6.9883)  Acc@1:  0.0000 ( 0.0000)  Acc@5:  1.5625 ( 1.5625)  AdvLoss:  0.0000 (0.0000)  AdvAcc@1:  0.0000 ( 0.0000)  AdvAcc@5:  0.0000 ( 0.0000)
+[2026-06-28 10:54:07 ARES 2.0] INFO: [runtime_probe] trades/base train=4048.0s eval=82.3s full=4130.3s -> /shared/cycle2_bgu_golan_prj/ashtomer/ares/research/runtime-arch-eval/aircc_runtime_arch_eval.csv

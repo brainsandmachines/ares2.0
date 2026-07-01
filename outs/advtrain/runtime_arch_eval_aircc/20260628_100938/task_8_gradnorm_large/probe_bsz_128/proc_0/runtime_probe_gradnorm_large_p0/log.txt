@@ -1,0 +1,18 @@
+[2026-06-28 11:10:11 ARES 2.0] INFO: Runtime distributed=False, world_size=1, rank=0, local_rank=0, device_id=0
+[2026-06-28 11:10:11 ARES 2.0] INFO: Experiment: runtime_probe_gradnorm_large_p0
+[2026-06-28 11:10:11 ARES 2.0] INFO: Results directory: /shared/cycle2_bgu_golan_prj/ashtomer/ares/outs/advtrain/runtime_arch_eval_aircc/20260628_100938/task_8_gradnorm_large/probe_bsz_128/proc_0/runtime_probe_gradnorm_large_p0
+[2026-06-28 11:10:11 ARES 2.0] INFO: Using seed: 3777013657
+[2026-06-28 11:10:11 ARES 2.0] INFO: Creating model: convnext_large
+[2026-06-28 11:10:17 ARES 2.0] INFO: Model convnext_large created, param count:197767336
+[2026-06-28 11:10:18 ARES 2.0] INFO: Optimizer: AdamW
+[2026-06-28 11:10:18 ARES 2.0] INFO: Using native Torch AMP. Training in mixed precision.
+[2026-06-28 11:10:48 ARES 2.0] INFO: GradNorm start: 0
+[2026-06-28 11:10:48 ARES 2.0] INFO: GradNorm penalty norm: l1, GradNorm alpha scaling: init=0.1, scale_epochs=9, max_reg_to_ce_ratio=1.0
+[2026-06-28 11:10:48 ARES 2.0] INFO: Reg losses: DBP()
+[2026-06-28 11:10:48 ARES 2.0] INFO: Weights & Biases logging initialized for run: runtime_probe_gradnorm_large_p0 in group: default
+[2026-06-28 11:10:48 ARES 2.0] INFO: Start training for 1 epochs
+[2026-06-28 11:10:48 ARES 2.0] INFO: gradclip: None
+[2026-06-28 11:11:10 ARES 2.0] INFO: Train: [0/1] [   0/10009 (  0%)]  Loss: 14.49 (14.5)  Batch Time: 21.560s,    5.94/s  (21.560s,    5.94/s)  LR: 1.000e-06  Data: 2.314 (2.314)
+[2026-06-28 11:11:10 ARES 2.0] INFO: GradNorm: alpha=0.1000 ce=7.24289 raw_reg=8.39303 reg=7.24289 raw_reg/ce=1.1588 reg/ce=1.0000 scale=0.8630
+[2026-06-28 11:13:36 ARES 2.0] INFO: Test: [   0/390]  Time: 2.398 (2.398)  Loss:  7.1328 (7.1328)  Acc@1:  0.0000 ( 0.0000)  Acc@5:  0.0000 ( 0.0000)  AdvLoss:  0.0000 (0.0000)  AdvAcc@1:  0.0000 ( 0.0000)  AdvAcc@5:  0.0000 ( 0.0000)
+[2026-06-28 11:13:43 ARES 2.0] INFO: [runtime_probe] gradnorm/large train=62216.8s eval=98.9s full=62315.7s -> /shared/cycle2_bgu_golan_prj/ashtomer/ares/research/runtime-arch-eval/aircc_runtime_arch_eval.csv

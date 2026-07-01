@@ -1,0 +1,3 @@
+protocol,arch,bsz,optimizer,compile,fullepochruntime,train_runtime,eval_runtime
+v1_l2,base,512,adamw,False,124765.468,124352.834,412.633
+v1_l2,base,512,adamw,False,115978.456,115561.952,416.504

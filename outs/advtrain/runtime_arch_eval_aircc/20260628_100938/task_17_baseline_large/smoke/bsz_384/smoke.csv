@@ -1,0 +1,3 @@
+protocol,arch,bsz,optimizer,compile,fullepochruntime,train_runtime,eval_runtime
+baseline,large,384,adamw,False,73831.162,73808.998,22.164
+baseline,large,384,adamw,False,70590.545,70571.535,19.009
