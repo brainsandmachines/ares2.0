@@ -1,0 +1,8 @@
+[2026-06-28 12:08:53 ARES 2.0] INFO: Runtime distributed=False, world_size=1, rank=0, local_rank=0, device_id=0
+[2026-06-28 12:08:53 ARES 2.0] INFO: Experiment: runtime_probe_baseline_large_p0
+[2026-06-28 12:08:53 ARES 2.0] INFO: Results directory: /shared/cycle2_bgu_golan_prj/ashtomer/ares/outs/advtrain/runtime_arch_eval_aircc/20260628_100938/task_17_baseline_large/probe_bsz_384/proc_0/runtime_probe_baseline_large_p0
+[2026-06-28 12:08:53 ARES 2.0] INFO: Using seed: 430735962
+[2026-06-28 12:08:53 ARES 2.0] INFO: Creating model: convnext_large
+[2026-06-28 12:08:59 ARES 2.0] INFO: Model convnext_large created, param count:197767336
+[2026-06-28 12:09:00 ARES 2.0] INFO: Optimizer: AdamW
+[2026-06-28 12:09:00 ARES 2.0] INFO: Using native Torch AMP. Training in mixed precision.

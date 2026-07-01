@@ -1,0 +1,5 @@
+bsz	status
+128	ok
+256	ok
+384	ok
+512	oom

@@ -1,0 +1,3 @@
+protocol,arch,bsz,optimizer,compile,fullepochruntime,train_runtime,eval_runtime
+madry,base,256,adamw,True,434160.583,431457.547,2703.036
+madry,base,256,adamw,True,470479.725,467704.533,2775.193

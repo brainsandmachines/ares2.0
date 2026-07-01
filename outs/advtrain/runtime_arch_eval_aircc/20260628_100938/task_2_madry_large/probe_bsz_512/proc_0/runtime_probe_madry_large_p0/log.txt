@@ -1,0 +1,18 @@
+[2026-06-28 10:42:30 ARES 2.0] INFO: Runtime distributed=False, world_size=1, rank=0, local_rank=0, device_id=0
+[2026-06-28 10:42:30 ARES 2.0] INFO: Experiment: runtime_probe_madry_large_p0
+[2026-06-28 10:42:30 ARES 2.0] INFO: Results directory: /shared/cycle2_bgu_golan_prj/ashtomer/ares/outs/advtrain/runtime_arch_eval_aircc/20260628_100938/task_2_madry_large/probe_bsz_512/proc_0/runtime_probe_madry_large_p0
+[2026-06-28 10:42:30 ARES 2.0] INFO: Using seed: 3291184530
+[2026-06-28 10:42:30 ARES 2.0] INFO: Creating model: convnext_large
+[2026-06-28 10:42:36 ARES 2.0] INFO: Model convnext_large created, param count:197767336
+[2026-06-28 10:42:36 ARES 2.0] INFO: Optimizer: AdamW
+[2026-06-28 10:42:37 ARES 2.0] INFO: Using native Torch AMP. Training in mixed precision.
+[2026-06-28 10:42:37 ARES 2.0] INFO: Compiling model with torch.compile
+[2026-06-28 10:43:27 ARES 2.0] INFO: GradNorm start: 1
+[2026-06-28 10:43:27 ARES 2.0] INFO: GradNorm penalty norm: l1, GradNorm alpha scaling: init=0.1, scale_epochs=9, max_reg_to_ce_ratio=1.0
+[2026-06-28 10:43:27 ARES 2.0] INFO: Reg losses: None
+[2026-06-28 10:43:28 ARES 2.0] INFO: Weights & Biases logging initialized for run: runtime_probe_madry_large_p0 in group: default
+[2026-06-28 10:43:28 ARES 2.0] INFO: Start training for 1 epochs
+[2026-06-28 10:43:28 ARES 2.0] INFO: gradclip: None
+[2026-06-28 10:44:26 ARES 2.0] INFO: Train: [0/1] [   0/2502 (  0%)]  Loss: 7.171 (7.17)  Batch Time: 57.916s,    8.84/s  (57.916s,    8.84/s)  LR: 1.000e-06  Data: 7.923 (7.923)
+[2026-06-28 10:45:13 ARES 2.0] INFO: Test: [   0/97]  Time: 10.084 (10.084)  Loss:  6.9766 (6.9766)  Acc@1:  4.1016 ( 4.1016)  Acc@5:  6.0547 ( 6.0547)  AdvLoss:  0.0000 (0.0000)  AdvAcc@1:  0.0000 ( 0.0000)  AdvAcc@5:  0.0000 ( 0.0000)
+[2026-06-28 10:45:35 ARES 2.0] INFO: [runtime_probe] madry/large train=3146.0s eval=71.1s full=3217.1s -> /shared/cycle2_bgu_golan_prj/ashtomer/ares/research/runtime-arch-eval/aircc_runtime_arch_eval.csv

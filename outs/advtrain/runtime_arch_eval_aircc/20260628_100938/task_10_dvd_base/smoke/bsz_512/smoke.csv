@@ -1,0 +1,3 @@
+protocol,arch,bsz,optimizer,compile,fullepochruntime,train_runtime,eval_runtime
+dvd,base,512,adamw,False,48392.34,48378.57,13.77
+dvd,base,512,adamw,False,46761.243,46747.738,13.504
