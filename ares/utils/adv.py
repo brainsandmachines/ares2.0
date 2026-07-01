@@ -158,7 +158,7 @@ class L1Step(AttackerStep):
         """
         # 1. Compute perturbation
         diff = x - self.orig_input
-        diff_flat = diff.view(diff.size(0), -1)
+        diff_flat = diff.reshape(diff.size(0), -1)
         
         # 2. OPTIMIZATION: Skip projection if already inside L1 ball
         # This saves massive computation time for small perturbations
@@ -205,7 +205,7 @@ class L1Step(AttackerStep):
         diff_flat_out[mask_needs_proj] = projected_flat
         
         # 7. Add back to original input and Box-Constraint [0, 1]
-        x_out = self.orig_input + diff_flat_out.view_as(diff)
+        x_out = self.orig_input + diff_flat_out.reshape_as(diff)
         return self.apply_bounds(x_out)
 
     def step(self, x, g):
@@ -217,7 +217,7 @@ class L1Step(AttackerStep):
         mode = str(getattr(self, "l1_step_mode", "l2_norm")).lower()
 
         if mode == "l1_apgd":
-            g_flat = g.view(g.size(0), -1)
+            g_flat = g.reshape(g.size(0), -1)
             d = g_flat.size(1)
             rho = float(getattr(self, "l1_apgd_rho", 0.05))
             rho = max(0.0, min(1.0, rho))
@@ -227,15 +227,15 @@ class L1Step(AttackerStep):
             u_flat = torch.zeros_like(g_flat)
             u_flat.scatter_(1, topk_idx, torch.sign(g_flat.gather(1, topk_idx)))
 
-            u = u_flat.view_as(g)
+            u = u_flat.reshape_as(g)
             return x + self.step_size * u
 
         if mode != "l2_norm":
             raise ValueError(f"Unsupported l1_step_mode: {mode}")
 
         # Legacy baseline: L2-normalized direction
-        g_flat = g.view(g.size(0), -1)
-        l2_norm = torch.norm(g_flat, p=2, dim=1, keepdim=True).view(-1, 1, 1, 1)
+        g_flat = g.reshape(g.size(0), -1)
+        l2_norm = torch.norm(g_flat, p=2, dim=1, keepdim=True).reshape(-1, 1, 1, 1)
         grad_normalized = g / (l2_norm + 1e-10)
         return x + grad_normalized * self.step_size
 
@@ -246,13 +246,13 @@ class L1Step(AttackerStep):
         """
         # Generate random noise
         diff = torch.rand_like(x) - 0.5
-        diff = diff.view(diff.size(0), -1)
-        
+        diff = diff.reshape(diff.size(0), -1)
+
         # Normalize to have L1 norm = 1, then scale by epsilon
         # Note: This puts points on the surface of the L1 ball
         norm = torch.norm(diff, p=1, dim=1, keepdim=True)
         diff = diff / (norm + 1e-10)
-        diff = diff.view_as(x) * self.eps
+        diff = diff.reshape_as(x) * self.eps
         
         return self.apply_bounds(x + diff)
 
