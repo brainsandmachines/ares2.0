@@ -67,7 +67,12 @@ class JobManager:
     # ---- worker: claim + run lifecycle ------------------------------------
     def _worker(self, idx: int) -> None:
         while not self.stop.is_set():
-            job = self.db.claim_next(self.owner, self.deps)
+            try:
+                job = self.db.claim_next(self.owner, self.deps)
+            except Exception as exc:  # pragma: no cover - defensive
+                _log(f"slot{idx} claim_next error (ignored): {exc}")
+                self.stop.wait(IDLE_SLEEP_S)
+                continue
             if job is None:
                 self.stop.wait(IDLE_SLEEP_S)
                 continue
