@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 import time
+from unittest.mock import patch
 
 import pytest
 
@@ -57,6 +59,41 @@ def test_no_double_claim_concurrent(db):
 
     assert len(claimed) == n
     assert len(set(claimed)) == n        # no model claimed twice
+
+
+def test_retries_transient_open_error(db, tmp_path):
+    # "unable to open database file" is a transient NFS-contention error seen
+    # under concurrent array-task startup; _atomic must retry it like it does
+    # "locked"/"busy", not surface it immediately.
+    real_connect = sqlite3.connect
+    calls = {"n": 0}
+
+    def flaky_connect(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise sqlite3.OperationalError("unable to open database file")
+        return real_connect(*args, **kwargs)
+
+    db.upsert_pending("A", 10, 0)
+    with patch("sqlite3.connect", side_effect=flaky_connect):
+        job = db.claim_next(1, {})
+    assert job.model_name == "A"
+    assert calls["n"] >= 2
+
+
+def test_init_retries_transient_open_error(tmp_path):
+    real_connect = sqlite3.connect
+    calls = {"n": 0}
+
+    def flaky_connect(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise sqlite3.OperationalError("unable to open database file")
+        return real_connect(*args, **kwargs)
+
+    with patch("sqlite3.connect", side_effect=flaky_connect):
+        AirccDB(str(tmp_path / "jobs.sqlite"))
+    assert calls["n"] >= 2
 
 
 def test_priority_order(db):

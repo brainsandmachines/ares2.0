@@ -68,11 +68,27 @@ def _row_to_job(row: sqlite3.Row) -> Job:
     return Job(**{k: row[k] for k in row.keys()})
 
 
+def _is_transient(err: sqlite3.OperationalError) -> bool:
+    msg = str(err).lower()
+    return "locked" in msg or "busy" in msg or "unable to open database file" in msg
+
+
 class AirccDB:
     def __init__(self, db_path: str):
         self.db_path = str(db_path)
-        with self._connect() as conn:
-            conn.executescript(_SCHEMA)
+        last_err: Optional[Exception] = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                with self._connect() as conn:
+                    conn.executescript(_SCHEMA)
+                return
+            except sqlite3.OperationalError as e:
+                last_err = e
+                if _is_transient(e):
+                    time.sleep(_RETRY_SLEEP_S * (attempt + 1))
+                    continue
+                raise
+        raise sqlite3.OperationalError(f"DB init failed after {_MAX_RETRIES} retries: {last_err}")
 
     # ---- low-level plumbing -------------------------------------------------
     @contextmanager
@@ -101,7 +117,7 @@ class AirccDB:
                         raise
             except sqlite3.OperationalError as e:
                 last_err = e
-                if "locked" in str(e).lower() or "busy" in str(e).lower():
+                if _is_transient(e):
                     time.sleep(_RETRY_SLEEP_S * (attempt + 1))
                     continue
                 raise
