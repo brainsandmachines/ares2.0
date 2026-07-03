@@ -17,8 +17,16 @@ SRC="${AIRCC_MOUNT:-$HOME/aircc_mount/ashtomer/ares/results/models}"
 DEST="/mnt/data/robustness_models/aircc_models"
 REPO_ROOT="${ARES_REPO:-/home/tomer_a/Documents/ares}"
 MONITOR_LOG="${AIRCC_MONITOR_LOG:-$REPO_ROOT/aircc/aircc_job_manager/logs/daily_monitor.log}"
+LOCK_FILE="${AIRCC_BACKUP_LOCK:-$DEST/.backup.lock}"
 
 mkdir -p "$(dirname "$MONITOR_LOG")"
+mkdir -p -m 0755 "$DEST"
+
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    echo "[backup] $(date -Is) SKIP: another backup run already holds $LOCK_FILE" >&2
+    exit 0
+fi
 
 run_monitor() {
     local backup_rc="$1"
@@ -36,14 +44,15 @@ if [[ ! -d "$SRC" ]]; then
     exit 1
 fi
 
-mkdir -p -m 0755 "$DEST"
-
 echo "[backup] $(date -Is) rsync $SRC/ -> $DEST/"
 rsync_rc=0
 rsync -rt --no-perms --no-owner --no-group --partial --info=stats2 \
     "$SRC/" "$DEST/" || rsync_rc=$?
 if [[ "$rsync_rc" -eq 0 ]]; then
     echo "[backup] $(date -Is) done"
+elif [[ "$rsync_rc" -eq 24 ]]; then
+    echo "[backup] $(date -Is) done (rc=24: some source files vanished mid-transfer, likely superseded checkpoints)"
+    rsync_rc=0
 else
     echo "[backup] $(date -Is) ERROR: rsync failed rc=$rsync_rc" >&2
 fi
