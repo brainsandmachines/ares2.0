@@ -1,0 +1,20 @@
+# Model-specific settings
+model: swin_base_patch4_window7_224
+num_classes: 1000
+resume: ''
+gp: null
+channels_last: False
+max_history: 10 
+compile_model: False
+
+# Batch norm parameters
+bn_momentum: null
+bn_eps: null
+sync_bn: False
+dist_bn: reduce
+split_bn: False
+
+experiment_num: 1
+experiment_name: null
+model_id: null
+

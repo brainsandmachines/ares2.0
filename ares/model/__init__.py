@@ -4,3 +4,4 @@ from .imagenet_model_zoo import imagenet_model_zoo
 from .imagenet_cls import ImageNetCLS
 from .t2t import *
 from .xcit_extra import xcit_medium_12_p16_224, xcit_large_12_p16_224
+from .vit_convstem import vit_s_cvst, vit_m_cvst

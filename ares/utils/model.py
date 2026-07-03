@@ -112,6 +112,9 @@ def build_model(cfg, _logger, num_aug_splits):
     training = cfg.training
     dataset = cfg.dataset
     attacks = cfg.attacks
+    # lazy to avoid a circular import (ares.model submodules import ares.utils.model);
+    # registers custom timm models (vit_convstem, xcit_extra) before create_model
+    import ares.model  # noqa: F401
     _logger.info(f"Creating model: {model_cfg.model}")
     model_kwargs = dict({
         'num_classes': model_cfg.num_classes,
