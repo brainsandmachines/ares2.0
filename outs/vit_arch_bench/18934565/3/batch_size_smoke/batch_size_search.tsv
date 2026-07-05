@@ -1,0 +1,7 @@
+batch_size	status	exit_code	log_path
+64	ok	0	/home/ashtomer/projects/ares/outs/vit_arch_bench/18934565/3/batch_size_smoke/bsz_64/smoke.log
+128	ok	0	/home/ashtomer/projects/ares/outs/vit_arch_bench/18934565/3/batch_size_smoke/bsz_128/smoke.log
+192	ok	0	/home/ashtomer/projects/ares/outs/vit_arch_bench/18934565/3/batch_size_smoke/bsz_192/smoke.log
+256	ok	0	/home/ashtomer/projects/ares/outs/vit_arch_bench/18934565/3/batch_size_smoke/bsz_256/smoke.log
+320	ok	0	/home/ashtomer/projects/ares/outs/vit_arch_bench/18934565/3/batch_size_smoke/bsz_320/smoke.log
+384	oom	1	/home/ashtomer/projects/ares/outs/vit_arch_bench/18934565/3/batch_size_smoke/bsz_384/smoke.log

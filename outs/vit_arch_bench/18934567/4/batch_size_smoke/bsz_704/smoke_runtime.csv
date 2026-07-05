@@ -1,0 +1,2 @@
+protocol,arch,bsz,optimizer,compile,fullepochruntime,train_runtime,eval_runtime
+trades,swin_t,704,adamw,False,12164.217,12147.81,16.407

@@ -1,0 +1,276 @@
+lr_scheduler:
+  sched: cosine
+  sched_on_updates: true
+  lrb: 0.001
+  lr: null
+  lr_noise: null
+  lr_noise_pct: 0.67
+  lr_noise_std: 1.0
+  lr_cycle_mul: 1.0
+  lr_cycle_decay: 0.5
+  lr_cycle_limit: 1
+  lr_k_decay: 1.0
+  warmup_lr: 1.0e-06
+  min_lr: 1.0e-05
+  epoch_repeats: 0
+  start_epoch: null
+  decay_epochs: 30
+  warmup_epochs: 20
+  cooldown_epochs: 0
+  patience_epochs: 0
+  decay_rate: 0.1
+model:
+  model: vit_s_cvst
+  num_classes: 1000
+  resume: ''
+  gp: null
+  channels_last: false
+  max_history: 10
+  compile_model: true
+  bn_momentum: null
+  bn_eps: null
+  sync_bn: false
+  dist_bn: reduce
+  split_bn: false
+  experiment_num: 1
+  experiment_name: null
+  model_id: null
+dataset:
+  train_dir: /groups/golan_neurogroup/bml_group/datasets/imagenet/train
+  eval_dir: /groups/golan_neurogroup/bml_group/datasets/imagenet/val
+  grad_accum: 1
+  mean:
+  - 0.485
+  - 0.456
+  - 0.406
+  std:
+  - 0.229
+  - 0.224
+  - 0.225
+  scale:
+  - 0.08
+  - 1.0
+  ratio:
+  - 0.75
+  - 1.3333
+  hflip: true
+  vflip: false
+  no_aug: false
+  color_jitter: 0
+  aa: rand-m9-mstd0.5-inc1
+  aug_repeats: 0
+  aug_splits: 0
+  jsd_loss: false
+  reprob: 0
+  remode: pixel
+  recount: 1
+  resplit: false
+  input_size: 224
+  crop_pct: 0.875
+  interpolation: bicubic
+  train_interpolation: bicubic
+  mixup_active: true
+  mixup: 0.8
+  cutmix: 1.0
+  cutmix_minmax: null
+  mixup_prob: 0.5
+  mixup_switch_prob: 0.5
+  mixup_mode: elem
+  mixup_off_epoch: 0
+  smoothing: 0.1
+  dvd:
+    enabled: false
+    backend: paper
+    variant: dvd-b
+    months_per_epoch: null
+    time_order: chronological
+    apply_blur: true
+    apply_color: true
+    apply_contrast: true
+    apply_threshold_color: false
+    image_size: null
+    cs_logspan_start: 0.005
+    contrast_amplitude_beta: 0.0001
+    contrast_amplitude_lam: 150.0
+optimizer:
+  opt: adamw
+  lr: 0.000875
+  opt_eps: 1.0e-08
+  opt_betas: null
+  momentum: 0.9
+  weight_decay: 0.05
+  clip_grad: null
+  clip_mode: norm
+  layer_decay: null
+attacks:
+  advtrain: true
+  attack_criterion: madry
+  attack_norm: linf
+  attack_domain: pixel
+  advprop: false
+  attack_eps: 0.03137254901960784
+  attack_step: 0.01045751633986928
+  attack_it: 3
+  attack_random_start: true
+  attack_use_best: true
+  bce_loss: false
+  v1_attack_eps: 1.0
+  v1_attack_step: null
+  v1_attack_it: 3
+  v1_attack_random_start: false
+  v1_attack_use_best: true
+  random_start: false
+  random_start_eps_factor: 0.5
+  l1_step_mode: l2_norm
+  l1_apgd_rho: 0.05
+  l1_apgd_use_halving: true
+  l1_apgd_min_step_scale: 0.01
+  trades_beta: 1.0
+  gradnorm: false
+  loss_fn: DBP
+  gradnorm_objective: current
+  ce_weight: 0.8
+  gradnorm_weight: 1.2
+  gradnorm_penalty_norm: l1
+  alpha:
+  - 0.0
+  - 0.2
+  - 1.0
+  alpha_start_epoch: 0
+  alpha_scale_init: 0.1
+  alpha_scale_epochs: 9
+  gradnorm_max_reg_to_ce_ratio: 1.0
+continuation:
+  enabled: false
+  checkpoint_path: ''
+  use_ema: true
+epsilon_schedule:
+  enabled: false
+  type: fixed
+  source_epsilon: null
+  target_epsilon: null
+  warmup_epochs: 0
+  ramp_start_epoch: null
+  ramp_end_epoch: null
+  fixed_start_epoch: null
+checkpointing:
+  save_best_adv: false
+dist:
+  backend: nccl
+  init_method: env://
+  world_size: 1
+  rank: 0
+  local_rank: 0
+  dist_backend: nccl
+  dist_url: env://
+  distributed: false
+  device_id: 0
+training:
+  epochs: 1
+  batch_size: 448
+  drop: 0.0
+  drop_path: 0.0
+  drop_block: null
+  model_ema: false
+  model_ema_force_cpu: false
+  model_ema_decay: 0.9998
+apex_amp: false
+native_amp: true
+seed: 928562929
+log_interval: 50
+recovery_interval: 0
+num_workers: 6
+output_dir: /home/ashtomer/projects/ares/outs/vit_arch_bench/18934565/2/probe_madry_compile_True/vit_s_cvst_linf_8_init1
+save_log: save_log.txt
+eval_metric: top1
+pin_mem: true
+final_eval: false
+final_eval_ckpt_name: model_best.pth.tar
+final_eval_autoattack: true
+final_eval_aa_batch_size: 128
+final_eval_aa_norm: null
+final_eval_aa_eps: null
+final_eval_aa_max_batches: 8
+final_eval_aa_eps_inputs: 1,2,4,6,8,12
+final_eval_aa_completion_csv: autoattack_sweep_results.csv
+final_eval_aa_checkpoint_kinds: best,last,advbest
+final_eval_pgd: false
+final_eval_pgd_eps: 1,2,4,6,8,12
+final_eval_pgd_norms: linf,l2,l1
+final_eval_pgd_attack_steps: 10
+final_eval_pgd_batch_size: 192
+final_eval_pgd_max_batches: null
+final_eval_pgd_completion_csv: pgd_validation_results.csv
+final_eval_skip_if_complete: true
+final_eval_require_train_this_run: false
+final_eval_plots: true
+final_eval_plot_x_col: pgd_constrained_eps
+final_eval_out_dir: pgd_eval
+final_eval_val_dir: ''
+final_eval_num_workers: 8
+runtime_probe: true
+runtime_probe_csv: /home/ashtomer/projects/ares/research/vit_arch_bench/results_rtx6000.csv
+runtime_probe_protocol: madry
+runtime_probe_arch: vit_s_cvst
+runtime_probe_warmup_batches: 5
+runtime_probe_measure_batches: 20
+runtime: {}
+hydra_config_yaml: "lr_scheduler:\n  sched: cosine\n  sched_on_updates: true\n  lrb:\
+  \ 0.001\n  lr: null\n  lr_noise: null\n  lr_noise_pct: 0.67\n  lr_noise_std: 1.0\n\
+  \  lr_cycle_mul: 1.0\n  lr_cycle_decay: 0.5\n  lr_cycle_limit: 1\n  lr_k_decay:\
+  \ 1.0\n  warmup_lr: 1.0e-06\n  min_lr: 1.0e-05\n  epoch_repeats: 0\n  start_epoch:\
+  \ null\n  decay_epochs: 30\n  warmup_epochs: 20\n  cooldown_epochs: 0\n  patience_epochs:\
+  \ 0\n  decay_rate: 0.1\nmodel:\n  model: vit_s_cvst\n  num_classes: 1000\n  resume:\
+  \ ''\n  gp: null\n  channels_last: false\n  max_history: 10\n  compile_model: true\n\
+  \  bn_momentum: null\n  bn_eps: null\n  sync_bn: false\n  dist_bn: reduce\n  split_bn:\
+  \ false\n  experiment_num: 1\n  experiment_name: null\n  model_id: null\ndataset:\n\
+  \  train_dir: /groups/golan_neurogroup/bml_group/datasets/imagenet/train\n  eval_dir:\
+  \ /groups/golan_neurogroup/bml_group/datasets/imagenet/val\n  grad_accum: 1\n  mean:\n\
+  \  - 0.485\n  - 0.456\n  - 0.406\n  std:\n  - 0.229\n  - 0.224\n  - 0.225\n  scale:\n\
+  \  - 0.08\n  - 1.0\n  ratio:\n  - 0.75\n  - 1.3333\n  hflip: true\n  vflip: false\n\
+  \  no_aug: false\n  color_jitter: 0\n  aa: rand-m9-mstd0.5-inc1\n  aug_repeats:\
+  \ 0\n  aug_splits: 0\n  jsd_loss: false\n  reprob: 0\n  remode: pixel\n  recount:\
+  \ 1\n  resplit: false\n  input_size: 224\n  crop_pct: 0.875\n  interpolation: bicubic\n\
+  \  train_interpolation: bicubic\n  mixup_active: true\n  mixup: 0.8\n  cutmix: 1.0\n\
+  \  cutmix_minmax: null\n  mixup_prob: 0.5\n  mixup_switch_prob: 0.5\n  mixup_mode:\
+  \ elem\n  mixup_off_epoch: 0\n  smoothing: 0.1\n  dvd:\n    enabled: false\n   \
+  \ backend: paper\n    variant: dvd-b\n    months_per_epoch: null\n    time_order:\
+  \ chronological\n    apply_blur: true\n    apply_color: true\n    apply_contrast:\
+  \ true\n    apply_threshold_color: false\n    image_size: null\n    cs_logspan_start:\
+  \ 0.005\n    contrast_amplitude_beta: 0.0001\n    contrast_amplitude_lam: 150.0\n\
+  optimizer:\n  opt: adamw\n  lr: null\n  opt_eps: 1.0e-08\n  opt_betas: null\n  momentum:\
+  \ 0.9\n  weight_decay: 0.05\n  clip_grad: null\n  clip_mode: norm\n  layer_decay:\
+  \ null\nattacks:\n  advtrain: true\n  attack_criterion: madry\n  attack_norm: linf\n\
+  \  attack_domain: pixel\n  advprop: false\n  attack_eps: 8\n  attack_step: null\n\
+  \  attack_it: 3\n  attack_random_start: true\n  attack_use_best: true\n  bce_loss:\
+  \ false\n  v1_attack_eps: 1.0\n  v1_attack_step: null\n  v1_attack_it: 3\n  v1_attack_random_start:\
+  \ false\n  v1_attack_use_best: true\n  random_start: false\n  random_start_eps_factor:\
+  \ 0.5\n  l1_step_mode: l2_norm\n  l1_apgd_rho: 0.05\n  l1_apgd_use_halving: true\n\
+  \  l1_apgd_min_step_scale: 0.01\n  trades_beta: 1.0\n  gradnorm: false\n  loss_fn:\
+  \ DBP\n  gradnorm_objective: current\n  ce_weight: 0.8\n  gradnorm_weight: 1.2\n\
+  \  gradnorm_penalty_norm: l1\n  alpha:\n  - 0.0\n  - 0.2\n  - 1.0\n  alpha_start_epoch:\
+  \ 0\n  alpha_scale_init: 0.1\n  alpha_scale_epochs: 9\n  gradnorm_max_reg_to_ce_ratio:\
+  \ 1.0\ncontinuation:\n  enabled: false\n  checkpoint_path: ''\n  use_ema: true\n\
+  epsilon_schedule:\n  enabled: false\n  type: fixed\n  source_epsilon: null\n  target_epsilon:\
+  \ null\n  warmup_epochs: 0\n  ramp_start_epoch: null\n  ramp_end_epoch: null\n \
+  \ fixed_start_epoch: null\ncheckpointing:\n  save_best_adv: false\ndist:\n  backend:\
+  \ nccl\n  init_method: env://\n  world_size: '1'\n  rank: '0'\n  local_rank: '0'\n\
+  \  dist_backend: nccl\n  dist_url: env://\n  distributed: false\ntraining:\n  epochs:\
+  \ 1\n  batch_size: 448\n  drop: 0.0\n  drop_path: 0.0\n  drop_block: null\n  model_ema:\
+  \ false\n  model_ema_force_cpu: false\n  model_ema_decay: 0.9998\napex_amp: false\n\
+  native_amp: true\nseed: null\nlog_interval: 50\nrecovery_interval: 0\nnum_workers:\
+  \ 6\noutput_dir: /home/ashtomer/projects/ares/outs/vit_arch_bench/18934565/2/probe_madry_compile_True\n\
+  save_log: save_log.txt\neval_metric: top1\npin_mem: true\nfinal_eval: false\nfinal_eval_ckpt_name:\
+  \ model_best.pth.tar\nfinal_eval_autoattack: true\nfinal_eval_aa_batch_size: 128\n\
+  final_eval_aa_norm: null\nfinal_eval_aa_eps: null\nfinal_eval_aa_max_batches: 8\n\
+  final_eval_aa_eps_inputs: 1,2,4,6,8,12\nfinal_eval_aa_completion_csv: autoattack_sweep_results.csv\n\
+  final_eval_aa_checkpoint_kinds: best,last,advbest\nfinal_eval_pgd: false\nfinal_eval_pgd_eps:\
+  \ 1,2,4,6,8,12\nfinal_eval_pgd_norms: linf,l2,l1\nfinal_eval_pgd_attack_steps: 10\n\
+  final_eval_pgd_batch_size: 192\nfinal_eval_pgd_max_batches: null\nfinal_eval_pgd_completion_csv:\
+  \ pgd_validation_results.csv\nfinal_eval_skip_if_complete: true\nfinal_eval_require_train_this_run:\
+  \ false\nfinal_eval_plots: true\nfinal_eval_plot_x_col: pgd_constrained_eps\nfinal_eval_out_dir:\
+  \ pgd_eval\nfinal_eval_val_dir: ''\nfinal_eval_num_workers: 8\nruntime_probe: true\n\
+  runtime_probe_csv: /home/ashtomer/projects/ares/research/vit_arch_bench/results_rtx6000.csv\n\
+  runtime_probe_protocol: madry\nruntime_probe_arch: vit_s_cvst\nruntime_probe_warmup_batches:\
+  \ 5\nruntime_probe_measure_batches: 20\nruntime: {}\n"
+amp_version: native

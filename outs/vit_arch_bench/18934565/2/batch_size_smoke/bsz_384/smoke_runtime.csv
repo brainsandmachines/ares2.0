@@ -1,0 +1,2 @@
+protocol,arch,bsz,optimizer,compile,fullepochruntime,train_runtime,eval_runtime
+trades,vit_s_cvst,384,adamw,False,32305.316,32285.681,19.634

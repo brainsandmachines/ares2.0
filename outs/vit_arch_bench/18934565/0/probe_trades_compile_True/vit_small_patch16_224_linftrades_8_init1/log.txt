@@ -1,0 +1,18 @@
+[2026-07-03 17:51:36 ARES 2.0] INFO: Runtime distributed=False, world_size=1, rank=0, local_rank=0, device_id=0
+[2026-07-03 17:51:36 ARES 2.0] INFO: Experiment: vit_small_patch16_224_linftrades_8_init1
+[2026-07-03 17:51:36 ARES 2.0] INFO: Results directory: /home/ashtomer/projects/ares/outs/vit_arch_bench/18934565/0/probe_trades_compile_True/vit_small_patch16_224_linftrades_8_init1
+[2026-07-03 17:51:36 ARES 2.0] INFO: Using seed: 3278518341
+[2026-07-03 17:51:36 ARES 2.0] INFO: Creating model: vit_small_patch16_224
+[2026-07-03 17:51:36 ARES 2.0] INFO: Model vit_small_patch16_224 created, param count:22050664
+[2026-07-03 17:51:36 ARES 2.0] INFO: Optimizer: AdamW
+[2026-07-03 17:51:36 ARES 2.0] INFO: Using native Torch AMP. Training in mixed precision.
+[2026-07-03 17:51:36 ARES 2.0] INFO: Compiling model with torch.compile
+[2026-07-03 17:51:56 ARES 2.0] INFO: GradNorm start: 1
+[2026-07-03 17:51:56 ARES 2.0] INFO: GradNorm penalty norm: l1, GradNorm alpha scaling: init=0.1, scale_epochs=9, max_reg_to_ce_ratio=1.0
+[2026-07-03 17:51:56 ARES 2.0] INFO: Reg losses: None
+[2026-07-03 17:51:56 ARES 2.0] INFO: Weights & Biases logging initialized for run: vit_small_patch16_224_linftrades_8_init1 in group: linf_trades
+[2026-07-03 17:51:56 ARES 2.0] INFO: Start training for 1 epochs
+[2026-07-03 17:51:56 ARES 2.0] INFO: gradclip: None
+[2026-07-03 17:52:29 ARES 2.0] INFO: Train: [0/1] [   0/1819 (  0%)]  Loss: 6.967 (6.97)  Batch Time: 33.120s,   21.26/s  (33.120s,   21.26/s)  LR: 1.000e-06  Data: 5.171 (5.171)
+[2026-07-03 17:53:54 ARES 2.0] INFO: Test: [   0/71]  Time: 7.701 (7.701)  Loss:  6.9570 (6.9570)  Acc@1:  0.0000 ( 0.0000)  Acc@5:  0.2841 ( 0.2841)  AdvLoss:  0.0000 (0.0000)  AdvAcc@1:  0.0000 ( 0.0000)  AdvAcc@5:  0.0000 ( 0.0000)
+[2026-07-03 17:54:15 ARES 2.0] INFO: [runtime_probe] trades/vit_s train=5793.2s eval=60.5s full=5853.6s -> /home/ashtomer/projects/ares/research/vit_arch_bench/results_rtx6000.csv
