@@ -222,6 +222,28 @@ def _v1_family(sink: RowSink, arch: str, init: int):
             cont48 = name
 
 
+def _v1_clean_family(sink: RowSink, arch: str, init: int):
+    """convnext_base only: clean (non-adversarial) V1 training, added last per init.
+
+    A matched pair -- regular V1 (v1_noise_mode=null) and V1 with the neuronal
+    noise front-end enabled. These train clean (advtrain=False) because adversarial
+    training on a convnext_v1 model with V1 noise is unsupported (rejected in
+    adversarial_training.py). Same 150 ep / bs 256 as the v1 feature-space family.
+    """
+    bs = batch_size(protocol="v1", dvd=False, criterion="madry")
+    for noise_mode, tag, note in (
+        ("null", "v1_clean", "clean v1 (no adv, no noise)"),
+        ("neuronal", "v1_noise", "clean v1 + V1 noise (neuronal), no adv"),
+    ):
+        name = f"{arch}_{tag}_init{init}"
+        kw = {c: "" for c in OVERRIDE_COLUMNS}
+        _common(kw, arch=arch, name=name, init=init, epochs=BASELINE_EPOCHS, bs=bs, v1=True)
+        kw["model.v1_noise_mode"] = noise_mode
+        kw["attacks.advtrain"] = "False"
+        sink.add(model_name=name, arch=arch, init=init, protocol=tag,
+                 init_mode="scratch", notes=note, **kw)
+
+
 def _gradnorm_family(sink: RowSink, arch: str, init: int, baseline_name: str):
     bs = batch_size(protocol="gradnorm", dvd=False, criterion="madry")
     total = BASELINE_EPOCHS + GRADNORM_EXTRA_EPOCHS
@@ -265,6 +287,8 @@ def build_arch_rows(arch: str) -> list[dict]:
         _adv_family(sink, arch, init, criterion="trades", dvd=True)
         _v1_family(sink, arch, init)
         _gradnorm_family(sink, arch, init, bname)
+        if arch == "convnext_base":  # clean V1 (+ noise) pair, last priority per init
+            _v1_clean_family(sink, arch, init)
     return sink.rows
 
 
