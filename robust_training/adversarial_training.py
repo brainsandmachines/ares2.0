@@ -1,4 +1,5 @@
 import logging
+import re
 import warnings
 warnings.filterwarnings("ignore")
 from omegaconf import DictConfig, OmegaConf, open_dict
@@ -307,7 +308,9 @@ def main(cfg: DictConfig):
             run_id = wandb.util.generate_id()
             run_name = run_id          # use run_id as the visible name
         else:
-            run_id = experiment_name
+            # wandb run IDs forbid :;,#?/' (names don't); keep the id deterministic
+            # so resume="allow" still matches across restarts.
+            run_id = re.sub(r"[:;,#?/']", "_", experiment_name)
             run_name = experiment_name
 
         wandb.init(
