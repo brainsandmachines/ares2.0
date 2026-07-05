@@ -287,8 +287,21 @@ def build_arch_rows(arch: str) -> list[dict]:
         _adv_family(sink, arch, init, criterion="trades", dvd=True)
         _v1_family(sink, arch, init)
         _gradnorm_family(sink, arch, init, bname)
-        if arch == "convnext_base":  # clean V1 (+ noise) pair, last priority per init
-            _v1_clean_family(sink, arch, init)
+    return sink.rows
+
+
+# The clean-V1 (+neuronal-noise) pair is NOT part of the main per-arch campaign.
+# It lives in its own single-file mini-campaign (v1-baselines/convnext_base.csv) so
+# it can be seeded into a SEPARATE DB and driven by a manager pointed at --csv-dir
+# without touching / re-prioritising the main convnext_base queue.
+V1_CLEAN_ARCH = "convnext_base"
+V1_CLEAN_SUBDIR = "v1-baselines"
+
+
+def build_v1_clean_rows() -> list[dict]:
+    sink = RowSink()
+    for init in INITS:
+        _v1_clean_family(sink, V1_CLEAN_ARCH, init)
     return sink.rows
 
 
@@ -315,6 +328,12 @@ def main() -> None:
         out = args.out_dir / f"{arch}.csv"
         write_csv(out, rows)
         print(f"[generate_csvs] wrote {len(rows)} rows -> {out}")
+
+    # Standalone clean-V1 mini-campaign (own dir, own DB via --csv-dir at seed time).
+    v1_out = Path(__file__).resolve().parent / V1_CLEAN_SUBDIR / f"{V1_CLEAN_ARCH}.csv"
+    v1_rows = build_v1_clean_rows()
+    write_csv(v1_out, v1_rows)
+    print(f"[generate_csvs] wrote {len(v1_rows)} rows -> {v1_out}")
 
 
 if __name__ == "__main__":
