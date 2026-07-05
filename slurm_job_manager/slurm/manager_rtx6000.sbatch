@@ -15,7 +15,7 @@
 #SBATCH --signal=B:TERM@120
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
-#SBATCH --output=/home/ashtomer/projects/ares/outs/sjm/%A_%a.out
+#SBATCH --output=/home/ashtomer/projects/ares/outs/sjm/%A/%a.out
 set -uo pipefail
 
 REPO="${SJM_CLUSTER_REPO:-/home/ashtomer/projects/ares}"
@@ -46,6 +46,23 @@ python -m slurm_job_manager.controller &
 CHILD=$!
 wait "$CHILD"
 status=$?
+# After a clean exit, prune the finished model's rolling checkpoints (keep
+# best/best_adv/last + top-3 by eval_top1). The controller wrote the claimed
+# model name to SJM_TRAP_FILE; it is empty on a "no claimable work" exit.
+if [ "$status" -eq 0 ]; then
+    model_name="$(cat "$SJM_TRAP_FILE" 2>/dev/null || true)"
+    if [ -n "$model_name" ] && [ -f "${MODELS_ROOT}/${model_name}/summary.csv" ]; then
+        echo "[INFO] Running checkpoint pruning for $model_name"
+        python "$REPO/results/models/prune_model_checkpoints.py" \
+            "${MODELS_ROOT}/${model_name}" \
+            --keep-n 3
+        echo "[INFO] Checkpoint pruning finished with status $?"
+    else
+        echo "[INFO] No claimed model to prune (no-work exit)"
+    fi
+else
+    echo "[INFO] Skipping checkpoint pruning because training failed or was killed"
+fi
 rm -f "$SJM_TRAP_FILE"
 echo "[sjm] controller exit=$status"
 exit "$status"
