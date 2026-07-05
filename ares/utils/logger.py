@@ -66,8 +66,8 @@ def _auto_experiment_name(cfg):
     model_cfg = cfg.model
     attacks = cfg.attacks
     explicit_name = model_cfg.experiment_name
-    if explicit_name and explicit_name != "test_experiment":
-        return explicit_name, group_name
+    if explicit_name == "test_experiment":
+        explicit_name = None
 
     parts = [f"{model_cfg.model}"]
     if str(model_cfg.model).startswith("convnext_") and str(model_cfg.model).endswith("_v1"):
@@ -130,6 +130,8 @@ def _auto_experiment_name(cfg):
         group_name = "baseline"
     if model_cfg.experiment_num is not None:
         parts.append(f"init{model_cfg.experiment_num}")
-    experiment_name = "_".join(parts)
+    # An explicit experiment_name overrides the auto name but keeps the
+    # attack-derived wandb group (previously it fell back to "default").
+    experiment_name = explicit_name if explicit_name else "_".join(parts)
 
     return experiment_name, group_name

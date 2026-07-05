@@ -1,0 +1,6 @@
+.env
+*.sqlite
+*.sqlite-journal
+recommendations/
+logs/
+__pycache__/
