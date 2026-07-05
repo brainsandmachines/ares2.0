@@ -1,0 +1,18 @@
+[2026-07-03 17:51:27 ARES 2.0] INFO: Runtime distributed=False, world_size=1, rank=0, local_rank=0, device_id=0
+[2026-07-03 17:51:27 ARES 2.0] INFO: Experiment: vit_s_cvst_baseline_init1
+[2026-07-03 17:51:27 ARES 2.0] INFO: Results directory: /home/ashtomer/projects/ares/outs/vit_arch_bench/18934567/2/probe_baseline_compile_True/vit_s_cvst_baseline_init1
+[2026-07-03 17:51:27 ARES 2.0] INFO: Using seed: 2644219125
+[2026-07-03 17:51:27 ARES 2.0] INFO: Creating model: vit_s_cvst
+[2026-07-03 17:51:27 ARES 2.0] INFO: Model vit_s_cvst created, param count:22777576
+[2026-07-03 17:51:27 ARES 2.0] INFO: Optimizer: AdamW
+[2026-07-03 17:51:27 ARES 2.0] INFO: Using native Torch AMP. Training in mixed precision.
+[2026-07-03 17:51:27 ARES 2.0] INFO: Compiling model with torch.compile
+[2026-07-03 17:52:01 ARES 2.0] INFO: GradNorm start: 1
+[2026-07-03 17:52:01 ARES 2.0] INFO: GradNorm penalty norm: l1, GradNorm alpha scaling: init=0.1, scale_epochs=9, max_reg_to_ce_ratio=1.0
+[2026-07-03 17:52:01 ARES 2.0] INFO: Reg losses: None
+[2026-07-03 17:52:02 ARES 2.0] INFO: Weights & Biases logging initialized for run: vit_s_cvst_baseline_init1 in group: baseline
+[2026-07-03 17:52:02 ARES 2.0] INFO: Start training for 1 epochs
+[2026-07-03 17:52:02 ARES 2.0] INFO: gradclip: None
+[2026-07-03 17:53:08 ARES 2.0] INFO: Train: [0/1] [   0/1429 (  0%)]  Loss: 6.989 (6.99)  Batch Time: 66.564s,   13.46/s  (66.564s,   13.46/s)  LR: 1.000e-06  Data: 15.178 (15.178)
+[2026-07-03 17:54:13 ARES 2.0] INFO: Test: [   0/55]  Time: 23.505 (23.505)  Loss:  6.8164 (6.8164)  Acc@1:  0.4464 ( 0.4464)  Acc@5:  3.5714 ( 3.5714)  AdvLoss:  0.0000 (0.0000)  AdvAcc@1:  0.0000 ( 0.0000)  AdvAcc@5:  0.0000 ( 0.0000)
+[2026-07-03 17:54:37 ARES 2.0] INFO: [runtime_probe] baseline/vit_s_cvst train=2140.4s eval=48.5s full=2189.0s -> /home/ashtomer/projects/ares/research/vit_arch_bench/results_rtx_pro_6000.csv

@@ -1,0 +1,16 @@
+[2026-07-03 17:59:05 ARES 2.0] INFO: Runtime distributed=False, world_size=1, rank=0, local_rank=0, device_id=0
+[2026-07-03 17:59:05 ARES 2.0] INFO: Experiment: swin_tiny_patch4_window7_224_linftrades_8_init1
+[2026-07-03 17:59:05 ARES 2.0] INFO: Results directory: /home/ashtomer/projects/ares/outs/vit_arch_bench/18934567/4/batch_size_smoke/bsz_576/swin_tiny_patch4_window7_224_linftrades_8_init1
+[2026-07-03 17:59:05 ARES 2.0] INFO: Using seed: 1201330690
+[2026-07-03 17:59:05 ARES 2.0] INFO: Creating model: swin_tiny_patch4_window7_224
+[2026-07-03 17:59:06 ARES 2.0] INFO: Model swin_tiny_patch4_window7_224 created, param count:28288354
+[2026-07-03 17:59:06 ARES 2.0] INFO: Optimizer: AdamW
+[2026-07-03 17:59:06 ARES 2.0] INFO: Using native Torch AMP. Training in mixed precision.
+[2026-07-03 17:59:23 ARES 2.0] INFO: GradNorm start: 1
+[2026-07-03 17:59:23 ARES 2.0] INFO: GradNorm penalty norm: l1, GradNorm alpha scaling: init=0.1, scale_epochs=9, max_reg_to_ce_ratio=1.0
+[2026-07-03 17:59:23 ARES 2.0] INFO: Reg losses: None
+[2026-07-03 17:59:24 ARES 2.0] INFO: Weights & Biases logging initialized for run: swin_tiny_patch4_window7_224_linftrades_8_init1 in group: linf_trades
+[2026-07-03 17:59:24 ARES 2.0] INFO: Start training for 1 epochs
+[2026-07-03 17:59:24 ARES 2.0] INFO: gradclip: None
+[2026-07-03 17:59:33 ARES 2.0] INFO: Train: [0/1] [   0/2224 (  0%)]  Loss: 6.972 (6.97)  Batch Time: 9.869s,   58.36/s  (9.869s,   58.36/s)  LR: 1.000e-06  Data: 4.851 (4.851)
+[2026-07-03 17:59:42 ARES 2.0] INFO: [runtime_probe] trades/swin_t train=11505.2s eval=15.8s full=11521.0s -> /home/ashtomer/projects/ares/outs/vit_arch_bench/18934567/4/batch_size_smoke/bsz_576/smoke_runtime.csv
