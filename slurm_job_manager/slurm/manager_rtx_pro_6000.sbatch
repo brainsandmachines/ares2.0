@@ -12,7 +12,7 @@
 #SBATCH --qos=golan-neuro
 #SBATCH --gres=gpu:1
 #SBATCH --array=1-200%6
-#SBATCH --time=1-00:00:00
+#SBATCH --time=14-00:00:00
 #SBATCH --signal=B:TERM@120
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
