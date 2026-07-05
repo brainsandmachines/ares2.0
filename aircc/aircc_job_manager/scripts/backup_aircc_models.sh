@@ -46,7 +46,7 @@ fi
 
 echo "[backup] $(date -Is) rsync $SRC/ -> $DEST/"
 rsync_rc=0
-rsync -rt --no-perms --no-owner --no-group --partial --info=stats2 \
+rsync -rt --no-perms --no-owner --no-group --partial --delete-after --info=stats2,progress2 \
     "$SRC/" "$DEST/" || rsync_rc=$?
 if [[ "$rsync_rc" -eq 0 ]]; then
     echo "[backup] $(date -Is) done"
