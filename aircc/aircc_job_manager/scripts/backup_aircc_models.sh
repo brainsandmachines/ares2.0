@@ -46,16 +46,42 @@ fi
 
 echo "[backup] $(date -Is) rsync $SRC/ -> $DEST/"
 rsync_rc=0
-rsync -rt --no-perms --no-owner --no-group --partial --delete-after --info=stats2,progress2 \
-    "$SRC/" "$DEST/" || rsync_rc=$?
+# Capture rsync's stderr so we can distinguish benign "vanished" churn (the
+# cluster deleting superseded checkpoints mid-transfer) from real read/IO errors.
+# stdout (stats2/progress2) still flows straight to the cron log.
+err_tmp="$(mktemp "${TMPDIR:-/tmp}/aircc_rsync_err.XXXXXX")"
+# Skip the per-epoch intermediate checkpoints (checkpoint-N.pth.tar, ~1.4GB each);
+# we only keep last.pth.tar, model_best*.pth.tar, configs, logs and summaries.
+# --delete-excluded also purges any such checkpoints already on the destination.
+# protect the script's own log/lock (they live in $DEST, not in $SRC, so the
+# --delete flags would otherwise remove them mid-run).
+rsync -rt --no-perms --no-owner --no-group --partial --delete-after --delete-excluded \
+    --filter='protect /backup.log' --filter='protect /.backup.lock' \
+    --exclude='checkpoint-*.pth.tar' --info=stats2,progress2 \
+    "$SRC/" "$DEST/" 2>"$err_tmp" || rsync_rc=$?
+cat "$err_tmp" >&2   # keep the stderr lines in the log
+
+# Lines that are expected when backing up a live training tree. Anything on
+# rsync's stderr that does NOT match one of these is treated as a real error.
+benign_pat='^(file has vanished: .*|rsync warning: .*|rsync error: some files/attrs were not transferred.*|[[:space:]]*)$'
+
 if [[ "$rsync_rc" -eq 0 ]]; then
     echo "[backup] $(date -Is) done"
-elif [[ "$rsync_rc" -eq 24 ]]; then
-    echo "[backup] $(date -Is) done (rc=24: some source files vanished mid-transfer, likely superseded checkpoints)"
-    rsync_rc=0
+elif [[ "$rsync_rc" -eq 23 || "$rsync_rc" -eq 24 ]]; then
+    # rc=24: files vanished before transfer; rc=23: vanished mid-transfer / read
+    # error. Forgive either ONLY if every stderr line is a known-benign vanish.
+    real_errs="$(grep -vE "$benign_pat" "$err_tmp")"
+    if [[ -n "$real_errs" ]]; then
+        echo "[backup] $(date -Is) ERROR: rsync failed rc=$rsync_rc (non-vanished errors on stderr)" >&2
+    else
+        echo "[backup] $(date -Is) note: rc=$rsync_rc, only superseded checkpoints vanished mid-transfer"
+        echo "[backup] $(date -Is) done"
+        rsync_rc=0
+    fi
 else
     echo "[backup] $(date -Is) ERROR: rsync failed rc=$rsync_rc" >&2
 fi
+rm -f "$err_tmp"
 
 monitor_rc=0
 run_monitor "$rsync_rc" || monitor_rc=$?

@@ -134,7 +134,7 @@ def main(cfg: DictConfig):
             cfg.attacks.v1_attack_step = 2.0 * float(cfg.attacks.v1_attack_eps) / max(int(cfg.attacks.v1_attack_it), 1)
 
     if cfg.dist.rank == 0:
-        experiment_name, group_name = _auto_experiment_name(cfg)
+        experiment_name, group_name, defense_family = _auto_experiment_name(cfg)
         cfg.output_dir = os.path.join(cfg.output_dir, experiment_name)
         os.makedirs(cfg.output_dir, exist_ok = True)
     
@@ -320,6 +320,7 @@ def main(cfg: DictConfig):
             resume="allow",
             name=run_name,
             group=group_name,
+            tags=[defense_family],
             config=wandb_config,
         )
         _logger.info(f"Weights & Biases logging initialized for run: {experiment_name} in group: {group_name}")
