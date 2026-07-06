@@ -997,10 +997,11 @@ def test_auto_experiment_name_uses_v1_attack_eps_for_feature_domain():
         }
     )
 
-    experiment_name, group_name = _auto_experiment_name(cfg)
+    experiment_name, group_name, defense_family = _auto_experiment_name(cfg)
 
     assert experiment_name == "convnext_small_v1_clean_linf_16_init1"
-    assert group_name == "v1feat_linf_madry"
+    assert group_name == "convnext_small_v1_clean_linf_16"
+    assert defense_family == "v1_madry"
 
 
 def test_auto_experiment_name_denormalizes_v1_l2_feature_epsilon():
@@ -1019,10 +1020,11 @@ def test_auto_experiment_name_denormalizes_v1_l2_feature_epsilon():
         }
     )
 
-    experiment_name, group_name = _auto_experiment_name(cfg)
+    experiment_name, group_name, defense_family = _auto_experiment_name(cfg)
 
     assert experiment_name == "convnext_small_v1_clean_l2_2_init1"
-    assert group_name == "v1feat_l2_madry"
+    assert group_name == "convnext_small_v1_clean_l2_2"
+    assert defense_family == "v1_madry"
 
 
 def test_auto_experiment_name_marks_v1_noise_runs():
@@ -1041,17 +1043,18 @@ def test_auto_experiment_name_marks_v1_noise_runs():
         }
     )
 
-    experiment_name, group_name = _auto_experiment_name(cfg)
+    experiment_name, group_name, defense_family = _auto_experiment_name(cfg)
 
     assert experiment_name == "convnext_small_v1_noise_init1"
-    assert group_name == "default"
+    assert group_name == "convnext_small_v1_noise"
+    assert defense_family == "v1"
 
 
 @pytest.mark.parametrize(
     "penalty_norm,expected_name,expected_group",
     [
-        ("l1", "convnext_small_gradnorm_l1_8_init2", "gradnorm_l1"),
-        ("l2", "convnext_small_gradnorm_l2_8_init2", "gradnorm_l2"),
+        ("l1", "convnext_small_gradnorm_l1_8_init2", "convnext_small_gradnorm_l1_8"),
+        ("l2", "convnext_small_gradnorm_l2_8_init2", "convnext_small_gradnorm_l2_8"),
     ],
 )
 def test_auto_experiment_name_includes_gradnorm_penalty_norm(
@@ -1073,7 +1076,8 @@ def test_auto_experiment_name_includes_gradnorm_penalty_norm(
         }
     )
 
-    experiment_name, group_name = _auto_experiment_name(cfg)
+    experiment_name, group_name, defense_family = _auto_experiment_name(cfg)
 
     assert experiment_name == expected_name
     assert group_name == expected_group
+    assert defense_family == "gradnorm"

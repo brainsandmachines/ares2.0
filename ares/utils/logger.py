@@ -61,6 +61,48 @@ class PrintFormatter:
         pass
     
     
+def compute_defense_family(cfg):
+    """Coarse defense-method label for wandb grouping/tags.
+
+    Returns exactly one of:
+        baseline, dvd_baseline, madry, dvd_madry, trades, dvd_trades,
+        gradnorm, v1, v1_madry, v1_trades
+
+    Notes:
+      - gradnorm and dvd never co-occur (confirmed), so gradnorm wins outright.
+      - "v1" is the convnext ``*_v1`` front-end (clean or noise); with advtrain
+        it becomes v1_madry / v1_trades. v1 never combines with dvd.
+    """
+    model_cfg = cfg.model
+    attacks = cfg.attacks
+
+    is_v1 = str(model_cfg.model).startswith("convnext_") and str(model_cfg.model).endswith("_v1")
+    dvd_cfg = cfg.dataset.get("dvd", None) if cfg.get("dataset", None) is not None else None
+    is_dvd = dvd_cfg is not None and bool(dvd_cfg.get("enabled", False))
+    criterion = attacks.attack_criterion if attacks.advtrain else None
+
+    if attacks.gradnorm:
+        return "gradnorm"
+
+    if is_v1:
+        if not attacks.advtrain:
+            return "v1"
+        if criterion == "madry":
+            return "v1_madry"
+        if criterion == "trades":
+            return "v1_trades"
+        raise ValueError(f"Unknown v1 attack criterion: {criterion}")
+
+    prefix = "dvd_" if is_dvd else ""
+    if not attacks.advtrain:
+        return f"{prefix}baseline"
+    if criterion == "madry":
+        return f"{prefix}madry"
+    if criterion == "trades":
+        return f"{prefix}trades"
+    raise ValueError(f"Unknown attack criterion: {criterion}")
+
+
 def _auto_experiment_name(cfg):
     group_name = "default"  # Initialize group_name with a default value
     model_cfg = cfg.model
@@ -119,19 +161,19 @@ def _auto_experiment_name(cfg):
         gradnorm_penalty_norm = attacks.get("gradnorm_penalty_norm", "l1")
         parts.append(f"gradnorm_{gradnorm_penalty_norm}_{int(attacks.attack_eps*255)}")
         group_name = f"gradnorm_{gradnorm_penalty_norm}"
-    # if cfg.lipshitz:
-    #     parts.append(f"lip_{cfg.lip_coeff}")
-    #     group_name = "lipshitz"
-    # if cfg.jacobian_reg:
-    #     parts.append(f"jacobian_{cfg.jacobian_coeff}")
-    #     group_name = "jacobian"
     if len(parts)==1:
         parts.append("baseline")
-        group_name = "baseline"
+    # New grouping scheme:
+    #   group = full run identity minus the init/seed, so each wandb group is
+    #           exactly one config aggregated across inits (correct mean +/- std).
+    #   tag   = coarse defense family (baseline / dvd_madry / v1_trades / ...),
+    #           for cross-arch, cross-eps filtering in the UI.
+    group_name = "_".join(parts)
     if model_cfg.experiment_num is not None:
         parts.append(f"init{model_cfg.experiment_num}")
     # An explicit experiment_name overrides the auto name but keeps the
-    # attack-derived wandb group (previously it fell back to "default").
+    # config-derived wandb group.
     experiment_name = explicit_name if explicit_name else "_".join(parts)
+    defense_family = compute_defense_family(cfg)
 
-    return experiment_name, group_name
+    return experiment_name, group_name, defense_family
