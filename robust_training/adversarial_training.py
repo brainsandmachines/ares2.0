@@ -26,7 +26,8 @@ from ares.utils.train_loop import train_one_epoch
 from ares.utils.validate import validate
 from ares.utils.runtime_probe import PhaseTimer, append_runtime_row
 from ares.utils.final_eval_helpers import _maybe_run_final_eval
-from ares.utils.epsilon_schedule import L1_EPS_MULTIPLIER, LINF_EPS_DIVISOR, build_epsilon_schedule, normalize_epsilon
+from ares.utils.adv import normalize_attack_epsilons
+from ares.utils.epsilon_schedule import build_epsilon_schedule, normalize_epsilon
 from ares.utils.continuation import (
     active_attack_eps_field,
     capture_attack_step_auto,
@@ -37,7 +38,6 @@ from ares.utils.continuation import (
     set_active_epsilon,
 )
 
-from orchestrator import progress as orch_progress
 from aircc.aircc_job_manager import progress as aircc_progress
 
 def main(cfg: DictConfig):
@@ -78,60 +78,7 @@ def main(cfg: DictConfig):
         configure_initial_schedule_target(cfg)
 
     # Normalize pixel-space attack magnitudes and derive norm-specific defaults.
-    if attack_domain == 'pixel':
-        if cfg.attacks.attack_norm == 'linf':
-            if cfg.attacks.attack_eps is not None:
-                cfg.attacks.attack_eps = float(cfg.attacks.attack_eps) / LINF_EPS_DIVISOR
-            if cfg.attacks.attack_step is not None:
-                cfg.attacks.attack_step = float(cfg.attacks.attack_step) / LINF_EPS_DIVISOR
-        elif cfg.attacks.attack_norm == 'l1':
-            if cfg.attacks.attack_step is None:
-                cfg.attacks.attack_step = 1.0
-            if cfg.attacks.attack_eps is not None:
-                cfg.attacks.attack_eps = float(cfg.attacks.attack_eps) * L1_EPS_MULTIPLIER
-
-        if (
-            cfg.attacks.attack_norm == 'linf'
-            and cfg.attacks.attack_step is None
-            and cfg.attacks.attack_eps is not None
-        ):
-            cfg.attacks.attack_step = float(cfg.attacks.attack_eps) / max(int(cfg.attacks.attack_it), 1)
-        elif (
-            cfg.attacks.attack_norm == 'l2'
-            and cfg.attacks.attack_step is None
-            and cfg.attacks.attack_eps is not None
-        ):
-            cfg.attacks.attack_step = 2.0 * float(cfg.attacks.attack_eps) / max(int(cfg.attacks.attack_it), 1)
-    else:
-        if cfg.attacks.attack_norm == 'linf':
-            if cfg.attacks.v1_attack_eps is not None:
-                cfg.attacks.v1_attack_eps = float(cfg.attacks.v1_attack_eps) / LINF_EPS_DIVISOR
-            if cfg.attacks.v1_attack_step is not None:
-                cfg.attacks.v1_attack_step = float(cfg.attacks.v1_attack_step) / LINF_EPS_DIVISOR
-        elif cfg.attacks.attack_norm == 'l1':
-            if cfg.attacks.v1_attack_step is None:
-                cfg.attacks.v1_attack_step = 1.0
-            if cfg.attacks.v1_attack_eps is not None:
-                cfg.attacks.v1_attack_eps = float(cfg.attacks.v1_attack_eps) * L1_EPS_MULTIPLIER
-        elif cfg.attacks.attack_norm == 'l2':
-            if cfg.attacks.v1_attack_eps is not None:
-                cfg.attacks.v1_attack_eps = normalize_epsilon(
-                    float(cfg.attacks.v1_attack_eps),
-                    cfg.attacks.attack_norm,
-                    attack_domain=attack_domain,
-                )
-        if (
-            cfg.attacks.attack_norm == 'linf'
-            and cfg.attacks.v1_attack_step is None
-            and cfg.attacks.v1_attack_eps is not None
-        ):
-            cfg.attacks.v1_attack_step = float(cfg.attacks.v1_attack_eps) / max(int(cfg.attacks.v1_attack_it), 1)
-        elif (
-            cfg.attacks.attack_norm == 'l2'
-            and cfg.attacks.v1_attack_step is None
-            and cfg.attacks.v1_attack_eps is not None
-        ):
-            cfg.attacks.v1_attack_step = 2.0 * float(cfg.attacks.v1_attack_eps) / max(int(cfg.attacks.v1_attack_it), 1)
+    normalize_attack_epsilons(cfg)
 
     if cfg.dist.rank == 0:
         experiment_name, group_name, defense_family = _auto_experiment_name(cfg)
@@ -457,8 +404,6 @@ def main(cfg: DictConfig):
                     saver, epoch, eval_metrics, best_adv_metric, best_adv_epoch
                 )
             
-        # -------- orchestrator: atomic end-of-epoch progress (no-op if not tracked) --------
-        orch_progress.update_epoch(epoch + 1, rank=cfg.dist.rank)
         # -------- aircc job manager: end-of-epoch progress (no-op if not tracked) --------
         aircc_progress.update_epoch(
             epoch + 1, rank=cfg.dist.rank,
@@ -475,12 +420,6 @@ def main(cfg: DictConfig):
 
     if cfg.dist.rank == 0:
         _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run)
-        # orchestrator: a pure-training invocation (final_eval off) has finished
-        # its run -> hand the row off to the AutoAttack stage. No-op when the job
-        # is untracked (manual run) or when this is itself the AA invocation
-        # (final_eval=True), whose PLOTTING handoff lives in final_eval_helpers.
-        if not bool(cfg.get("final_eval", False)):
-            orch_progress.advance_status("AA_EVAL", rank=cfg.dist.rank)
 
 @hydra.main(config_path="configs", config_name="config", version_base="1.3")
 def hydra_main(cfg: DictConfig):

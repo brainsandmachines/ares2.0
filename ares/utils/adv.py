@@ -2,6 +2,8 @@ from contextlib import contextmanager, suppress
 import torch
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 
+from ares.utils.epsilon_schedule import L1_EPS_MULTIPLIER, LINF_EPS_DIVISOR, normalize_epsilon
+
 
 class AttackerStep:
     '''
@@ -648,8 +650,75 @@ class PgdAttackEps(object):
             best_loss, best_x = replace_best(*varlist) if self.use_best else (adv_losses, images)
         if prev_training:
             self.model.train()
-    
-        return best_x
-    
 
- 
+        return best_x
+
+
+def normalize_attack_epsilons(cfg):
+    '''
+    Normalize the config's pixel-space attack magnitudes in place and derive the
+    norm-specific ``attack_step`` defaults.
+
+    User-facing epsilons/steps are given in convenient units (e.g. linf in /255,
+    l1 with a fixed multiplier); this rescales them to the model's input space and,
+    when a step is unset, fills the standard PGD step for the given norm. Operates
+    on ``cfg.attacks.attack_*`` for pixel-domain runs and on ``cfg.attacks.v1_attack_*``
+    for feature-domain (V1) runs, selected by ``cfg.attacks.attack_domain``.
+    '''
+    attack_domain = cfg.attacks.get('attack_domain', 'pixel')
+
+    if attack_domain == 'pixel':
+        if cfg.attacks.attack_norm == 'linf':
+            if cfg.attacks.attack_eps is not None:
+                cfg.attacks.attack_eps = float(cfg.attacks.attack_eps) / LINF_EPS_DIVISOR
+            if cfg.attacks.attack_step is not None:
+                cfg.attacks.attack_step = float(cfg.attacks.attack_step) / LINF_EPS_DIVISOR
+        elif cfg.attacks.attack_norm == 'l1':
+            if cfg.attacks.attack_step is None:
+                cfg.attacks.attack_step = 1.0
+            if cfg.attacks.attack_eps is not None:
+                cfg.attacks.attack_eps = float(cfg.attacks.attack_eps) * L1_EPS_MULTIPLIER
+
+        if (
+            cfg.attacks.attack_norm == 'linf'
+            and cfg.attacks.attack_step is None
+            and cfg.attacks.attack_eps is not None
+        ):
+            cfg.attacks.attack_step = float(cfg.attacks.attack_eps) / max(int(cfg.attacks.attack_it), 1)
+        elif (
+            cfg.attacks.attack_norm == 'l2'
+            and cfg.attacks.attack_step is None
+            and cfg.attacks.attack_eps is not None
+        ):
+            cfg.attacks.attack_step = 2.0 * float(cfg.attacks.attack_eps) / max(int(cfg.attacks.attack_it), 1)
+    else:
+        if cfg.attacks.attack_norm == 'linf':
+            if cfg.attacks.v1_attack_eps is not None:
+                cfg.attacks.v1_attack_eps = float(cfg.attacks.v1_attack_eps) / LINF_EPS_DIVISOR
+            if cfg.attacks.v1_attack_step is not None:
+                cfg.attacks.v1_attack_step = float(cfg.attacks.v1_attack_step) / LINF_EPS_DIVISOR
+        elif cfg.attacks.attack_norm == 'l1':
+            if cfg.attacks.v1_attack_step is None:
+                cfg.attacks.v1_attack_step = 1.0
+            if cfg.attacks.v1_attack_eps is not None:
+                cfg.attacks.v1_attack_eps = float(cfg.attacks.v1_attack_eps) * L1_EPS_MULTIPLIER
+        elif cfg.attacks.attack_norm == 'l2':
+            if cfg.attacks.v1_attack_eps is not None:
+                cfg.attacks.v1_attack_eps = normalize_epsilon(
+                    float(cfg.attacks.v1_attack_eps),
+                    cfg.attacks.attack_norm,
+                    attack_domain=attack_domain,
+                )
+        if (
+            cfg.attacks.attack_norm == 'linf'
+            and cfg.attacks.v1_attack_step is None
+            and cfg.attacks.v1_attack_eps is not None
+        ):
+            cfg.attacks.v1_attack_step = float(cfg.attacks.v1_attack_eps) / max(int(cfg.attacks.v1_attack_it), 1)
+        elif (
+            cfg.attacks.attack_norm == 'l2'
+            and cfg.attacks.v1_attack_step is None
+            and cfg.attacks.v1_attack_eps is not None
+        ):
+            cfg.attacks.v1_attack_step = 2.0 * float(cfg.attacks.v1_attack_eps) / max(int(cfg.attacks.v1_attack_it), 1)
+

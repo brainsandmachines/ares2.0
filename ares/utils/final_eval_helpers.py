@@ -374,13 +374,5 @@ def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
                 _aircc_progress.write_best_checkpoint(output_dir)
             except Exception:  # pragma: no cover - never block on the handoff
                 _logger.warning("aircc best-checkpoint write failed (ignored)")
-            # orchestrator: AutoAttack sweep finished -> hand the row off to the
-            # plotting stage. Local import keeps final_eval_helpers importable
-            # without the orchestrator package; no-op when the job is untracked.
-            try:
-                from orchestrator import progress as _orch_progress
-                _orch_progress.advance_status("PLOTTING")
-            except Exception:  # pragma: no cover - never block on the handoff
-                _logger.warning("orchestrator PLOTTING handoff failed (ignored)")
     except Exception as exc:
         _logger.exception("Final eval failed: %s", exc)
