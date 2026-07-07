@@ -104,6 +104,35 @@ class ConvBlock2(nn.Module):
         return self.stem(x)
 
 
+class ConvBlock3(nn.Module):
+    """ConvStem with fixed 768 output dim, for ViT-B (vit_base_patch16_224). Total stride 16."""
+
+    expansion = 1
+
+    def __init__(self, siz=48, end_siz=8, fin_dim=384):
+        super(ConvBlock3, self).__init__()
+        self.planes = siz
+        fin_dim = self.planes * end_siz if fin_dim != 432 else 432
+        self.stem = nn.Sequential(
+            nn.Conv2d(3, self.planes, kernel_size=3, stride=2, padding=1),
+            LayerNorm(self.planes, data_format="channels_first"),
+            nn.GELU(),
+            nn.Conv2d(self.planes, self.planes * 2, kernel_size=3, stride=2, padding=1),
+            LayerNorm(self.planes * 2, data_format="channels_first"),
+            nn.GELU(),
+            nn.Conv2d(self.planes * 2, self.planes * 4, kernel_size=3, stride=2, padding=1),
+            LayerNorm(self.planes * 4, data_format="channels_first"),
+            nn.GELU(),
+            nn.Conv2d(self.planes * 4, self.planes * 8, kernel_size=3, stride=2, padding=1),
+            LayerNorm(self.planes * 8, data_format="channels_first"),
+            nn.GELU(),
+            nn.Conv2d(self.planes * 8, 768, kernel_size=1, stride=1, padding=0),
+        )
+
+    def forward(self, x):
+        return self.stem(x)
+
+
 @register_model
 def vit_s_cvst(pretrained=False, **kwargs):
     """ViT-S/16 with ConvStem (revisiting-at 'vit_s', not_original=True)."""
@@ -117,4 +146,12 @@ def vit_m_cvst(pretrained=False, **kwargs):
     """ViT-M (DeiT3-medium) with ConvStem (revisiting-at 'vit_m', not_original=True)."""
     model = create_model('deit3_medium_patch16_224', pretrained=pretrained, **kwargs)
     model.patch_embed.proj = ConvBlock2(48)
+    return model
+
+
+@register_model
+def vit_b_cvst(pretrained=False, **kwargs):
+    """ViT-B/16 with ConvStem (embed_dim 768). Base-size match to Swin-B (~87M)."""
+    model = create_model('vit_base_patch16_224', pretrained=pretrained, **kwargs)
+    model.patch_embed.proj = ConvBlock3(48)
     return model
