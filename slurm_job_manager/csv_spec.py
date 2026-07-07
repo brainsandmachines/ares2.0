@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Iterable
 
 CSV_DIR = Path(__file__).resolve().parent / "csv"
-ARCHES = ("convnext_small", "convnext_base", "convnext_large", "vit_m_cvst")
+ARCHES = ("convnext_small", "convnext_base", "convnext_large", "vit-b-cvst_swin-b")
 
 # Columns the manager reads but never passes to training.
 METADATA_COLUMNS = [
