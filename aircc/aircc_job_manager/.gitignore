@@ -4,3 +4,4 @@ __pycache__/
 *.sqlite-wal
 *.sqlite-shm
 logs/
+.env
