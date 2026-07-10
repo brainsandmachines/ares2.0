@@ -22,8 +22,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from aircc.aircc_job_manager.db import AirccDB, Job
-from orchestrator.config import Config
-from orchestrator.notify import make_emailer
+from aircc.aircc_job_manager.notify import make_emailer
 
 logger = logging.getLogger("aircc.daily_monitor")
 
@@ -276,7 +275,6 @@ def main() -> int:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    cfg = Config.load()
     return run_once(
         db_path=args.db,
         backup_log=args.backup_log,
@@ -284,7 +282,7 @@ def main() -> int:
         expected_running=args.expected_running,
         recommendations_dir=args.recommendations_dir,
         mount_repo=args.mount_repo,
-        emailer=make_emailer(cfg),
+        emailer=make_emailer(),
         llm_client=make_llm_client(),
     )
 

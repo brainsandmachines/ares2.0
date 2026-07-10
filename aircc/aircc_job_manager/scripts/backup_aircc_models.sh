@@ -1,6 +1,9 @@
 #!/bin/bash
-# Daily backup of the AIRCC results/models tree to Botero, pulled through the local
-# sshfs AIRCC mount (no ssh in the rsync itself). Run from a Botero cron.
+# Daily AIRCC check-in: (1) run the aircc-status skill's status script and email
+# if the running count isn't 32 or any job has failed, (2) back up the AIRCC
+# results/models tree to Botero, pulled through the local sshfs AIRCC mount (no
+# ssh in the rsync itself), emailing only if the rsync itself fails. Run from a
+# Botero cron.
 #
 # Install (Botero crontab -e):
 #   0 3 * * * /home/tomer_a/Documents/ares/aircc/aircc_job_manager/scripts/backup_aircc_models.sh >> /mnt/data/robustness_models/aircc_models/backup.log 2>&1
@@ -16,10 +19,10 @@ set -u -o pipefail
 SRC="${AIRCC_MOUNT:-$HOME/aircc_mount/ashtomer/ares/results/models}"
 DEST="/mnt/data/robustness_models/aircc_models"
 REPO_ROOT="${ARES_REPO:-/home/tomer_a/Documents/ares}"
-MONITOR_LOG="${AIRCC_MONITOR_LOG:-$REPO_ROOT/aircc/aircc_job_manager/logs/daily_monitor.log}"
+STATUS_SCRIPT="${AIRCC_STATUS_SCRIPT:-$HOME/.claude/skills/aircc-status/scripts/aircc_status.py}"
+EXPECTED_RUNNING="${AIRCC_EXPECTED_RUNNING:-32}"
 LOCK_FILE="${AIRCC_BACKUP_LOCK:-$DEST/.backup.lock}"
 
-mkdir -p "$(dirname "$MONITOR_LOG")"
 mkdir -p -m 0755 "$DEST"
 
 exec 9>"$LOCK_FILE"
@@ -28,19 +31,45 @@ if ! flock -n 9; then
     exit 0
 fi
 
-run_monitor() {
-    local backup_rc="$1"
-    PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" \
-        python -m aircc.aircc_job_manager.daily_monitor \
-            --backup-log "$DEST/backup.log" \
-            --backup-rc "$backup_rc" \
-            >> "$MONITOR_LOG" 2>&1
+notify() {
+    local subject="$1" body="$2"
+    PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" python3 - "$subject" "$body" <<'PYEOF'
+import sys
+from aircc.aircc_job_manager.notify import make_emailer
+
+subject, body = sys.argv[1], sys.argv[2]
+emailer = make_emailer()
+if emailer is None:
+    print(f"[notify] no emailer configured; would send: {subject}", file=sys.stderr)
+else:
+    emailer(subject, body)
+PYEOF
 }
 
+# --- 1. aircc-status check ---
+status_out="$(python3 "$STATUS_SCRIPT" 2>&1)"
+status_rc=$?
+running_n="$(grep -oP 'running=\K[0-9]+' <<<"$status_out" | head -1)"
+failed_n="$(grep -oP '## failed \(\K[0-9]+' <<<"$status_out" | head -1)"
+
+if [[ "$status_rc" -ne 0 ]]; then
+    echo "[status] $(date -Is) ERROR: aircc_status.py failed rc=$status_rc" >&2
+    notify "[aircc] status check failed" "$STATUS_SCRIPT exited rc=$status_rc:
+
+$status_out"
+elif [[ "${running_n:-0}" -ne "$EXPECTED_RUNNING" || "${failed_n:-0}" -ne 0 ]]; then
+    echo "[status] $(date -Is) ALERT: running=${running_n:-0} (expected $EXPECTED_RUNNING) failed=${failed_n:-0}" >&2
+    notify "[aircc] status alert: running=${running_n:-0} failed=${failed_n:-0}" "$status_out"
+else
+    echo "[status] $(date -Is) ok: running=$running_n failed=0"
+fi
+
+# --- 2. rsync backup ---
 if [[ ! -d "$SRC" ]]; then
     echo "[backup] ERROR: source not mounted/missing: $SRC" >&2
     echo "[backup] is the sshfs AIRCC mount up?" >&2
-    run_monitor 1
+    notify "[aircc] backup source not mounted" "source not mounted/missing: $SRC
+is the sshfs AIRCC mount up?"
     exit 1
 fi
 
@@ -81,11 +110,13 @@ elif [[ "$rsync_rc" -eq 23 || "$rsync_rc" -eq 24 ]]; then
 else
     echo "[backup] $(date -Is) ERROR: rsync failed rc=$rsync_rc" >&2
 fi
+
+if [[ "$rsync_rc" -ne 0 ]]; then
+    notify "[aircc] backup rsync failed rc=$rsync_rc" "rsync $SRC/ -> $DEST/ failed rc=$rsync_rc
+
+stderr:
+$(cat "$err_tmp")"
+fi
 rm -f "$err_tmp"
 
-monitor_rc=0
-run_monitor "$rsync_rc" || monitor_rc=$?
-if [[ "$rsync_rc" -ne 0 ]]; then
-    exit "$rsync_rc"
-fi
-exit "$monitor_rc"
+exit "$rsync_rc"
