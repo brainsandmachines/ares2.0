@@ -26,6 +26,7 @@ from ares.utils.train_loop import train_one_epoch
 from ares.utils.validate import validate
 from ares.utils.runtime_probe import PhaseTimer, append_runtime_row
 from ares.utils.final_eval_helpers import _maybe_run_final_eval
+from data_analysis.shape_bias_plugin import run_shape_bias_analysis
 from ares.utils.adv import normalize_attack_epsilons
 from ares.utils.epsilon_schedule import build_epsilon_schedule, normalize_epsilon
 from ares.utils.continuation import (
@@ -420,6 +421,7 @@ def main(cfg: DictConfig):
 
     if cfg.dist.rank == 0:
         _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run)
+        run_shape_bias_analysis(cfg, output_dir)
 
 @hydra.main(config_path="configs", config_name="config", version_base="1.3")
 def hydra_main(cfg: DictConfig):
