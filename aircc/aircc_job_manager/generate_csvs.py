@@ -285,15 +285,22 @@ def build_arch_rows(arch: str) -> list[dict]:
         _adv_family(sink, arch, init, criterion="trades", dvd=False)
         _adv_family(sink, arch, init, criterion="madry", dvd=True)
         _adv_family(sink, arch, init, criterion="trades", dvd=True)
-        _v1_family(sink, arch, init)
         _gradnorm_family(sink, arch, init, bname)
+    # v1 (l2 feature-space) rows are pushed to the tail, after every other
+    # protocol across all inits, so they claim last in priority order.
+    for init in INITS:
+        _v1_family(sink, arch, init)
+    # Clean-V1 (+neuronal-noise) pair, convnext_base only -- tail of the tail,
+    # after the v1 l2 feature-space rows across all inits.
+    if arch == V1_CLEAN_ARCH:
+        for init in INITS:
+            _v1_clean_family(sink, arch, init)
     return sink.rows
 
 
-# The clean-V1 (+neuronal-noise) pair is NOT part of the main per-arch campaign.
-# It lives in its own single-file mini-campaign (v1-baselines/convnext_base.csv) so
-# it can be seeded into a SEPARATE DB and driven by a manager pointed at --csv-dir
-# without touching / re-prioritising the main convnext_base queue.
+# V1_CLEAN_ARCH/V1_CLEAN_SUBDIR also drive a standalone single-file mini-campaign
+# (v1-baselines/convnext_base.csv) that can be seeded into a SEPARATE DB and driven
+# by a manager pointed at --csv-dir, independent of the main convnext_base queue.
 V1_CLEAN_ARCH = "convnext_base"
 V1_CLEAN_SUBDIR = "v1-baselines"
 
