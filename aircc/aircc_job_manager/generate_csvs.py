@@ -250,6 +250,8 @@ def _gradnorm_family(sink: RowSink, arch: str, init: int, baseline_name: str):
     for eps in (1, 2, 4, 6, 8, 12):
         name = f"{arch}_gradnorm_l1_{eps}_init{init}"
         kw = {c: "" for c in OVERRIDE_COLUMNS}
+        kw["attacks.advtrain"] = "False"  # gradnorm is a standalone regularizer; advtrain=True
+        # would shadow the gradnorm forward branch (elif order) and leave ce_loss unbound.
         kw["attacks.gradnorm"] = "True"
         kw["attacks.gradnorm_penalty_norm"] = "l1"
         kw["attacks.attack_eps"] = eps
