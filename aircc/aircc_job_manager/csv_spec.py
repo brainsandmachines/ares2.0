@@ -61,6 +61,7 @@ OVERRIDE_COLUMNS = [
     "epsilon_schedule.ramp_start_epoch",
     "epsilon_schedule.ramp_end_epoch",
     "epsilon_schedule.fixed_start_epoch",
+    "lr_scheduler.lrb",
 ]
 
 ALL_COLUMNS = METADATA_COLUMNS + OVERRIDE_COLUMNS
