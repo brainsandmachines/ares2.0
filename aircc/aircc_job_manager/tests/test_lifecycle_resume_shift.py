@@ -65,6 +65,34 @@ def test_first_launch_shifts_to_actual_peeked_epoch(tmp_path):
     assert not any(c.startswith("training.epochs=200") for c in cmd)
     # exactly one training.epochs override on the command line (no Hydra dup-key)
     assert sum(c.startswith("training.epochs=") for c in cmd) == 1
+    # dashboard (aircc-status) denominator mirrors the resolved target, not the
+    # static CSV value
+    assert db.get("convnext_base_gradnorm_l1_1_init0").total_epochs == 151
+
+
+def test_reseed_resets_db_but_next_resolve_resyncs_it(tmp_path):
+    """A reseed (upsert_pending) resets total_epochs back to the static CSV
+    value -- the NEXT build_command call (cache hit from the sidecar) must
+    re-sync it back to the true target, not leave the dashboard wrong."""
+    models_root = tmp_path / "models"
+    dep_ckpt = tmp_path / "dep" / "model_best.pth.tar"
+    _write_ckpt(dep_ckpt, epoch=101)
+
+    db = AirccDB(str(tmp_path / "jobs.sqlite"))
+    _seed_dep(db, dep_ckpt)
+    db.upsert_pending("convnext_base_gradnorm_l1_1_init0", 200, 1)
+
+    lifecycle.build_command(_base_row(), models_root, db, python_exe="python3")
+    assert db.get("convnext_base_gradnorm_l1_1_init0").total_epochs == 151
+
+    # simulate a reseed from the raw CSV (as seed_db.py does on every re-run)
+    db.upsert_pending("convnext_base_gradnorm_l1_1_init0", 200, 1)
+    assert db.get("convnext_base_gradnorm_l1_1_init0").total_epochs == 200
+
+    own_last = lifecycle._own_last(models_root, "convnext_base_gradnorm_l1_1_init0")
+    _write_ckpt(own_last, epoch=120)
+    lifecycle.build_command(_base_row(), models_root, db, python_exe="python3")
+    assert db.get("convnext_base_gradnorm_l1_1_init0").total_epochs == 151
 
 
 def test_restart_reuses_persisted_target_not_current_own_last_epoch(tmp_path):
