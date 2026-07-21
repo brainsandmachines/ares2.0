@@ -83,7 +83,7 @@ def _peek_resume_epoch(checkpoint_path) -> Optional[int]:
 
 
 def _resolve_resume_target(row: dict, resume_path, own_last: Path, models_root: Path,
-                            name: str) -> Optional[int]:
+                            name: str, db=None) -> Optional[int]:
     """Return the total-epochs target a shift-managed resume row should train to.
 
     Computed ONCE, the first time this model actually launches (from the dep's
@@ -95,13 +95,21 @@ def _resolve_resume_target(row: dict, resume_path, own_last: Path, models_root: 
     now-later epoch, which would silently shrink the remaining training length
     on every restart. Returns None if the peek fails (e.g. dep checkpoint has
     no 'epoch' key) -- caller falls back to the static CSV values.
+
+    Also mirrors the resolved target into the DB's total_epochs (best-effort,
+    via db.reconcile) purely so dashboards (aircc-status) show the true
+    denominator -- a reseed can reset total_epochs back to the static CSV
+    value, but the next resolve here (cache hit or recompute) re-syncs it.
     """
     target_file = _resume_target_file(models_root, name)
     if own_last.exists() and target_file.exists():
         try:
-            return int(json.loads(target_file.read_text())["target_epochs"])
+            target = int(json.loads(target_file.read_text())["target_epochs"])
         except Exception:
-            pass  # corrupt/unreadable sidecar -- fall through and recompute
+            target = None  # corrupt/unreadable sidecar -- fall through and recompute
+        if target is not None:
+            _sync_db_total_epochs(db, name, target)
+            return target
 
     start_epoch = _peek_resume_epoch(resume_path)
     if start_epoch is None:
@@ -117,7 +125,17 @@ def _resolve_resume_target(row: dict, resume_path, own_last: Path, models_root: 
         }))
     except OSError:
         pass  # best-effort; a missing sidecar just means the next restart re-peeks
+    _sync_db_total_epochs(db, name, target)
     return target
+
+
+def _sync_db_total_epochs(db, name: str, target: int) -> None:
+    if db is None:
+        return
+    try:
+        db.reconcile(name, target)
+    except Exception:
+        pass  # cosmetic only -- never let a dashboard-sync failure break the launch
 
 
 def _shifted_resume_overrides(row: dict, target: Optional[int]) -> list[str]:
@@ -168,7 +186,7 @@ def build_command(row: dict, models_root: Path, db, *, python_exe: Optional[str]
         resume_path = own_last if own_last.exists() else _dep_best(db, dep, name)
         cmd.append(f"model.resume={resume_path}")
         if shift_managed:
-            target = _resolve_resume_target(row, resume_path, own_last, models_root, name)
+            target = _resolve_resume_target(row, resume_path, own_last, models_root, name, db=db)
             cmd += _shifted_resume_overrides(row, target)
     else:  # scratch
         cmd.append(f"model.resume={own_last}")
