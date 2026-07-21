@@ -13,7 +13,9 @@
 # is free-form and the three grid runs never collide.
 #
 # Required (via --export): RUN_NAME, LR   (LR is the exact peak optimizer.lr)
-# Optional: BATCH (default 128), EPOCHS (default 40)
+# Optional: NORM (l2|linf, default l2), CKPT_NAME (source checkpoint file, default
+#           model_best.pth.tar), SOURCE_MODEL (default convnext_base_${NORM}_4_init0),
+#           BATCH (default 128), EPOCHS (default 40)
 
 set -euo pipefail
 nvidia-smi
@@ -29,13 +31,17 @@ cd /home/ashtomer/projects/ares
 
 : "${RUN_NAME:?set RUN_NAME (e.g. convnext_base_l2_cont4to6_lr1e4_init0)}"
 : "${LR:?set LR (peak optimizer.lr, e.g. 1e-4)}"
+NORM="${NORM:-l2}"
+CKPT_NAME="${CKPT_NAME:-model_best.pth.tar}"
+SOURCE_MODEL="${SOURCE_MODEL:-convnext_base_${NORM}_4_init0}"
 MODELS_ROOT=/home/ashtomer/projects/ares/results/models
-CKPT="${MODELS_ROOT}/convnext_base_l2_4_init0/model_best.pth.tar"
+CKPT="${MODELS_ROOT}/${SOURCE_MODEL}/${CKPT_NAME}"
 [[ -f "$CKPT" ]] || { echo "[ERROR] missing source ckpt: $CKPT"; exit 1; }
 BATCH="${BATCH:-128}"
 EPOCHS="${EPOCHS:-40}"
 
 echo "RUN_NAME    : $RUN_NAME"
+echo "attack_norm : $NORM"
 echo "optimizer.lr: $LR"
 echo "batch_size  : $BATCH"
 echo "epochs      : $EPOCHS"
@@ -43,7 +49,7 @@ echo "checkpoint  : $CKPT"
 
 python -m robust_training.adversarial_training \
   model=convnext_base \
-  attacks.attack_norm=l2 attacks.advtrain=true attacks.gradnorm=false \
+  attacks.attack_norm="$NORM" attacks.advtrain=true attacks.gradnorm=false \
   attacks.attack_criterion=madry attacks.attack_domain=pixel attacks.attack_eps=6 \
   continuation.enabled=true continuation.use_ema=true continuation.checkpoint_path="$CKPT" \
   epsilon_schedule.enabled=true epsilon_schedule.type=warmup_ramp_fixed \
