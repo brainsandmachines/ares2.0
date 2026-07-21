@@ -176,9 +176,19 @@ def _adv_family(sink: RowSink, arch: str, init: int, *, criterion: str, dvd: boo
                 kw["continuation.use_ema"] = "true"
                 epochs = _schedule_cols(kw, src, tgt, offset)
                 _common(kw, arch=arch, name=name, init=init, epochs=epochs, bs=bs, v1=False)
+                # resume (contepoch) inherits the dep's epoch counter -- but the dep's
+                # DB-best checkpoint isn't guaranteed to be its FINAL epoch (may be an
+                # earlier best-scoring one). lifecycle.py peeks the actual resumed
+                # epoch at launch and shifts training.epochs + the 4 epsilon_schedule.*
+                # columns by (actual - offset), so this chain always trains the
+                # intended number of new epochs regardless of which epoch it resumes
+                # from. resetepoch (continuation) rows always start at epoch 0, so
+                # they need no such correction.
+                resume_offset = offset if init_mode == "resume" else ""
                 sink.add(model_name=name, arch=arch, init=init, protocol=protocol,
                          init_mode=init_mode, epoch_variant=variant_tag,
                          dependency_model_name=dep, threat_norm=norm, threat_eps=tgt,
+                         resume_offset_assumed=resume_offset,
                          notes=f"cont {src}->{tgt} from {dep} ({init_mode})", **kw)
                 if tgt == 8:
                     cont48_name, cont48_epochs = name, epochs
@@ -257,8 +267,13 @@ def _gradnorm_family(sink: RowSink, arch: str, init: int, baseline_name: str):
         kw["attacks.attack_eps"] = eps
         kw["checkpointing.save_best_adv"] = "true"
         _common(kw, arch=arch, name=name, init=init, epochs=total, bs=bs, v1=False)
+        # See the matching comment in _adv_family: resume inherits the baseline's
+        # DB-best checkpoint, which may not be its final (150th) epoch, so
+        # lifecycle.py shifts training.epochs by (actual resumed epoch - 150) at
+        # launch to guarantee GRADNORM_EXTRA_EPOCHS (50) new epochs are trained.
         sink.add(model_name=name, arch=arch, init=init, protocol="gradnorm", init_mode="resume",
                  dependency_model_name=baseline_name, threat_norm="linf", threat_eps=eps,
+                 resume_offset_assumed=BASELINE_EPOCHS,
                  notes=f"gradnorm l1 eps{eps} resume from {baseline_name} (150->200)", **kw)
 
 
@@ -325,8 +340,11 @@ def write_csv(path: Path, rows: list[dict]) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description="Generate the permanent AIRCC model CSVs.")
     ap.add_argument("--out-dir", type=Path, default=Path(__file__).resolve().parent / "csv")
+    ap.add_argument("--archs", default=",".join(ARCHES),
+                     help="Comma-separated subset of archs to (re)write (default: all).")
     args = ap.parse_args()
-    for arch in ARCHES:
+    archs = [a.strip() for a in args.archs.split(",") if a.strip()]
+    for arch in archs:
         rows = build_arch_rows(arch)
         seen: set[str] = set()
         for row in rows:
@@ -339,10 +357,11 @@ def main() -> None:
         print(f"[generate_csvs] wrote {len(rows)} rows -> {out}")
 
     # Standalone clean-V1 mini-campaign (own dir, own DB via --csv-dir at seed time).
-    v1_out = Path(__file__).resolve().parent / V1_CLEAN_SUBDIR / f"{V1_CLEAN_ARCH}.csv"
-    v1_rows = build_v1_clean_rows()
-    write_csv(v1_out, v1_rows)
-    print(f"[generate_csvs] wrote {len(v1_rows)} rows -> {v1_out}")
+    if V1_CLEAN_ARCH in archs:
+        v1_out = Path(__file__).resolve().parent / V1_CLEAN_SUBDIR / f"{V1_CLEAN_ARCH}.csv"
+        v1_rows = build_v1_clean_rows()
+        write_csv(v1_out, v1_rows)
+        print(f"[generate_csvs] wrote {len(v1_rows)} rows -> {v1_out}")
 
 
 if __name__ == "__main__":

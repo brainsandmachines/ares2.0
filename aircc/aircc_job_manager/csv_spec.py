@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import csv as _csv
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 CSV_DIR = Path(__file__).resolve().parent / "csv"
 ARCHES = ("convnext_small", "convnext_base", "convnext_large")
@@ -27,6 +27,16 @@ ARCHES = ("convnext_small", "convnext_base", "convnext_large")
 METADATA_COLUMNS = [
     "model_name", "arch", "init", "protocol", "init_mode", "epoch_variant",
     "dependency_model_name", "threat_norm", "threat_eps", "priority", "notes",
+    # For init_mode="resume" rows only: the epoch the dependency's final
+    # checkpoint was ASSUMED to be at when training.epochs / epsilon_schedule.*
+    # were computed (e.g. 150 for gradnorm's baseline dep, or the source
+    # model's target epoch count for dvd_b contepoch chains). At launch,
+    # lifecycle.py peeks the ACTUAL resumed checkpoint's epoch and shifts
+    # training.epochs + the 4 epsilon_schedule.* columns by the delta, so a
+    # resume from an earlier (e.g. best-scoring, not final-epoch) checkpoint
+    # still trains exactly the originally-intended number of NEW epochs.
+    # Empty for every other row -- lifecycle.py leaves those untouched.
+    "resume_offset_assumed",
 ]
 
 # Columns whose header is the Hydra key; emitted as key=value when non-empty,
@@ -67,10 +77,18 @@ OVERRIDE_COLUMNS = [
 ALL_COLUMNS = METADATA_COLUMNS + OVERRIDE_COLUMNS
 
 
-def build_overrides(row: dict) -> list[str]:
-    """Return ``key=value`` Hydra tokens for every non-empty override cell."""
+def build_overrides(row: dict, skip: Optional[Iterable[str]] = None) -> list[str]:
+    """Return ``key=value`` Hydra tokens for every non-empty override cell.
+
+    ``skip`` omits columns the caller will emit itself (e.g. lifecycle.py
+    replaces training.epochs / epsilon_schedule.* with resume-shifted values
+    for managed resume rows -- Hydra errors on a key passed twice).
+    """
+    skip_set = set(skip) if skip else set()
     out: list[str] = []
     for col in OVERRIDE_COLUMNS:
+        if col in skip_set:
+            continue
         val = str(row.get(col, "")).strip()
         if val != "":
             out.append(f"{col}={val}")
