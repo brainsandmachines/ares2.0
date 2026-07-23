@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=convnext_base_gradnorm_l1_2_init0_baseline30
+#SBATCH --job-name=convnext_base_gradnorm_l1_2_init0_baseline128
 #SBATCH --time=14-00:00:00
 #SBATCH --partition=rtx6000
 #SBATCH --qos=golan-neuro
@@ -28,9 +28,9 @@ python -m robust_training.adversarial_training \
     optimizer.clip_grad=1.0 \
     optimizer.clip_mode=norm \
     model.experiment_num=0 \
-    model.experiment_name=convnext_base_gradnorm_l1_2_init0_from_baseline30 \
+    model.experiment_name=convnext_base_gradnorm_l1_2_init0_from_baseline128 \
     model.resume=/home/ashtomer/projects/ares/results/models/convnext_base_baseline_init0/model_best.pth.tar \
-    training.epochs=30 \
+    training.epochs=128 \
     training.batch_size=128 \
     checkpointing.save_best_adv=true \
     final_eval=true \
