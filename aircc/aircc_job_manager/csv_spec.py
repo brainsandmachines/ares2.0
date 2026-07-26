@@ -141,6 +141,21 @@ def load_spec(csv_dir: Path = CSV_DIR) -> tuple[list[dict], dict[str, dict], dic
         if name in seen:
             raise ValueError(f"{csv_dir}: duplicate model_name {name!r}")
         seen.add(name)
+        # Field count must match the header EXACTLY. DictReader maps by position:
+        # a row one cell short silently shifts every later value into the wrong
+        # column and leaves the last key as None -- which build_overrides then
+        # emits as the literal string "None". Catch it here, loudly, instead of
+        # launching a training that dies on a nonsense override.
+        if None in r:  # DictReader's restkey: more fields than the header
+            raise ValueError(
+                f"{csv_dir}: {name}: row has MORE fields than the header "
+                f"(extra values: {r[None]!r})")
+        missing = [c for c, v in r.items() if v is None]
+        if missing:
+            raise ValueError(
+                f"{csv_dir}: {name}: row is SHORT of the header -- no value for {missing}; "
+                "every value after the gap is shifted into the wrong column "
+                "(usually a hand-edited row missing a comma)")
         for col in ("priority", "training.epochs"):
             val = str(r.get(col, "") or "").strip()
             try:
