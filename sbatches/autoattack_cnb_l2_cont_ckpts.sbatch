@@ -1,18 +1,18 @@
 #!/bin/bash
-#SBATCH --job-name=aa_cnb_l2_linf6_ckpts
+#SBATCH --job-name=aa_cnb_l2_l2eps6_ckpts
 #SBATCH --time=1-00:00:00
 #SBATCH --partition=rtx6000
 #SBATCH --qos=golan-neuro
 #SBATCH --gpus=1
 #SBATCH --array=0-38%6
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
-#SBATCH --output=/home/ashtomer/projects/ares/outs/autoattack_extra_checkpoints/cnb_l2_linf6/%A_%a.out
+#SBATCH --output=/home/ashtomer/projects/ares/outs/autoattack_extra_checkpoints/cnb_l2_l2eps6/%A_%a.out
 
-# AutoAttack, Linf norm, eps_input=6 (eval eps=6/255), 64 images in a single
-# batch, over every checkpoint kept in each of the 3 convnext_base l2
-# cont4to6 lr-grid model dirs: the 10 rolling checkpoint-N.pth.tar files plus
-# last.pth.tar, model_best.pth.tar, and model_best_adv.pth.tar (13 per model,
-# 39 total).
+# AutoAttack, L2 norm, eps_input=6 (matches these models' own training norm),
+# 64 images in a single batch, over every checkpoint kept in each of the 3
+# convnext_base l2 cont4to6 lr-grid model dirs: the 10 rolling
+# checkpoint-N.pth.tar files plus last.pth.tar, model_best.pth.tar, and
+# model_best_adv.pth.tar (13 per model, 39 total).
 
 set -euo pipefail
 
@@ -72,5 +72,7 @@ python data_analysis/autoattack_extra_ckpts_linf6.py \
   --checkpoint "${CKPT_PATH}" \
   --model-dir "${MODELS_ROOT}/${MODEL_DIR_NAME}" \
   --val-dir "${VAL_DIR}" \
+  --norm l2 \
+  --eps-input 6 \
   --batch-size "${BATCH_SIZE}" \
   --device cuda
