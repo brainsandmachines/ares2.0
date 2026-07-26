@@ -15,7 +15,8 @@
 # Required (via --export): RUN_NAME, LR   (LR is the exact peak optimizer.lr)
 # Optional: NORM (l2|linf, default l2), CKPT_NAME (source checkpoint file, default
 #           model_best.pth.tar), SOURCE_MODEL (default convnext_base_${NORM}_4_init0),
-#           BATCH (default 128), EPOCHS (default 40)
+#           BATCH (default 128), EPOCHS (default 40), ATTACK_IT (PGD steps, default
+#           unset = use the training config's default)
 
 set -euo pipefail
 nvidia-smi
@@ -39,18 +40,24 @@ CKPT="${MODELS_ROOT}/${SOURCE_MODEL}/${CKPT_NAME}"
 [[ -f "$CKPT" ]] || { echo "[ERROR] missing source ckpt: $CKPT"; exit 1; }
 BATCH="${BATCH:-128}"
 EPOCHS="${EPOCHS:-40}"
+ATTACK_IT="${ATTACK_IT:-}"
 
 echo "RUN_NAME    : $RUN_NAME"
 echo "attack_norm : $NORM"
 echo "optimizer.lr: $LR"
 echo "batch_size  : $BATCH"
 echo "epochs      : $EPOCHS"
+echo "attack_it   : ${ATTACK_IT:-<default>}"
 echo "checkpoint  : $CKPT"
+
+ATTACK_IT_OVERRIDE=()
+[[ -n "$ATTACK_IT" ]] && ATTACK_IT_OVERRIDE=(attacks.attack_it="$ATTACK_IT")
 
 python -m robust_training.adversarial_training \
   model=convnext_base \
   attacks.attack_norm="$NORM" attacks.advtrain=true attacks.gradnorm=false \
   attacks.attack_criterion=madry attacks.attack_domain=pixel attacks.attack_eps=6 \
+  "${ATTACK_IT_OVERRIDE[@]}" \
   continuation.enabled=true continuation.use_ema=true continuation.checkpoint_path="$CKPT" \
   epsilon_schedule.enabled=true epsilon_schedule.type=warmup_ramp_fixed \
   epsilon_schedule.source_epsilon=4 epsilon_schedule.target_epsilon=6 \
