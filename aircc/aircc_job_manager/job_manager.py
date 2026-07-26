@@ -11,6 +11,11 @@ Safe to start, kill, and restart at any time: claims are atomic, stale running
 rows are requeued after 15 min without a heartbeat, and each training resumes
 from its own ``last.pth.tar``.
 
+The CSVs are re-read from disk before EVERY claim (never cached for the process
+lifetime), and CSV priority/epochs are pushed onto still-pending DB rows first,
+so editing a CSV while the manager runs takes effect on every model that has not
+been claimed yet -- no need to cancel and resubmit the sbatch.
+
     # dry-run: show the next eligible commands without launching anything
     python -m aircc.aircc_job_manager.job_manager --dry-run
 
@@ -28,7 +33,7 @@ import time
 from pathlib import Path
 
 from aircc.aircc_job_manager import lifecycle
-from aircc.aircc_job_manager.csv_spec import CSV_DIR, deps_map, load_all_rows, row_map
+from aircc.aircc_job_manager.csv_spec import CSV_DIR, load_spec
 from aircc.aircc_job_manager.db import AirccDB
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -53,10 +58,9 @@ def _log(msg: str) -> None:
 
 
 class JobManager:
-    def __init__(self, db: AirccDB, rows: dict, deps: dict, models_root: Path, val_dir: str | None):
+    def __init__(self, db: AirccDB, csv_dir: Path, models_root: Path, val_dir: str | None):
         self.db = db
-        self.rows = rows
-        self.deps = deps
+        self.csv_dir = csv_dir
         self.models_root = models_root
         self.val_dir = val_dir
         self.owner = _owner_task()
@@ -64,11 +68,43 @@ class JobManager:
         self.lock = threading.Lock()
         self.stop = threading.Event()
 
+    # ---- spec: re-read from disk on every claim ---------------------------
+    def _load_spec(self) -> tuple[dict, dict]:
+        """Fresh ``(rows, deps)`` off disk -- no snapshot is ever cached.
+
+        Read before every claim so a CSV edit reaches every model that has not
+        been claimed yet, without cancelling and resubmitting the sbatch. Models
+        already training keep the row they were launched with.
+        """
+        _, rows, deps = load_spec(self.csv_dir)
+        return rows, deps
+
     # ---- worker: claim + run lifecycle ------------------------------------
     def _worker(self, idx: int) -> None:
         while not self.stop.is_set():
+            # Re-read the CSVs, then push priority/epochs onto still-pending rows,
+            # THEN claim -- so this claim sees the CSV as it is on disk right now.
             try:
-                job = self.db.claim_next(self.owner, self.deps)
+                rows, deps = self._load_spec()
+            except Exception as exc:
+                # Loud and never stale: a malformed/half-written CSV blocks claiming
+                # until it parses again, rather than silently reusing older values.
+                _log(f"slot{idx} CSV RELOAD FAILED, not claiming: {exc}")
+                self.stop.wait(IDLE_SLEEP_S)
+                continue
+            try:
+                changed = self.db.sync_pending_spec(
+                    {n: (int(r["training.epochs"]), int(r["priority"])) for n, r in rows.items()}
+                )
+                if changed:
+                    _log(f"slot{idx} csv sync: {len(changed)} pending row(s) updated "
+                         f"({', '.join(changed[:5])}{' ...' if len(changed) > 5 else ''})")
+            except Exception as exc:  # pragma: no cover - defensive
+                _log(f"slot{idx} csv sync error (ignored): {exc}")
+                self.stop.wait(IDLE_SLEEP_S)
+                continue
+            try:
+                job = self.db.claim_next(self.owner, deps)
             except Exception as exc:  # pragma: no cover - defensive
                 _log(f"slot{idx} claim_next error (ignored): {exc}")
                 self.stop.wait(IDLE_SLEEP_S)
@@ -76,7 +112,7 @@ class JobManager:
             if job is None:
                 self.stop.wait(IDLE_SLEEP_S)
                 continue
-            row = self.rows.get(job.model_name)
+            row = rows.get(job.model_name)
             if row is None:
                 # Seeded model with no CSV row (shouldn't happen); fail it loudly.
                 self.db.mark_failed(job.model_name, "no CSV row for seeded model")
@@ -128,17 +164,21 @@ class JobManager:
 
     # ---- dry-run ----------------------------------------------------------
     def dry_run(self, n: int) -> None:
-        pending = sorted((j for j in self.db.all_jobs() if j.status == "pending"),
+        rows, deps = self._load_spec()
+        # Mirror claim_next's filter exactly: parked rows (owner_task=-1, still
+        # 'pending') are never claimable, so they must not show up here either.
+        pending = sorted((j for j in self.db.all_jobs()
+                          if j.status == "pending" and j.owner_task is None),
                          key=lambda j: j.priority)
         shown = 0
         _log(f"dry-run: next {n} eligible job(s) in claim order")
         for j in pending:
-            dep = self.deps.get(j.model_name, "")
+            dep = deps.get(j.model_name, "")
             if dep:
                 dj = self.db.get(dep)
                 if not (dj and dj.status == "finished" and (dj.best_checkpoint or "").strip()):
                     continue
-            row = self.rows.get(j.model_name)
+            row = rows.get(j.model_name)
             if row is None:
                 continue
             try:
@@ -169,11 +209,12 @@ def main() -> int:
     if not args.db:
         ap.error("no DB path (set --db or $AIRCC_DB)")
 
-    all_rows = load_all_rows(args.csv_dir)
-    rows = row_map(all_rows)
-    deps = deps_map(all_rows)
+    # Fail fast on a bad --csv-dir; the workers re-read (and re-validate) the CSVs
+    # before every claim, so nothing is cached from here.
+    all_rows, _, _ = load_spec(args.csv_dir)
+    _log(f"csv spec ok: {len(all_rows)} row(s) in {args.csv_dir}")
     db = AirccDB(args.db)
-    mgr = JobManager(db, rows, deps, args.models_root, args.val_dir)
+    mgr = JobManager(db, args.csv_dir, args.models_root, args.val_dir)
 
     if args.dry_run:
         mgr.dry_run(args.dry_run_count)
