@@ -162,6 +162,41 @@ class AirccDB:
             return cur.rowcount
         return self._atomic(op)
 
+    def sync_pending_spec(self, spec: Mapping[str, tuple[int, int]]) -> list[str]:
+        """Push CSV ``(total_epochs, priority)`` onto rows still pending + unclaimed.
+
+        ``spec`` maps model_name -> (total_epochs, priority). Called before every
+        claim so a CSV priority edit reorders the queue live (claim_next orders by
+        the DB column, not the CSV). Returns the names actually changed.
+
+        Deliberately UPDATE-only: seeding is selective (--arch/--init) while the
+        CSVs hold every model, so inserting here would pull unseeded models into
+        the queue. Running/finished/failed rows and parked rows (owner_task=-1)
+        are left alone; re-opening a finished row stays a seed_db --reconcile job.
+        """
+        def op(conn: sqlite3.Connection) -> list[str]:
+            cur = conn.execute(
+                "SELECT model_name, total_epochs, priority FROM jobs "
+                "WHERE status='pending' AND owner_task IS NULL"
+            )
+            changed: list[str] = []
+            for row in cur.fetchall():
+                want = spec.get(row["model_name"])
+                if want is None:
+                    continue
+                total, prio = int(want[0]), int(want[1])
+                if row["total_epochs"] == total and row["priority"] == prio:
+                    continue
+                conn.execute(
+                    "UPDATE jobs SET total_epochs=?, priority=? WHERE model_name=? "
+                    "AND status='pending' AND owner_task IS NULL",
+                    (total, prio, row["model_name"]),
+                )
+                changed.append(row["model_name"])
+            return changed
+
+        return self._atomic(op)
+
     # ---- claiming -----------------------------------------------------------
     def claim_next(self, owner_task: int, deps: Mapping[str, str]) -> Optional[Job]:
         """Atomically claim the highest-priority eligible pending model.

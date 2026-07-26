@@ -12,6 +12,15 @@ override** (header = the Hydra key); the manager builds the command from the
 non-empty override cells. The SQLite DB holds **operational state only** (no
 hyperparameters): claiming, progress, best checkpoint.
 
+**CSV edits are live.** The manager re-reads and re-validates the CSVs before
+*every* claim (never caching them for the process lifetime) and pushes CSV
+`priority` / `training.epochs` onto rows that are still pending and unclaimed, so
+any model not yet claimed picks up your edit — no need to cancel and resubmit the
+sbatch. Models already training keep the row they were launched with. A malformed
+or half-written CSV blocks claiming (logged as `CSV RELOAD FAILED`) rather than
+silently running stale values; the sync never inserts rows, so seeding stays a
+deliberate `seed_db.py` step.
+
 ## Files
 
 | File | Purpose |
@@ -23,7 +32,7 @@ hyperparameters): claiming, progress, best checkpoint.
 | `progress.py` | In-training DB hooks: `update_epoch`, `heartbeat`, `write_best_checkpoint` (no-op unless `AIRCC_DB`+`AIRCC_MODEL_ID`). |
 | `best_checkpoint.py` | Score best/last/advbest by an explicit (norm,eps) threat model. |
 | `lifecycle.py` | Build the command from columns + resolve checkpoints; run one subprocess; mark finished/failed. |
-| `job_manager.py` | 2 slots/GPU, requeue-before-claim, heartbeat, `--dry-run`. |
+| `job_manager.py` | 2 slots/GPU, CSV reload + spec sync before every claim, requeue-before-claim, heartbeat, `--dry-run`. |
 | `seed_db.py` | Selective seeder (`--arch`, `--init`) + `--reconcile`. |
 | `status.py` | Read-only dashboard. |
 | `slurm/job_manager.sbatch` | Pyxis array `1-200%16` on `sandbox`, v2 image. |

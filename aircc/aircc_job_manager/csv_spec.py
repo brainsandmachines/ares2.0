@@ -118,3 +118,33 @@ def row_map(rows: Iterable[dict]) -> dict[str, dict]:
 
 def deps_map(rows: Iterable[dict]) -> dict[str, str]:
     return {r["model_name"]: (r.get("dependency_model_name") or "").strip() for r in rows}
+
+
+def load_spec(csv_dir: Path = CSV_DIR) -> tuple[list[dict], dict[str, dict], dict[str, str]]:
+    """Load + VALIDATE the CSVs; return ``(rows, row_map, deps_map)``.
+
+    The job manager calls this before every claim so CSV edits reach models that
+    have not been claimed yet. Because ``generate_csvs.py`` rewrites the files in
+    place (non-atomic ``DictWriter``), a reload can catch a half-written file --
+    so this validates the whole snapshot and raises ``ValueError`` rather than
+    handing back a partially-applied spec. The caller is expected to refuse to
+    claim on error, never to fall back to an older snapshot.
+    """
+    rows = load_all_rows(csv_dir)
+    if not rows:
+        raise ValueError(f"no arch CSVs found in {csv_dir} (looked for {'/'.join(ARCHES)}.csv)")
+    seen: set[str] = set()
+    for i, r in enumerate(rows):
+        name = (r.get("model_name") or "").strip()
+        if not name:
+            raise ValueError(f"{csv_dir}: row {i} has a blank model_name")
+        if name in seen:
+            raise ValueError(f"{csv_dir}: duplicate model_name {name!r}")
+        seen.add(name)
+        for col in ("priority", "training.epochs"):
+            val = str(r.get(col, "") or "").strip()
+            try:
+                int(val)
+            except ValueError:
+                raise ValueError(f"{csv_dir}: {name}: {col}={val!r} is not an int") from None
+    return rows, row_map(rows), deps_map(rows)

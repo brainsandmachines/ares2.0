@@ -1,6 +1,7 @@
 #!/bin/bash
 # Daily AIRCC check-in: (1) run the aircc-status skill's status script and email
-# if the running count isn't 32 or any job has failed, (2) back up the AIRCC
+# if the running count doesn't match squeue's live expected count (2 models per
+# RUNNING aircc_jm task) or any job has failed, (2) back up the AIRCC
 # results/models tree to Botero, pulled through the local sshfs AIRCC mount (no
 # ssh in the rsync itself), emailing only if the rsync itself fails. Run from a
 # Botero cron.
@@ -20,7 +21,6 @@ SRC="${AIRCC_MOUNT:-$HOME/aircc_mount/ashtomer/ares/results/models}"
 DEST="/mnt/data/robustness_models/aircc_models"
 REPO_ROOT="${ARES_REPO:-/home/tomer_a/Documents/ares}"
 STATUS_SCRIPT="${AIRCC_STATUS_SCRIPT:-$HOME/.claude/skills/aircc-status/scripts/aircc_status.py}"
-EXPECTED_RUNNING="${AIRCC_EXPECTED_RUNNING:-32}"
 LOCK_FILE="${AIRCC_BACKUP_LOCK:-$DEST/.backup.lock}"
 
 mkdir -p -m 0755 "$DEST"
@@ -47,9 +47,15 @@ PYEOF
 }
 
 # --- 1. aircc-status check ---
+# expected_running comes from aircc_status.py itself, computed live from squeue
+# (2 models per RUNNING aircc_jm array task) -- not a hardcoded slot count, since
+# the number of live tasks (and therefore expected running models) changes as the
+# campaign's job allocation changes.
 status_out="$(python3 "$STATUS_SCRIPT" 2>&1)"
 status_rc=$?
-running_n="$(grep -oP 'running=\K[0-9]+' <<<"$status_out" | head -1)"
+running_n="$(grep -oP 'counts:.*?\brunning=\K[0-9]+' <<<"$status_out" | head -1)"
+expected_n="$(grep -oP '^expected_running=\K[0-9]+' <<<"$status_out" | head -1)"
+check_state="$(grep -oP '\[(OK|MISMATCH)\]' <<<"$status_out" | head -1)"
 failed_n="$(grep -oP '## failed \(\K[0-9]+' <<<"$status_out" | head -1)"
 
 if [[ "$status_rc" -ne 0 ]]; then
@@ -57,11 +63,20 @@ if [[ "$status_rc" -ne 0 ]]; then
     notify "[aircc] status check failed" "$STATUS_SCRIPT exited rc=$status_rc:
 
 $status_out"
-elif [[ "${running_n:-0}" -ne "$EXPECTED_RUNNING" || "${failed_n:-0}" -ne 0 ]]; then
-    echo "[status] $(date -Is) ALERT: running=${running_n:-0} (expected $EXPECTED_RUNNING) failed=${failed_n:-0}" >&2
-    notify "[aircc] status alert: running=${running_n:-0} failed=${failed_n:-0}" "$status_out"
+elif [[ -z "$expected_n" ]]; then
+    # squeue SSH check was unavailable -- can't compare against a live expected
+    # count, so only alert on failures, don't fabricate a running-count mismatch.
+    if [[ "${failed_n:-0}" -ne 0 ]]; then
+        echo "[status] $(date -Is) ALERT: failed=${failed_n:-0} (expected_running check unavailable)" >&2
+        notify "[aircc] status alert: failed=${failed_n:-0}" "$status_out"
+    else
+        echo "[status] $(date -Is) ok: running=${running_n:-0} failed=0 (expected_running check unavailable)"
+    fi
+elif [[ "$check_state" != "[OK]" || "${failed_n:-0}" -ne 0 ]]; then
+    echo "[status] $(date -Is) ALERT: running=${running_n:-0} (expected $expected_n) failed=${failed_n:-0}" >&2
+    notify "[aircc] status alert: running=${running_n:-0} (expected $expected_n) failed=${failed_n:-0}" "$status_out"
 else
-    echo "[status] $(date -Is) ok: running=$running_n failed=0"
+    echo "[status] $(date -Is) ok: running=$running_n (expected $expected_n) failed=0"
 fi
 
 # --- 2. rsync backup ---
