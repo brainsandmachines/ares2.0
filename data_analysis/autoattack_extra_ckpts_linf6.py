@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""One-off AutoAttack Linf eps=6 sweep over specific numbered checkpoints.
+"""One-off AutoAttack sweep over specific numbered checkpoints.
 
 Evaluates a single checkpoint file (not the best/last/advbest kinds handled by
-autoattack_array_eval.py) against AutoAttack, Linf norm, eps_input=6 (eval eps
-= 6/255), using exactly one batch of --batch-size images. Appends a single row
-to a per-checkpoint output CSV so parallel Slurm array tasks never race on the
-same file.
+autoattack_array_eval.py) against AutoAttack for one --norm/--eps-input pair
+(default: linf, eps_input=6, i.e. eval eps=6/255), using exactly one batch of
+--batch-size images. Appends a single row to a per-checkpoint output CSV so
+parallel Slurm array tasks never race on the same file.
 """
 
 from __future__ import annotations
@@ -36,20 +36,19 @@ from data_analysis.autoattack_array_eval import (  # noqa: E402
 )
 from types import SimpleNamespace  # noqa: E402
 
-NORM = "linf"
-EPS_INPUT = 6.0
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--model-dir", type=Path, required=True)
     parser.add_argument("--val-dir", type=Path, required=True)
+    parser.add_argument("--norm", default="linf", choices=["linf", "l2", "l1"])
+    parser.add_argument("--eps-input", type=float, default=6.0)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
     parser.add_argument("--output-csv", type=Path, default=None,
-                         help="Defaults to <model-dir>/autoattack_extra_ckpts_linf6_<checkpoint-stem>.csv")
+                         help="Defaults to <model-dir>/autoattack_extra_ckpts_<norm><eps_input>_<checkpoint-stem>.csv")
     return parser.parse_args()
 
 
@@ -69,7 +68,11 @@ def main() -> None:
             ckpt_stem = ckpt_stem[: -len(suffix)]
             break
 
-    output_csv = args.output_csv or (model_dir / f"autoattack_extra_ckpts_linf6_{ckpt_stem}.csv")
+    norm = args.norm
+    eps_input = args.eps_input
+    tag = f"{norm}{eps_input:g}"
+
+    output_csv = args.output_csv or (model_dir / f"autoattack_extra_ckpts_{tag}_{ckpt_stem}.csv")
     logger = setup_logger(model_dir, dry_run=False)
 
     set_seed(args.seed)
@@ -92,8 +95,8 @@ def main() -> None:
         selected_indices,
         selected_targets,
         selection_args,
-        run_id=f"autoattack_extra_ckpts_linf6_{ckpt_stem}",
-        selection_json=f"autoattack_extra_ckpts_linf6_{ckpt_stem}_selection.json",
+        run_id=f"autoattack_extra_ckpts_{tag}_{ckpt_stem}",
+        selection_json=f"autoattack_extra_ckpts_{tag}_{ckpt_stem}_selection.json",
     )
 
     logger.info(
@@ -104,22 +107,22 @@ def main() -> None:
     clean_acc = clean_accuracy(model, loader, device)
     logger.info("clean_acc=%.4f", clean_acc * 100.0)
 
-    epsilon = eps_eval(NORM, EPS_INPUT)
+    epsilon = eps_eval(norm, eps_input)
     set_seed(args.seed)
-    logger.info("running AutoAttack norm=%s epsilon_input=%s epsilon_eval=%s", NORM, EPS_INPUT, epsilon)
-    robust_acc = run_autoattack_setting(model, loader, device, NORM, epsilon, args.seed, logger)
+    logger.info("running AutoAttack norm=%s epsilon_input=%s epsilon_eval=%s", norm, eps_input, epsilon)
+    robust_acc = run_autoattack_setting(model, loader, device, norm, epsilon, args.seed, logger)
 
     epoch = extract_epoch_from_checkpoint(checkpoint_path)
     row = {
-        "run_id": f"autoattack_extra_ckpts_linf6_1x{args.batch_size}",
+        "run_id": f"autoattack_extra_ckpts_{tag}_1x{args.batch_size}",
         "timestamp": dt.datetime.now().isoformat(timespec="seconds"),
         "model_name": model_dir.name,
         "checkpoint_kind": ckpt_stem,
         "checkpoint_path": str(checkpoint_path),
         "state_dict_used": state_key,
         "epoch": epoch,
-        "attack_norm": NORM,
-        "epsilon_input": EPS_INPUT,
+        "attack_norm": norm,
+        "epsilon_input": eps_input,
         "epsilon_eval": epsilon,
         "clean_acc": clean_acc * 100.0,
         "robust_acc": robust_acc * 100.0,

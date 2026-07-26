@@ -71,5 +71,7 @@ python data_analysis/autoattack_extra_ckpts_linf6.py \
   --checkpoint "${CKPT_PATH}" \
   --model-dir "${MODELS_ROOT}/${MODEL_DIR_NAME}" \
   --val-dir "${VAL_DIR}" \
+  --norm linf \
+  --eps-input 6 \
   --batch-size "${BATCH_SIZE}" \
   --device cuda
