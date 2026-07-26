@@ -63,7 +63,13 @@ def main() -> None:
     if not checkpoint_path.exists():
         raise SystemExit(f"Missing checkpoint: {checkpoint_path}")
 
-    output_csv = args.output_csv or (model_dir / f"autoattack_extra_ckpts_linf6_{checkpoint_path.stem}.csv")
+    ckpt_stem = checkpoint_path.name
+    for suffix in (".pth.tar", ".pth"):
+        if ckpt_stem.endswith(suffix):
+            ckpt_stem = ckpt_stem[: -len(suffix)]
+            break
+
+    output_csv = args.output_csv or (model_dir / f"autoattack_extra_ckpts_linf6_{ckpt_stem}.csv")
     logger = setup_logger(model_dir, dry_run=False)
 
     set_seed(args.seed)
@@ -86,8 +92,8 @@ def main() -> None:
         selected_indices,
         selected_targets,
         selection_args,
-        run_id=f"autoattack_extra_ckpts_linf6_{checkpoint_path.stem}",
-        selection_json=f"autoattack_extra_ckpts_linf6_{checkpoint_path.stem}_selection.json",
+        run_id=f"autoattack_extra_ckpts_linf6_{ckpt_stem}",
+        selection_json=f"autoattack_extra_ckpts_linf6_{ckpt_stem}_selection.json",
     )
 
     logger.info(
@@ -108,7 +114,7 @@ def main() -> None:
         "run_id": f"autoattack_extra_ckpts_linf6_1x{args.batch_size}",
         "timestamp": dt.datetime.now().isoformat(timespec="seconds"),
         "model_name": model_dir.name,
-        "checkpoint_kind": checkpoint_path.stem,
+        "checkpoint_kind": ckpt_stem,
         "checkpoint_path": str(checkpoint_path),
         "state_dict_used": state_key,
         "epoch": epoch,
