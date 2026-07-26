@@ -83,6 +83,32 @@ def test_load_spec_rejects_non_int_priority(tmp_path):
         load_spec(tmp_path / "csv")
 
 
+def test_load_spec_rejects_short_row(tmp_path):
+    """A row one cell short shifts every later value left and leaves the last key
+    None -- which build_overrides would emit as the literal string "None"."""
+    path = _write_csv(tmp_path / "csv", [_row("A"), _row("B", priority=1)])
+    with path.open(newline="") as fh:
+        lines = fh.read().splitlines(keepends=True)
+    body = lines[2].rstrip("\r\n")
+    lines[2] = body[: body.rfind(",")] + lines[2][len(body):]   # drop one trailing cell
+    with path.open("w", newline="") as fh:
+        fh.write("".join(lines))
+    with pytest.raises(ValueError, match="SHORT of the header"):
+        load_spec(tmp_path / "csv")
+
+
+def test_load_spec_rejects_long_row(tmp_path):
+    path = _write_csv(tmp_path / "csv", [_row("A"), _row("B", priority=1)])
+    with path.open(newline="") as fh:
+        lines = fh.read().splitlines(keepends=True)
+    body = lines[2].rstrip("\r\n")
+    lines[2] = body + ",oops" + lines[2][len(body):]
+    with path.open("w", newline="") as fh:
+        fh.write("".join(lines))
+    with pytest.raises(ValueError, match="MORE fields than the header"):
+        load_spec(tmp_path / "csv")
+
+
 def test_load_spec_rejects_non_int_epochs(tmp_path):
     bad = _row("A")
     bad["training.epochs"] = "many"
