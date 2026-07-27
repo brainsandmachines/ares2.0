@@ -18,7 +18,8 @@
 #           CKPT_NAME (source checkpoint file, default model_best.pth.tar),
 #           SOURCE_MODEL (default convnext_base_${NORM}_4_init0), BATCH (default 128),
 #           EPOCHS (default 40), ATTACK_IT (PGD steps, default unset = use the
-#           training config's default)
+#           training config's default), TARGET_EPS (epsilon_schedule.target_epsilon
+#           and attacks.attack_eps, default 6; source_epsilon stays fixed at 4)
 
 set -euo pipefail
 nvidia-smi
@@ -43,6 +44,7 @@ CKPT="${MODELS_ROOT}/${SOURCE_MODEL}/${CKPT_NAME}"
 BATCH="${BATCH:-128}"
 EPOCHS="${EPOCHS:-40}"
 ATTACK_IT="${ATTACK_IT:-}"
+TARGET_EPS="${TARGET_EPS:-6}"
 
 echo "RUN_NAME    : $RUN_NAME"
 echo "attack_norm : $NORM"
@@ -50,6 +52,7 @@ echo "optimizer.lr: ${LR:-<auto: lrb * batch_size / 512>}"
 echo "batch_size  : $BATCH"
 echo "epochs      : $EPOCHS"
 echo "attack_it   : ${ATTACK_IT:-<default>}"
+echo "target_eps  : $TARGET_EPS"
 echo "checkpoint  : $CKPT"
 
 ATTACK_IT_OVERRIDE=()
@@ -60,11 +63,11 @@ LR_OVERRIDE=()
 python -m robust_training.adversarial_training \
   model=convnext_base \
   attacks.attack_norm="$NORM" attacks.advtrain=true attacks.gradnorm=false \
-  attacks.attack_criterion=madry attacks.attack_domain=pixel attacks.attack_eps=6 \
+  attacks.attack_criterion=madry attacks.attack_domain=pixel attacks.attack_eps="$TARGET_EPS" \
   "${ATTACK_IT_OVERRIDE[@]}" \
   continuation.enabled=true continuation.use_ema=true continuation.checkpoint_path="$CKPT" \
   epsilon_schedule.enabled=true epsilon_schedule.type=warmup_ramp_fixed \
-  epsilon_schedule.source_epsilon=4 epsilon_schedule.target_epsilon=6 \
+  epsilon_schedule.source_epsilon=4 epsilon_schedule.target_epsilon="$TARGET_EPS" \
   epsilon_schedule.warmup_epochs=4 epsilon_schedule.ramp_start_epoch=5 \
   epsilon_schedule.ramp_end_epoch=30 epsilon_schedule.fixed_start_epoch=31 \
   checkpointing.save_best_adv=true \
