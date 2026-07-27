@@ -130,6 +130,31 @@ def test_is_complete_output_accepts_mixed_run_ids(tmp_path):
     )
 
 
+def test_is_complete_output_restricted_to_single_norm(tmp_path):
+    csv_path = tmp_path / "autoattack_sweep_results.csv"
+    ckpt_path = tmp_path / "model_best.pth.tar"
+    # Only linf@8 is present; a full linf/l2/l1 sweep would be incomplete,
+    # but restricting to norms=("linf",) with that single eps should be complete.
+    write_rows(csv_path, [_aa_row("model_a", ckpt_path, "linf", 8.0)])
+
+    assert is_complete_output(
+        csv_path,
+        max_settings=None,
+        checkpoint_path=ckpt_path,
+        model_name="model_a",
+        eps_inputs=(8.0,),
+        norms=("linf",),
+    )
+    assert not is_complete_output(
+        csv_path,
+        max_settings=None,
+        checkpoint_path=ckpt_path,
+        model_name="model_a",
+        eps_inputs=(8.0,),
+        norms=("linf", "l2", "l1"),
+    )
+
+
 def test_write_rows_upserts_only_requested_settings(tmp_path):
     csv_path = tmp_path / "autoattack_sweep_results.csv"
     ckpt_path = tmp_path / "model_best.pth.tar"

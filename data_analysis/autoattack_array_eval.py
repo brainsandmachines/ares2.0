@@ -477,8 +477,9 @@ def aa_norm(norm: str) -> str:
 def expected_settings(
     max_settings: Optional[int] = None,
     eps_inputs: Iterable[float] = EPS_INPUTS,
+    norms: Iterable[str] = NORMS,
 ) -> list[tuple[str, float, float]]:
-    settings = [(norm, eps_input, eps_eval(norm, eps_input)) for norm in NORMS for eps_input in eps_inputs]
+    settings = [(norm, eps_input, eps_eval(norm, eps_input)) for norm in norms for eps_input in eps_inputs]
     return settings[:max_settings] if max_settings is not None else settings
 
 
@@ -537,10 +538,11 @@ def is_complete_output(
     model_name: str | None = None,
     run_id: str = RUN_ID,
     eps_inputs: Iterable[float] = EPS_INPUTS,
+    norms: Iterable[str] = NORMS,
 ) -> bool:
     if not csv_path.exists() or max_settings is not None:
         return False
-    expected = {_setting_key(norm, eps_input) for norm, eps_input, _ in expected_settings(eps_inputs=eps_inputs)}
+    expected = {_setting_key(norm, eps_input) for norm, eps_input, _ in expected_settings(eps_inputs=eps_inputs, norms=norms)}
     try:
         found = observed_settings(csv_path, checkpoint_path=checkpoint_path, model_name=model_name)
     except Exception:
@@ -713,6 +715,7 @@ def run_autoattack_sweep_for_checkpoint(
     run_id: str = RUN_ID,
     checkpoint_kind: str = "best",
     eps_inputs: Iterable[float] = EPS_INPUTS,
+    norms: Iterable[str] = NORMS,
     force: bool = False,
     dry_run: bool = False,
     max_settings: Optional[int] = None,
@@ -725,7 +728,8 @@ def run_autoattack_sweep_for_checkpoint(
     logger = logger or setup_logger(model_dir, dry_run)
     csv_path = model_dir / output_csv
     eps_inputs = tuple(eps_inputs)
-    settings = expected_settings(max_settings, eps_inputs=eps_inputs)
+    norms = tuple(norms)
+    settings = expected_settings(max_settings, eps_inputs=eps_inputs, norms=norms)
     expected_keys = {_setting_key(norm, eps_input) for norm, eps_input, _ in settings}
 
     if is_complete_output(
@@ -735,6 +739,7 @@ def run_autoattack_sweep_for_checkpoint(
         model_name=model_dir.name,
         run_id=run_id,
         eps_inputs=eps_inputs,
+        norms=norms,
     ) and not force:
         logger.info("Skipping complete matching sweep CSV: %s", csv_path)
         return None

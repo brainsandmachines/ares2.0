@@ -12,6 +12,7 @@ Reuses the scoring helpers from ``data_analysis/plot_autoattack_comparation.py``
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Optional
@@ -24,6 +25,30 @@ CKPT_FILE_FOR_KIND = {
     "advbest": "model_best_adv.pth.tar",
 }
 AA_EPS_GRID = (1.0, 2.0, 4.0, 6.0, 8.0, 12.0)
+EPS_NORM_SCORES_JSON = "autoattack_eps_norm_scores.json"
+
+
+def _best_from_eps_norm_json(
+    model_dir: Path, norm: str, eps: float
+) -> Optional[tuple[str, float]]:
+    """Fast path for final_eval_aatype=eps_norm runs: a single trained-norm/eps
+    AutoAttack score per checkpoint kind, written directly by final_eval_helpers
+    instead of a full linf/l2/l1 CSV grid. Only usable when it matches the
+    requested threat model."""
+    json_path = model_dir / EPS_NORM_SCORES_JSON
+    if not json_path.exists():
+        return None
+    try:
+        payload = json.loads(json_path.read_text())
+        scores = payload["scores"]
+        json_norm = str(payload["attack_norm"]).strip().lower()
+        json_eps = float(payload["epsilon_input"])
+    except (KeyError, ValueError, TypeError, OSError):
+        return None
+    if json_norm != norm or abs(json_eps - eps) > 1e-9 or not scores:
+        return None
+    best_file, best_val = max(scores.items(), key=lambda kv: kv[1])
+    return str((model_dir / best_file).resolve()), float(best_val)
 
 
 def best_checkpoint_for_threat(
@@ -34,6 +59,17 @@ def best_checkpoint_for_threat(
     ``norm``/``eps`` empty -> score by clean accuracy (baselines). Otherwise score
     by robust_acc at (norm, eps).
     """
+    use_robust = bool(norm) and eps is not None and float(eps) > 0
+    norm = (norm or "").strip().lower()
+    if use_robust:
+        eps = float(eps)
+        if eps not in AA_EPS_GRID:
+            eps = 4.0  # off-grid safety (should not happen for our eps set)
+
+        from_json = _best_from_eps_norm_json(model_dir, norm, eps)
+        if from_json is not None:
+            return from_json
+
     import pandas as pd  # heavy, import lazily
 
     for p in (str(REPO_ROOT), str(REPO_ROOT / "data_analysis")):
@@ -42,13 +78,6 @@ def best_checkpoint_for_threat(
     from plot_autoattack_comparation import (  # noqa: E402
         CHECKPOINT_KINDS, accuracy_for_eval_eps, csv_name_for_checkpoint_kind,
     )
-
-    use_robust = bool(norm) and eps is not None and float(eps) > 0
-    norm = (norm or "").strip().lower()
-    if use_robust:
-        eps = float(eps)
-        if eps not in AA_EPS_GRID:
-            eps = 4.0  # off-grid safety (should not happen for our eps set)
 
     best_kind: Optional[str] = None
     best_val: Optional[float] = None

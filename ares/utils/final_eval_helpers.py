@@ -1,13 +1,16 @@
 import csv
+import json
 import os
 from pathlib import Path
 
 import torch
 
+from ares.utils.continuation import current_active_epsilon_user
 from ares.utils.epsilon_schedule import DEFAULT_EPS_INPUTS
 
 
 DEFAULT_EPS_INPUTS_CSV = ",".join(str(int(eps)) for eps in DEFAULT_EPS_INPUTS)
+AA_FULL_SWEEP_NORMS = ("linf", "l2", "l1")
 
 
 def _parse_csv_list(value):
@@ -18,6 +21,14 @@ def _parse_csv_list(value):
 
 def _parse_float_list(value):
     return [float(v) for v in _parse_csv_list(value)]
+
+
+def _parse_aatype(value):
+    aatype = str(value or "eps_norm").strip().lower()
+    allowed = {"full_sweep", "eps_norm"}
+    if aatype not in allowed:
+        raise ValueError(f"Unsupported final_eval_aatype: {aatype}")
+    return aatype
 
 
 def _parse_checkpoint_kinds(value):
@@ -210,6 +221,49 @@ def _maybe_plot_aa_checkpoint_comparison(output_dir, aa_eps_inputs, _logger):
         _logger.warning("AA checkpoint comparison plot failed (ignored): %s", exc)
 
 
+def _write_eps_norm_score_summary(
+    output_dir,
+    checkpoint_kinds,
+    aa_csv_name,
+    aa_norm,
+    aa_eps_input,
+    find_checkpoint_for_kind,
+    output_csv_for_checkpoint_kind,
+    _logger,
+):
+    """Write {checkpoint_filename: robust_acc} for the trained norm/eps AA eval."""
+    scores = {}
+    for checkpoint_kind in checkpoint_kinds:
+        kind_ckpt = find_checkpoint_for_kind(Path(output_dir), checkpoint_kind)
+        if kind_ckpt is None:
+            continue
+        kind_csv_name = output_csv_for_checkpoint_kind(aa_csv_name, checkpoint_kind)
+        rows = _read_csv_rows(os.path.join(output_dir, kind_csv_name), _logger)
+        for row in rows:
+            if not _checkpoint_matches(row.get("checkpoint_path"), kind_ckpt):
+                continue
+            row_norm = str(row.get("attack_norm", "")).strip().lower()
+            row_eps = row.get("epsilon_input")
+            if row_norm != aa_norm or row_eps in (None, ""):
+                continue
+            try:
+                if not _float_eq(float(row_eps), aa_eps_input, tol=1e-9):
+                    continue
+                scores[os.path.basename(str(kind_ckpt))] = float(row.get("robust_acc"))
+            except (TypeError, ValueError):
+                continue
+            break
+
+    if not scores:
+        _logger.info("No trained-norm/eps AutoAttack scores found under %s; skipping JSON summary.", output_dir)
+        return
+
+    json_path = os.path.join(output_dir, "autoattack_eps_norm_scores.json")
+    with open(json_path, "w") as f:
+        json.dump({"attack_norm": aa_norm, "epsilon_input": aa_eps_input, "scores": scores}, f, indent=2)
+    _logger.info("Wrote trained-norm/eps AutoAttack score summary to %s", json_path)
+
+
 def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
     if not cfg.get("final_eval", False):
         return
@@ -252,16 +306,32 @@ def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
         run_pgd = bool(cfg.get("final_eval_pgd", False))
         aa_runner = None
         aa_import_failed = False
+        aa_norms = list(AA_FULL_SWEEP_NORMS)
+        resolved_trained_norm_eps = False
+        all_aa_checkpoint_kinds = list(aa_checkpoint_kinds)
 
         if cfg.get("final_eval_require_train_this_run", False) and not did_train_this_run:
             _logger.info("No epochs trained in this run; skipping final eval due to final_eval_require_train_this_run=true.")
             return
 
         if run_aa_sweep:
+            aatype = _parse_aatype(cfg.get("final_eval_aatype", "eps_norm"))
+            if aatype == "eps_norm":
+                try:
+                    aa_norms = [str(cfg.attacks.attack_norm)]
+                    aa_eps_inputs = [float(current_active_epsilon_user(cfg))]
+                    resolved_trained_norm_eps = True
+                except Exception as exc:
+                    _logger.warning(
+                        "final_eval_aatype=eps_norm but the trained attack norm/eps could not be "
+                        "resolved (%s); running the full AA sweep instead.", exc,
+                    )
+
             if cfg.get("final_eval_aa_norm", None) is not None or cfg.get("final_eval_aa_eps", None) is not None:
                 _logger.warning(
                     "final_eval_aa_norm/final_eval_aa_eps are ignored for final AutoAttack sweep; "
-                    "running linf,l2,l1 x eps %s.",
+                    "running %s x eps %s.",
+                    ",".join(aa_norms),
                     ",".join(str(eps).rstrip("0").rstrip(".") for eps in aa_eps_inputs),
                 )
             try:
@@ -295,6 +365,7 @@ def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
                         checkpoint_path=kind_ckpt,
                         model_name=os.path.basename(output_dir),
                         eps_inputs=aa_eps_inputs,
+                        norms=aa_norms,
                     ):
                         _logger.info("AutoAttack sweep already complete for %s. Skipping AutoAttack.", kind_ckpt)
                         continue
@@ -362,10 +433,23 @@ def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
                     output_csv=kind_csv_name,
                     checkpoint_kind=checkpoint_kind,
                     eps_inputs=aa_eps_inputs,
+                    norms=aa_norms,
                     force=not bool(cfg.get("final_eval_skip_if_complete", True)),
                     logger=_logger,
                 )
-            _maybe_plot_aa_checkpoint_comparison(output_dir, aa_eps_inputs, _logger)
+            if resolved_trained_norm_eps:
+                _write_eps_norm_score_summary(
+                    output_dir=output_dir,
+                    checkpoint_kinds=all_aa_checkpoint_kinds,
+                    aa_csv_name=aa_csv_name,
+                    aa_norm=aa_norms[0],
+                    aa_eps_input=aa_eps_inputs[0],
+                    find_checkpoint_for_kind=find_checkpoint_for_kind,
+                    output_csv_for_checkpoint_kind=output_csv_for_checkpoint_kind,
+                    _logger=_logger,
+                )
+            else:
+                _maybe_plot_aa_checkpoint_comparison(output_dir, aa_eps_inputs, _logger)
             # aircc job manager: pick the best checkpoint by the model's threat
             # model and record it in the AIRCC DB. No-op when the job is untracked
             # (AIRCC_MODEL_ID/AIRCC_DB unset).
