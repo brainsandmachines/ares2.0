@@ -12,11 +12,13 @@
 # learning-rate grid search. Does NOT use the cont_train name-parser, so RUN_NAME
 # is free-form and the three grid runs never collide.
 #
-# Required (via --export): RUN_NAME, LR   (LR is the exact peak optimizer.lr)
-# Optional: NORM (l2|linf, default l2), CKPT_NAME (source checkpoint file, default
-#           model_best.pth.tar), SOURCE_MODEL (default convnext_base_${NORM}_4_init0),
-#           BATCH (default 128), EPOCHS (default 40), ATTACK_IT (PGD steps, default
-#           unset = use the training config's default)
+# Required (via --export): RUN_NAME
+# Optional: LR (exact peak optimizer.lr; unset = let the training script derive it
+#           from lr_scheduler.lrb * batch_size / 512), NORM (l2|linf, default l2),
+#           CKPT_NAME (source checkpoint file, default model_best.pth.tar),
+#           SOURCE_MODEL (default convnext_base_${NORM}_4_init0), BATCH (default 128),
+#           EPOCHS (default 40), ATTACK_IT (PGD steps, default unset = use the
+#           training config's default)
 
 set -euo pipefail
 nvidia-smi
@@ -31,7 +33,7 @@ source activate "$(select_cont_train_env "$GPU_TOTAL")"
 cd /home/ashtomer/projects/ares
 
 : "${RUN_NAME:?set RUN_NAME (e.g. convnext_base_l2_cont4to6_lr1e4_init0)}"
-: "${LR:?set LR (peak optimizer.lr, e.g. 1e-4)}"
+LR="${LR:-}"
 NORM="${NORM:-l2}"
 CKPT_NAME="${CKPT_NAME:-model_best.pth.tar}"
 SOURCE_MODEL="${SOURCE_MODEL:-convnext_base_${NORM}_4_init0}"
@@ -44,7 +46,7 @@ ATTACK_IT="${ATTACK_IT:-}"
 
 echo "RUN_NAME    : $RUN_NAME"
 echo "attack_norm : $NORM"
-echo "optimizer.lr: $LR"
+echo "optimizer.lr: ${LR:-<auto: lrb * batch_size / 512>}"
 echo "batch_size  : $BATCH"
 echo "epochs      : $EPOCHS"
 echo "attack_it   : ${ATTACK_IT:-<default>}"
@@ -52,6 +54,8 @@ echo "checkpoint  : $CKPT"
 
 ATTACK_IT_OVERRIDE=()
 [[ -n "$ATTACK_IT" ]] && ATTACK_IT_OVERRIDE=(attacks.attack_it="$ATTACK_IT")
+LR_OVERRIDE=()
+[[ -n "$LR" ]] && LR_OVERRIDE=(optimizer.lr="$LR")
 
 python -m robust_training.adversarial_training \
   model=convnext_base \
@@ -64,7 +68,7 @@ python -m robust_training.adversarial_training \
   epsilon_schedule.warmup_epochs=4 epsilon_schedule.ramp_start_epoch=5 \
   epsilon_schedule.ramp_end_epoch=30 epsilon_schedule.fixed_start_epoch=31 \
   checkpointing.save_best_adv=true \
-  optimizer.lr="$LR" \
+  "${LR_OVERRIDE[@]}" \
   model.experiment_name="$RUN_NAME" model.experiment_num=0 model.compile_model=True \
   model.resume="${MODELS_ROOT}/${RUN_NAME}/last.pth.tar" \
   training.epochs="$EPOCHS" training.batch_size="$BATCH" \
