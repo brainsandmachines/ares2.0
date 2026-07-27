@@ -31,9 +31,13 @@ pin_mem: True
 # final evaluation (AutoAttack + PGD sweep)
 # Default OFF: a plain run does adversarial training only. The orchestrator's
 # AA_SWEEP stage explicitly turns this on (final_eval=True final_eval_autoattack=True).
+# final_eval_aatype controls how much of the AA grid runs: "eps_norm" (default)
+# tests only the norm/eps the model was actually trained on; pass
+# final_eval_aatype=full_sweep to run the old linf/l2/l1 x eps_inputs grid.
 final_eval: True
 final_eval_ckpt_name: model_best.pth.tar
 final_eval_autoattack: True
+final_eval_aatype: eps_norm
 final_eval_aa_batch_size: 128
 final_eval_aa_norm: null
 final_eval_aa_eps: null
