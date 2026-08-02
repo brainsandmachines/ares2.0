@@ -49,6 +49,7 @@ OVERRIDE_COLUMNS = [
     "attacks.attack_norm",
     "attacks.attack_domain",
     "attacks.attack_eps",
+    "attacks.attack_it",
     "attacks.v1_attack_eps",
     "attacks.gradnorm",
     "attacks.gradnorm_penalty_norm",
