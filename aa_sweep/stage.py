@@ -23,7 +23,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aa_sweep import config
+from aa_sweep import config, mirror
 
 
 @dataclass
@@ -32,11 +32,13 @@ class StageResult:
     files: list[str] = field(default_factory=list)
     bytes_planned: int = 0
     merged_csvs: list[str] = field(default_factory=list)
+    source: str = ""
+    source_reason: str = ""
     ok: bool = True
     error: str = ""
 
 
-def rsync_command(model_name: str, aircc_dir: Path, checkpoint_files: list[str]) -> list[str]:
+def rsync_command(model_name: str, source_dir: Path, checkpoint_files: list[str]) -> list[str]:
     """Build the staging rsync: the always-carried small files plus the named checkpoints only."""
     includes: list[str] = []
     for pattern in config.STAGE_ALWAYS_GLOBS:
@@ -57,7 +59,7 @@ def rsync_command(model_name: str, aircc_dir: Path, checkpoint_files: list[str])
         # checkpoint-N.pth.tar files (~1.4GB each) and the pgd_eval/ subtree.
         "--exclude",
         "*",
-        f"{aircc_dir}/",
+        f"{source_dir}/",
         dest,
     ]
 
@@ -110,7 +112,7 @@ def merge_csv_rows(aircc_text: str, slurm_text: str) -> str | None:
 
 
 def stage_model(work, aircc_csvs: dict[str, str], slurm_csvs: dict[str, str], run=subprocess.run,
-                dry_run: bool = False) -> StageResult:
+                dry_run: bool = False, backup_ok: bool = False, backup_message: str = "") -> StageResult:
     """Stage one model's missing checkpoints, then merge any AIRCC-only CSV rows across."""
     result = StageResult(model_name=work.model_name)
     if work.aircc_dir is None:
@@ -125,10 +127,17 @@ def stage_model(work, aircc_csvs: dict[str, str], slurm_csvs: dict[str, str], ru
     if not checkpoint_files and not csvs_to_merge:
         return result
 
+    # Read from the verified-fresh local mirror when possible; the AIRCC mount is the fallback.
+    choice = mirror.choose_source(
+        work.model_name, work.aircc_dir, checkpoint_files, backup_ok, backup_message
+    )
+    result.source = choice.label
+    result.source_reason = choice.reason
+
     result.files = checkpoint_files
     for filename in checkpoint_files:
         try:
-            result.bytes_planned += (work.aircc_dir / filename).stat().st_size
+            result.bytes_planned += (choice.path / filename).stat().st_size
         except OSError:
             pass
 
@@ -136,7 +145,7 @@ def stage_model(work, aircc_csvs: dict[str, str], slurm_csvs: dict[str, str], ru
         result.merged_csvs = sorted(csvs_to_merge)
         return result
 
-    cmd = rsync_command(work.model_name, work.aircc_dir, checkpoint_files)
+    cmd = rsync_command(work.model_name, choice.path, checkpoint_files)
     proc = run(cmd, capture_output=True, text=True, timeout=config.RSYNC_TIMEOUT_SECONDS)
     # 23/24 are the "file vanished / partial attrs" codes a live tree produces; the backup cron
     # forgives them the same way.

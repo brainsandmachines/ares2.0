@@ -137,6 +137,43 @@ def test_vanished_file_return_codes_are_forgiven(tmp_path):
         assert stage_mod.stage_model(work, {}, {}, run=Recorder(returncode=rc)).ok
 
 
+def test_stage_reads_from_the_mirror_when_the_backup_validates(tmp_path, monkeypatch):
+    import os
+
+    mtime = 1_754_200_000
+    for base in ("aircc", "mirror"):
+        d = tmp_path / base / "m"
+        d.mkdir(parents=True)
+        (d / "last.pth.tar").write_bytes(b"x" * 64)
+        os.utime(d / "last.pth.tar", (mtime, mtime))
+    monkeypatch.setattr(config, "BACKUP_MIRROR", tmp_path / "mirror")
+    monkeypatch.setattr(config, "USE_MIRROR", True)
+
+    work = work_for(tmp_path / "aircc", ["last.pth.tar"])
+    work.aircc_dir = tmp_path / "aircc" / "m"
+    recorder = Recorder()
+
+    res = stage_mod.stage_model(work, {}, {}, run=recorder, backup_ok=True)
+
+    assert res.source == "mirror"
+    assert recorder.calls[0][0][-2] == f"{tmp_path / 'mirror' / 'm'}/"
+
+
+def test_stage_falls_back_to_the_mount_when_the_backup_is_broken(tmp_path, monkeypatch):
+    (tmp_path / "m").mkdir()
+    (tmp_path / "m" / "last.pth.tar").write_bytes(b"x")
+    monkeypatch.setattr(config, "BACKUP_MIRROR", tmp_path / "mirror")
+    work = work_for(tmp_path, ["last.pth.tar"])
+    recorder = Recorder()
+
+    res = stage_mod.stage_model(work, {}, {}, run=recorder, backup_ok=False,
+                                backup_message="no done marker")
+
+    assert res.source == "aircc-mount"
+    assert "no done marker" in res.source_reason
+    assert recorder.calls[0][0][-2] == f"{tmp_path / 'm'}/"
+
+
 def test_sjm_only_model_is_never_staged(tmp_path):
     work = work_for(tmp_path, [], aircc=False)
     recorder = Recorder()

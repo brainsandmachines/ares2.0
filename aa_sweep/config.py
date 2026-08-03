@@ -66,6 +66,14 @@ AIRCC_MODELS_ROOT = Path(
     os.environ.get("AA_SWEEP_AIRCC_MODELS_ROOT", AIRCC_MOUNT / "ashtomer/ares/results/models")
 )
 
+# Local Botero mirror of the AIRCC results tree, refreshed by the 03:00 backup cron. Staging reads
+# come from here when verified fresh (see mirror.py) -- local disk instead of ~3.4 MB/s sshfs.
+BACKUP_MIRROR = Path(
+    os.environ.get("AA_SWEEP_BACKUP_MIRROR", "/mnt/data/robustness_models/aircc_models")
+)
+BACKUP_LOG = Path(os.environ.get("AA_SWEEP_BACKUP_LOG", BACKUP_MIRROR / "backup.log"))
+USE_MIRROR = os.environ.get("AA_SWEEP_USE_MIRROR", "1") != "0"
+
 JOB_NAME_PREFIX = "aaswp"
 SSH_TIMEOUT_SECONDS = int(os.environ.get("AA_SWEEP_SSH_TIMEOUT", "60"))
 RSYNC_TIMEOUT_SECONDS = int(os.environ.get("AA_SWEEP_RSYNC_TIMEOUT", "7200"))
