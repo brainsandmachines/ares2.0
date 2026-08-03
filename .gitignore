@@ -18,3 +18,5 @@ robust_training/results/
 /home/ashtomer/projects/ares/wandb
 wandb/
 outputs/
+# aa_sweep operational state (machine-local)
+aa_sweep/logs/
