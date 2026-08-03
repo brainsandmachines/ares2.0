@@ -4,8 +4,9 @@ A single ``python -m robust_training.adversarial_training`` does **everything** 
 train, then (via the config default ``final_eval=True``) the AutoAttack sweep on
 best/last/advbest and the comparison plot, all in one process. The in-process
 hooks write epoch / heartbeat / best-checkpoint to the AIRCC DB. So the lifecycle
-here just builds the command, launches one subprocess, and marks the row
-finished/failed.
+here just builds the command, launches one subprocess, re-attempts the
+best-checkpoint write if the in-training hook's single shot at it failed
+(``ensure_best_checkpoint``), and marks the row finished/failed.
 
 The command is assembled from the CSV's non-empty override columns
 (``csv_spec.build_overrides``) plus dynamically-resolved checkpoint args and
@@ -203,6 +204,41 @@ def _dep_best(db, dep: str, name: str) -> str:
     return best
 
 
+def ensure_best_checkpoint(row: dict, models_root: Path, db, log=print) -> None:
+    """Parent-side fallback for the in-training best-checkpoint write.
+
+    ``progress.write_best_checkpoint`` runs once per run inside the training
+    process and swallows DB errors, so a single transient sqlite failure
+    (SQLITE_CANTOPEN under concurrent load on the shared FS) leaves the row
+    ``finished`` with a NULL best_checkpoint -- and that silently gates every
+    continuation row that depends on it (``_dep_best`` / ``claim_next``). Unlike
+    the one-shot hook, this gets a second attempt from a different process at a
+    different moment, which is empirically enough.
+
+    No-op when the hook already wrote a checkpoint. Never raises: a failure here
+    must not stop the row being marked finished.
+    """
+    name = row["model_name"]
+    try:
+        job = db.get(name)
+        if job is not None and (job.best_checkpoint or "").strip():
+            return  # in-training hook already recorded it
+
+        from aircc.aircc_job_manager.best_checkpoint import best_checkpoint_for_threat
+
+        norm = str(row.get("threat_norm", "") or "").strip() or None
+        eps_raw = str(row.get("threat_eps", "") or "").strip()
+        eps = float(eps_raw) if eps_raw else None
+        path, score = best_checkpoint_for_threat(models_root / name, norm, eps)
+        if not path:
+            log(f"[lifecycle] {name}: no scored AutoAttack output for the best-checkpoint backfill")
+            return
+        db.set_best_checkpoint(name, path, score)
+        log(f"[lifecycle] {name}: backfilled best checkpoint {path} (score={score})")
+    except Exception as exc:
+        log(f"[lifecycle] {name}: best-checkpoint backfill failed (ignored): {exc}")
+
+
 def run(row: dict, models_root: Path, db, *, val_dir: Optional[str] = None,
         device: str = "cuda", python_exe: Optional[str] = None, log=print) -> bool:
     """Run the full lifecycle (train+eval+plot in one process). True on success."""
@@ -240,6 +276,7 @@ def run(row: dict, models_root: Path, db, *, val_dir: Optional[str] = None,
         db.mark_failed(name, f"training rc={rc}")
         return False
 
+    ensure_best_checkpoint(row, models_root, db, log=log)
     db.mark_finished(name)
     log(f"[lifecycle] {name}: FINISHED")
     return True
