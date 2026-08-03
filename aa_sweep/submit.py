@@ -13,6 +13,7 @@ already-complete models free -- they cost one directory listing and zero bytes.
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -42,7 +43,15 @@ def check_mounts() -> list[str]:
 
 
 def live_job_names(run=subprocess.run) -> set[str]:
-    """Job names already pending/running on the cluster, so a 30h job is not resubmitted daily."""
+    """Job names already on the cluster, so a 30h job is not resubmitted daily.
+
+    squeue's default state filter covers PENDING as well as RUNNING, which matters here: a job can
+    sit pending for days behind the queue and must not be submitted again in the meantime.
+
+    ``-o '%j'`` is deliberately unwidthed. A width like ``%.40j`` truncates
+    ``aaswp_convnext_base_linftrades_2_init0_last`` to 40 characters, and every comparison against
+    a full job name would then miss.
+    """
     proc = run(
         ["ssh", "-o", f"ConnectTimeout={config.SSH_TIMEOUT_SECONDS}", config.SLURM_SSH_HOST,
          f"squeue -u {config.SLURM_USER} -h -o '%j'"],
@@ -51,8 +60,33 @@ def live_job_names(run=subprocess.run) -> set[str]:
         timeout=config.SSH_TIMEOUT_SECONDS * 2,
     )
     if proc.returncode != 0:
+        # Fail closed: without a reliable queue view we cannot tell what is already running, and
+        # submitting duplicates of a multi-day job is worse than skipping a night.
         raise RuntimeError(f"squeue failed rc={proc.returncode}: {proc.stderr.strip()}")
     return {line.strip() for line in proc.stdout.splitlines() if line.strip()}
+
+
+def conflicting_job(model_name: str, kind: str, live_names: set[str]) -> str | None:
+    """Name of a live job that means this (model, kind) must not be submitted, else None."""
+    mine = config.job_name(model_name, kind)
+    if mine in live_names:
+        return mine
+
+    # Our own three kinds may run concurrently -- they write three different CSVs. A job we did
+    # NOT name but which mentions this model carries no such guarantee (a hand-launched eval, a
+    # re-training run), so treat it as a conflict and let the next night pick the work up.
+    #
+    # Match on token boundaries, not raw substring: a plain `in` test makes the model dir name
+    # `m` match `sjm-manager`, and short nested names like `linf_1_init1` would be similarly
+    # trigger-happy. Job names are `_`/`-` delimited, so requiring non-alphanumeric neighbours is
+    # enough.
+    ours = {config.job_name(model_name, k) for k in config.CHECKPOINT_KINDS}
+    dir_name = model_name.rsplit("/", 1)[-1]
+    token = re.compile(rf"(?<![0-9A-Za-z]){re.escape(dir_name)}(?![0-9A-Za-z])")
+    for name in live_names:
+        if name not in ours and token.search(name):
+            return name
+    return None
 
 
 def submit_job(model_dir: str, model_name: str, kind: str, run=subprocess.run) -> str:
@@ -161,10 +195,15 @@ def main(argv: list[str] | None = None) -> int:
     failures: list[str] = []
 
     for work in pending:
-        kinds = [k for k in work.runnable_kinds if config.job_name(work.model_name, k) not in running]
-        skipped_live += len(work.runnable_kinds) - len(kinds)
+        kinds = []
+        for kind in work.runnable_kinds:
+            blocker = conflicting_job(work.model_name, kind, running)
+            if blocker is None:
+                kinds.append(kind)
+            else:
+                skipped_live += 1
+                log(f"{work.model_name}:{kind}: skipping, '{blocker}' is already queued/running")
         if not kinds:
-            log(f"{work.model_name}: all runnable kinds already in flight, skipping")
             continue
 
         if work.staging_files or work.aircc_dir is not None:
