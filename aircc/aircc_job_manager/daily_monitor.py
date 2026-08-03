@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from aircc.aircc_job_manager.db import AirccDB, Job
+from aircc.aircc_job_manager.job_manager import N_SLOTS
 from aircc.aircc_job_manager.notify import make_emailer
 
 logger = logging.getLogger("aircc.daily_monitor")
@@ -35,11 +36,12 @@ DEFAULT_BACKUP_LOG = Path("/mnt/data/robustness_models/aircc_models/backup.log")
 DEFAULT_RECOMMENDATIONS_DIR = (
     DEFAULT_REPO_ROOT / "aircc" / "aircc_job_manager" / "recommendations"
 )
-DEFAULT_EXPECTED_RUNNING = 32
 # The repair below has to run ON AIRCC: the mount is read-only, so the fix
 # cannot be applied through DEFAULT_DB.
 DEFAULT_SSH_HOST = os.environ.get("AIRCC_SSH_HOST", "aircc")
 DEFAULT_REMOTE_REPO = "/shared/cycle2_bgu_golan_prj/ashtomer/ares"
+SLURM_USER = os.environ.get("AIRCC_SLURM_USER", "ashtomer")
+SLURM_JOB_NAME = "aircc_jm"  # #SBATCH --job-name in slurm/job_manager.sbatch
 REMOTE_PYTHON = "/usr/bin/python3"
 BACKFILL_MODULE = "aircc.aircc_job_manager.scripts.backfill_best_checkpoints"
 
@@ -113,7 +115,37 @@ def check_backup_log(log_path: Path, backup_rc: int) -> BackupCheck:
     return BackupCheck(True, "backup log validates", latest)
 
 
-def check_db(db_path: Path, expected_running: int) -> DBCheck:
+def expected_running_from_squeue(
+    ssh_host: str = DEFAULT_SSH_HOST, runner: Optional[Runner] = None
+) -> Optional[int]:
+    """How many training processes SHOULD be running, from squeue.
+
+    ``N_SLOTS`` models per RUNNING ``aircc_jm`` array task. The task count is not
+    a constant -- it changes as the campaign's allocation changes -- so this is
+    derived live rather than assumed. Returns None when the cluster is
+    unreachable or reports no tasks, which callers must treat as "unknown, do
+    not compare" rather than as zero.
+
+    Slurm needs a login shell for PATH/SLURM_CONF, and ssh joins trailing argv
+    items with spaces, so the remote command must be ONE argv item.
+    """
+    runner = runner or _default_runner
+    remote = f"squeue -u {SLURM_USER} -n {SLURM_JOB_NAME} -h -t RUNNING -o '%i'"
+    argv = ["ssh", "-o", "ConnectTimeout=10", ssh_host, f"bash -lc {shlex.quote(remote)}"]
+    try:
+        proc = runner(argv)
+    except Exception as exc:
+        logger.warning("cannot reach %s for the squeue task count: %s", ssh_host, exc)
+        return None
+    if proc.returncode != 0:
+        logger.warning("squeue on %s exited rc=%s", ssh_host, proc.returncode)
+        return None
+    tasks = [ln for ln in (proc.stdout or "").strip().splitlines() if ln.strip()]
+    return len(tasks) * N_SLOTS if tasks else None
+
+
+def check_db(db_path: Path, expected: Optional[int]) -> DBCheck:
+    """Validate the live DB. ``expected`` None => skip the running-count check."""
     if not db_path.is_file():
         return DBCheck(False, message=f"AIRCC DB is missing: {db_path}")
     try:
@@ -124,8 +156,10 @@ def check_db(db_path: Path, expected_running: int) -> DBCheck:
     running_count = sum(1 for job in jobs if job.status == "running")
     failed = [job for job in jobs if job.status == "failed"]
     problems = []
-    if running_count != expected_running:
-        problems.append(f"running={running_count}, expected={expected_running}")
+    if expected is None:
+        logger.info("no squeue task count available; skipping the running-count check")
+    elif running_count != expected:
+        problems.append(f"running={running_count}, expected={expected}")
     if failed:
         problems.append(f"failed={len(failed)}")
     return DBCheck(
@@ -313,7 +347,7 @@ def run_once(
     db_path: Path = DEFAULT_DB,
     backup_log: Path = DEFAULT_BACKUP_LOG,
     backup_rc: int = 0,
-    expected_running: int = DEFAULT_EXPECTED_RUNNING,
+    expected: Optional[int] = None,
     recommendations_dir: Path = DEFAULT_RECOMMENDATIONS_DIR,
     mount_repo: Path = DEFAULT_MOUNT_REPO,
     emailer: Optional[Emailer] = None,
@@ -324,7 +358,11 @@ def run_once(
     runner: Optional[Runner] = None,
 ) -> int:
     backup = check_backup_log(backup_log, backup_rc)
-    db = check_db(db_path, expected_running)
+    # None => ask the cluster. The slot count tracks the campaign's allocation,
+    # so a hardcoded expectation goes stale and cries wolf on every run.
+    if expected is None:
+        expected = expected_running_from_squeue(ssh_host, runner=runner)
+    db = check_db(db_path, expected)
     missing_best = find_missing_best_checkpoints(db_path)
 
     rc = 0
@@ -345,6 +383,7 @@ def run_once(
             f"AIRCC DB health problem: {db.message}\n\n"
             f"db: {db_path}\n"
             f"running: {db.running_count}\n"
+            f"expected: {expected if expected is not None else 'unknown (squeue unreachable)'}\n"
             f"failed: {len(db.failed_jobs or [])}\n",
         )
 
@@ -393,7 +432,9 @@ def main() -> int:
     ap.add_argument("--db", type=Path, default=DEFAULT_DB)
     ap.add_argument("--backup-log", type=Path, default=DEFAULT_BACKUP_LOG)
     ap.add_argument("--backup-rc", type=int, default=0)
-    ap.add_argument("--expected-running", type=int, default=DEFAULT_EXPECTED_RUNNING)
+    ap.add_argument("--expected-running", type=int, default=None,
+                    help="override the running-slot expectation (default: derive it "
+                         f"live from squeue as {N_SLOTS} x RUNNING {SLURM_JOB_NAME} tasks)")
     ap.add_argument("--recommendations-dir", type=Path, default=DEFAULT_RECOMMENDATIONS_DIR)
     ap.add_argument("--mount-repo", type=Path, default=DEFAULT_MOUNT_REPO)
     ap.add_argument("--ssh-host", default=DEFAULT_SSH_HOST)
@@ -411,7 +452,7 @@ def main() -> int:
         db_path=args.db,
         backup_log=args.backup_log,
         backup_rc=args.backup_rc,
-        expected_running=args.expected_running,
+        expected=args.expected_running,
         recommendations_dir=args.recommendations_dir,
         mount_repo=args.mount_repo,
         emailer=make_emailer(),

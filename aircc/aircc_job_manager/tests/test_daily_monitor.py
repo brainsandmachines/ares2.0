@@ -72,14 +72,14 @@ def test_check_backup_log_rejects_incomplete_latest_block(tmp_path):
 
 
 def test_check_db_accepts_expected_running_and_no_failures(tmp_path):
-    out = daily_monitor.check_db(_db(tmp_path), expected_running=32)
+    out = daily_monitor.check_db(_db(tmp_path), expected=32)
     assert out.ok
     assert out.running_count == 32
     assert out.failed_jobs == []
 
 
 def test_check_db_reports_running_mismatch(tmp_path):
-    out = daily_monitor.check_db(_db(tmp_path, running=31), expected_running=32)
+    out = daily_monitor.check_db(_db(tmp_path, running=31), expected=32)
     assert not out.ok
     assert "running=31" in out.message
 
@@ -98,7 +98,7 @@ def test_run_once_sends_failure_report_and_health_email(tmp_path):
     rc = daily_monitor.run_once(
         db_path=_db(tmp_path, failed=True),
         backup_log=_write_log(tmp_path),
-        expected_running=32,
+        expected=32,
         recommendations_dir=rec,
         mount_repo=tmp_path / "mount",
         emailer=emailer,
@@ -122,7 +122,7 @@ def test_run_once_writes_fallback_report_when_llm_missing(tmp_path):
     rc = daily_monitor.run_once(
         db_path=_db(tmp_path, failed=True),
         backup_log=_write_log(tmp_path),
-        expected_running=32,
+        expected=32,
         recommendations_dir=rec,
         mount_repo=tmp_path / "mount",
         emailer=lambda subject, body: emails.append((subject, body)),
@@ -149,7 +149,7 @@ def test_repeated_failure_reuses_existing_report_without_llm_call(tmp_path):
     kwargs = dict(
         db_path=db_path,
         backup_log=log_path,
-        expected_running=32,
+        expected=32,
         recommendations_dir=rec,
         mount_repo=tmp_path / "mount",
         emailer=lambda _subject, _body: None,
@@ -232,7 +232,7 @@ def test_run_once_repairs_and_emails_the_backfill_result(tmp_path):
     rc = daily_monitor.run_once(
         db_path=_db_with_missing_best(tmp_path),
         backup_log=_write_log(tmp_path),
-        expected_running=0,
+        expected=0,
         recommendations_dir=tmp_path / "rec",
         mount_repo=tmp_path / "mount",
         emailer=lambda s, b: emails.append((s, b)),
@@ -255,7 +255,7 @@ def test_run_once_only_reports_when_repair_is_disabled(tmp_path):
     rc = daily_monitor.run_once(
         db_path=_db_with_missing_best(tmp_path),
         backup_log=_write_log(tmp_path),
-        expected_running=0,
+        expected=0,
         recommendations_dir=tmp_path / "rec",
         mount_repo=tmp_path / "mount",
         emailer=lambda s, b: emails.append((s, b)),
@@ -266,3 +266,65 @@ def test_run_once_only_reports_when_repair_is_disabled(tmp_path):
     assert rc == 1
     subject, body = [e for e in emails if "no best checkpoint" in e[0]][0]
     assert "dep_model" in body and "--apply" in body
+
+
+def test_expected_running_is_derived_from_squeue_not_hardcoded(tmp_path):
+    seen = {}
+
+    def runner(argv):
+        seen["argv"] = argv
+        # 3 RUNNING array tasks -> 3 x N_SLOTS training processes
+        return subprocess.CompletedProcess(argv, 0, stdout="153201_1\n153201_2\n153201_3\n", stderr="")
+
+    out = daily_monitor.expected_running_from_squeue(ssh_host="aircc", runner=runner)
+
+    assert out == 3 * daily_monitor.N_SLOTS
+    argv = seen["argv"]
+    assert argv[0] == "ssh" and argv[3] == "aircc"
+    assert len(argv) == 5 and argv[4].startswith("bash -lc ")   # login shell, one argv item
+    assert "-n aircc_jm" in argv[4] and "-t RUNNING" in argv[4]
+
+
+def test_expected_running_is_unknown_when_the_cluster_is_unreachable(tmp_path):
+    def runner(argv):
+        raise OSError("ssh: connect to host aircc port 22: Connection refused")
+
+    assert daily_monitor.expected_running_from_squeue(runner=runner) is None
+
+
+def test_expected_running_is_unknown_not_zero_when_squeue_is_empty(tmp_path):
+    def runner(argv):
+        return subprocess.CompletedProcess(argv, 0, stdout="\n", stderr="")
+
+    # zero would make check_db assert "expected 0 running" and alert on a healthy
+    # campaign the moment squeue hiccups
+    assert daily_monitor.expected_running_from_squeue(runner=runner) is None
+
+
+def test_check_db_skips_the_running_check_when_expected_is_unknown(tmp_path):
+    out = daily_monitor.check_db(_db(tmp_path, running=31), expected=None)
+    assert out.ok
+    assert out.running_count == 31
+
+
+def test_run_once_derives_the_expectation_and_does_not_cry_wolf(tmp_path):
+    """A healthy campaign of any size must not alert -- the old fixed 32 did."""
+    emails = []
+
+    def runner(argv):
+        assert "squeue" in argv[4]
+        n = 44 // daily_monitor.N_SLOTS
+        return subprocess.CompletedProcess(
+            argv, 0, stdout="\n".join(f"153201_{i}" for i in range(n)), stderr="")
+
+    rc = daily_monitor.run_once(
+        db_path=_db(tmp_path, running=44),
+        backup_log=_write_log(tmp_path),
+        recommendations_dir=tmp_path / "rec",
+        mount_repo=tmp_path / "mount",
+        emailer=lambda s, b: emails.append((s, b)),
+        runner=runner,
+    )
+
+    assert rc == 0
+    assert emails == []
