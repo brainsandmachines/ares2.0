@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from aircc.aircc_job_manager import daily_monitor
@@ -159,3 +160,109 @@ def test_repeated_failure_reuses_existing_report_without_llm_call(tmp_path):
     assert len(calls) == 1
     reports = list(rec.glob("bad_model.*.md"))
     assert len(reports) == 1
+
+
+def _db_with_missing_best(tmp_path: Path) -> Path:
+    """A finished row whose in-training best-checkpoint write was lost."""
+    path = tmp_path / "aircc_jobs.sqlite"
+    db = AirccDB(str(path))
+    db.upsert_pending("dep_model", 200, 0)
+    db.claim_next(1, {})
+    db.mark_finished("dep_model")          # hook's set_best_checkpoint never landed
+    db.upsert_pending("ok_model", 200, 1)
+    db.claim_next(2, {})
+    db.mark_finished("ok_model")
+    db.set_best_checkpoint("ok_model", "/m/ok_model/last.pth.tar", 55.0)
+    return path
+
+
+def test_find_missing_best_checkpoints_flags_only_the_broken_row(tmp_path):
+    found = daily_monitor.find_missing_best_checkpoints(_db_with_missing_best(tmp_path))
+    assert found == ["dep_model"]
+
+
+def test_find_missing_best_checkpoints_is_quiet_when_all_rows_are_healthy(tmp_path):
+    assert daily_monitor.find_missing_best_checkpoints(_db(tmp_path)) == []
+
+
+def test_repair_runs_the_backfill_on_aircc_in_a_login_shell(tmp_path):
+    seen = {}
+
+    def runner(argv):
+        seen["argv"] = argv
+        return subprocess.CompletedProcess(argv, 0, stdout="wrote 1 row(s)", stderr="")
+
+    out = daily_monitor.repair_missing_best_checkpoints(
+        ["dep_model"], ssh_host="aircc", remote_repo="/shared/ares", runner=runner)
+
+    assert out.ok and "1 flagged row(s): wrote 1 row(s)" in out.message
+    argv = seen["argv"]
+    assert argv[0] == "ssh" and argv[3] == "aircc"
+    # one argv item, login shell, --apply -- the mount is read-only, so the write
+    # has to happen remotely
+    assert len(argv) == 5
+    assert argv[4].startswith("bash -lc ")
+    assert "cd /shared/ares" in argv[4] and "--apply" in argv[4]
+
+
+def test_repair_is_a_noop_without_broken_rows(tmp_path):
+    def runner(argv):  # pragma: no cover - must never be reached
+        raise AssertionError("should not ssh when there is nothing to repair")
+
+    assert daily_monitor.repair_missing_best_checkpoints([], runner=runner).ok
+
+
+def test_repair_failure_is_reported_not_raised(tmp_path):
+    def runner(argv):
+        return subprocess.CompletedProcess(argv, 255, stdout="", stderr="ssh: connect failed")
+
+    out = daily_monitor.repair_missing_best_checkpoints(["dep_model"], runner=runner)
+    assert not out.ok
+    assert "rc=255" in out.message and "connect failed" in out.output
+
+
+def test_run_once_repairs_and_emails_the_backfill_result(tmp_path):
+    emails = []
+    calls = []
+
+    def runner(argv):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="wrote 1 row(s)", stderr="")
+
+    rc = daily_monitor.run_once(
+        db_path=_db_with_missing_best(tmp_path),
+        backup_log=_write_log(tmp_path),
+        expected_running=0,
+        recommendations_dir=tmp_path / "rec",
+        mount_repo=tmp_path / "mount",
+        emailer=lambda s, b: emails.append((s, b)),
+        runner=runner,
+    )
+
+    assert rc == 0
+    assert len(calls) == 1
+    subject, body = [e for e in emails if "backfill" in e[0]][0]
+    assert "ok" in subject
+    assert "dep_model" in body and "wrote 1 row(s)" in body
+
+
+def test_run_once_only_reports_when_repair_is_disabled(tmp_path):
+    emails = []
+
+    def runner(argv):  # pragma: no cover - must never be reached
+        raise AssertionError("--no-repair must not ssh")
+
+    rc = daily_monitor.run_once(
+        db_path=_db_with_missing_best(tmp_path),
+        backup_log=_write_log(tmp_path),
+        expected_running=0,
+        recommendations_dir=tmp_path / "rec",
+        mount_repo=tmp_path / "mount",
+        emailer=lambda s, b: emails.append((s, b)),
+        repair=False,
+        runner=runner,
+    )
+
+    assert rc == 1
+    subject, body = [e for e in emails if "no best checkpoint" in e[0]][0]
+    assert "dep_model" in body and "--apply" in body

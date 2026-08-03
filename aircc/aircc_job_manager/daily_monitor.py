@@ -3,8 +3,9 @@
 
 This is intended to run directly after ``scripts/backup_aircc_models.sh`` from
 the same cron entry. It validates the just-finished rsync block, checks the live
-AIRCC DB on the sshfs mount, and escalates failed model rows to a read-only LLM
-diagnosis saved as markdown.
+AIRCC DB on the sshfs mount, repairs finished rows whose best-checkpoint write
+was lost, and escalates failed model rows to a read-only LLM diagnosis saved as
+markdown.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import argparse
 import hashlib
 import logging
 import os
+import shlex
 import shutil
 import sqlite3
 import subprocess
@@ -34,9 +36,16 @@ DEFAULT_RECOMMENDATIONS_DIR = (
     DEFAULT_REPO_ROOT / "aircc" / "aircc_job_manager" / "recommendations"
 )
 DEFAULT_EXPECTED_RUNNING = 32
+# The repair below has to run ON AIRCC: the mount is read-only, so the fix
+# cannot be applied through DEFAULT_DB.
+DEFAULT_SSH_HOST = os.environ.get("AIRCC_SSH_HOST", "aircc")
+DEFAULT_REMOTE_REPO = "/shared/cycle2_bgu_golan_prj/ashtomer/ares"
+REMOTE_PYTHON = "/usr/bin/python3"
+BACKFILL_MODULE = "aircc.aircc_job_manager.scripts.backfill_best_checkpoints"
 
 Emailer = Callable[[str, str], None]
 LLMClient = Callable[[str], str]
+Runner = Callable[[list[str]], subprocess.CompletedProcess]
 
 
 @dataclass
@@ -52,6 +61,14 @@ class DBCheck:
     running_count: int = 0
     failed_jobs: list[Job] | None = None
     message: str = ""
+
+
+@dataclass
+class RepairCheck:
+    ok: bool
+    models: list[str]
+    message: str
+    output: str = ""
 
 
 def _extract_backup_blocks(log_text: str) -> list[str]:
@@ -117,6 +134,85 @@ def check_db(db_path: Path, expected_running: int) -> DBCheck:
         failed_jobs=failed,
         message="; ".join(problems) if problems else "AIRCC DB validates",
     )
+
+
+def find_missing_best_checkpoints(db_path: Path) -> list[str]:
+    """Finished models whose best_checkpoint never made it into the DB.
+
+    ``progress.write_best_checkpoint`` gets one shot per run inside the training
+    process and swallows DB errors, so a transient sqlite CANTOPEN on the shared
+    FS leaves a finished row with a NULL best_checkpoint -- which then silently
+    gates every continuation row depending on it. Nothing fails, nothing is
+    logged where anyone looks, so this check is the only thing that surfaces it.
+
+    Read with ``immutable=1``: no locking, ignores the -wal, safe on the
+    read-only mount. That can lag the live DB by seconds, so a row that was
+    repaired moments ago may still show up here -- harmless, the repair is
+    idempotent and reports "nothing to backfill".
+    """
+    if not db_path.is_file():
+        return []
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?immutable=1", uri=True)
+    except sqlite3.Error:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT model_name FROM jobs WHERE status='finished' "
+            "AND (best_checkpoint IS NULL OR TRIM(best_checkpoint)='') "
+            "ORDER BY model_name"
+        ).fetchall()
+    except sqlite3.Error as exc:
+        logger.warning("cannot scan for missing best checkpoints: %s", exc)
+        return []
+    finally:
+        conn.close()
+    return [r[0] for r in rows]
+
+
+def _default_runner(argv: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(argv, capture_output=True, text=True, timeout=300)
+
+
+def repair_missing_best_checkpoints(
+    models: list[str],
+    *,
+    ssh_host: str = DEFAULT_SSH_HOST,
+    remote_repo: str = DEFAULT_REMOTE_REPO,
+    runner: Optional[Runner] = None,
+) -> RepairCheck:
+    """Re-derive the missing best checkpoints from on-disk AutoAttack output.
+
+    Runs ``scripts/backfill_best_checkpoints.py --apply`` over ssh on the AIRCC
+    login node. Idempotent and conservative: it only touches finished rows whose
+    best_checkpoint is NULL, and takes the score from the same
+    ``autoattack_eps_norm_scores.json`` the in-training hook would have used --
+    it never re-evaluates anything.
+
+    Slurm/login-node commands need a login shell, and the whole thing must be one
+    ssh argv item (see the aircc-status skill notes).
+    """
+    if not models:
+        return RepairCheck(True, [], "no missing best checkpoints")
+
+    runner = runner or _default_runner
+    remote = f"cd {remote_repo} && {REMOTE_PYTHON} -m {BACKFILL_MODULE} --apply"
+    argv = ["ssh", "-o", "ConnectTimeout=15", ssh_host, f"bash -lc {shlex.quote(remote)}"]
+    try:
+        proc = runner(argv)
+    except Exception as exc:
+        return RepairCheck(False, models, f"backfill could not run: {exc}")
+
+    output = ((proc.stdout or "") + (proc.stderr or "")).strip()
+    if proc.returncode != 0:
+        return RepairCheck(False, models, f"backfill exited rc={proc.returncode}", output)
+    # The remote script decides what it actually wrote (the mount read that
+    # flagged these models lags the live DB), so quote its own summary rather
+    # than claiming len(models) rows were repaired.
+    summary = next((ln for ln in reversed(output.splitlines())
+                    if ln.startswith(("wrote ", "nothing to backfill"))), "see output")
+    return RepairCheck(True, models, f"backfill ran for {len(models)} flagged row(s): {summary}",
+                       output)
 
 
 def _job_signature(job: Job) -> str:
@@ -222,9 +318,14 @@ def run_once(
     mount_repo: Path = DEFAULT_MOUNT_REPO,
     emailer: Optional[Emailer] = None,
     llm_client: Optional[LLMClient] = None,
+    ssh_host: str = DEFAULT_SSH_HOST,
+    remote_repo: str = DEFAULT_REMOTE_REPO,
+    repair: bool = True,
+    runner: Optional[Runner] = None,
 ) -> int:
     backup = check_backup_log(backup_log, backup_rc)
     db = check_db(db_path, expected_running)
+    missing_best = find_missing_best_checkpoints(db_path)
 
     rc = 0
     if not backup.ok:
@@ -246,6 +347,32 @@ def run_once(
             f"running: {db.running_count}\n"
             f"failed: {len(db.failed_jobs or [])}\n",
         )
+
+    if missing_best:
+        listing = "\n".join(f"  - {m}" for m in missing_best)
+        if not repair:
+            rc = 1
+            _send(
+                emailer,
+                "[aircc] finished rows with no best checkpoint",
+                f"{len(missing_best)} finished model(s) have no best_checkpoint, so any "
+                f"continuation row depending on them is silently gated:\n{listing}\n\n"
+                f"repair is disabled (--no-repair); run on {ssh_host}:\n"
+                f"  cd {remote_repo} && {REMOTE_PYTHON} -m {BACKFILL_MODULE} --apply\n",
+            )
+        else:
+            fix = repair_missing_best_checkpoints(
+                missing_best, ssh_host=ssh_host, remote_repo=remote_repo, runner=runner)
+            if not fix.ok:
+                rc = 1
+            _send(
+                emailer,
+                f"[aircc] best-checkpoint backfill {'ok' if fix.ok else 'FAILED'}",
+                f"{len(missing_best)} finished model(s) had no best_checkpoint, gating any "
+                f"continuation row depending on them:\n{listing}\n\n"
+                f"result: {fix.message}\n\n{fix.output or '(no output)'}\n",
+            )
+            logger.info("AIRCC best-checkpoint repair: %s", fix.message)
 
     for job in db.failed_jobs or []:
         report_path = diagnose_failed_job(job, recommendations_dir, mount_repo, llm_client)
@@ -269,6 +396,11 @@ def main() -> int:
     ap.add_argument("--expected-running", type=int, default=DEFAULT_EXPECTED_RUNNING)
     ap.add_argument("--recommendations-dir", type=Path, default=DEFAULT_RECOMMENDATIONS_DIR)
     ap.add_argument("--mount-repo", type=Path, default=DEFAULT_MOUNT_REPO)
+    ap.add_argument("--ssh-host", default=DEFAULT_SSH_HOST)
+    ap.add_argument("--remote-repo", default=DEFAULT_REMOTE_REPO)
+    ap.add_argument("--no-repair", dest="repair", action="store_false",
+                    help="only report finished rows missing a best_checkpoint, "
+                         "do not run the backfill on AIRCC")
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -284,6 +416,9 @@ def main() -> int:
         mount_repo=args.mount_repo,
         emailer=make_emailer(),
         llm_client=make_llm_client(),
+        ssh_host=args.ssh_host,
+        remote_repo=args.remote_repo,
+        repair=args.repair,
     )
 
 
