@@ -75,6 +75,86 @@ def test_jobs_already_in_flight_are_not_resubmitted(monkeypatch):
     assert submitted == [("m", "advbest")]
 
 
+def test_a_pending_job_blocks_resubmission_just_like_a_running_one(monkeypatch):
+    """squeue's default states include PENDING; a job queued for days must not be duplicated."""
+    live = {config.job_name("m", "best")}
+    submitted = _install_fakes(monkeypatch, _empty_probe(), live_names=live, sjm_finished=["m"])
+
+    assert submit_mod.main(["--skip-mount-check"]) == 0
+
+    assert ("m", "best") not in submitted
+
+
+def test_a_foreign_job_mentioning_the_model_blocks_every_kind(monkeypatch, capsys):
+    """A hand-launched eval on the same model could touch any of its CSVs."""
+    submitted = _install_fakes(
+        monkeypatch, _empty_probe(), live_names={"manual_aa_eval_m_linf"}, sjm_finished=["m"]
+    )
+
+    assert submit_mod.main(["--skip-mount-check"]) == 0
+
+    assert submitted == []
+    assert "manual_aa_eval_m_linf' is already queued/running" in capsys.readouterr().out
+
+
+def test_our_own_other_kinds_do_not_block_each_other(monkeypatch):
+    """The three kinds write three different CSVs, so they are safe to run concurrently."""
+    submitted = _install_fakes(
+        monkeypatch, _empty_probe(), live_names={config.job_name("m", "best")}, sjm_finished=["m"]
+    )
+
+    assert submit_mod.main(["--skip-mount-check"]) == 0
+
+    assert submitted == [("m", "last"), ("m", "advbest")]
+
+
+def test_unrelated_jobs_are_ignored(monkeypatch):
+    """`sjm-manager` contains the model name `m` as a substring -- it must not block."""
+    submitted = _install_fakes(
+        monkeypatch, _empty_probe(), live_names={"sjm-manager", "aaswp_other_model_best"},
+        sjm_finished=["m"],
+    )
+
+    assert submit_mod.main(["--skip-mount-check"]) == 0
+
+    assert len(submitted) == 3
+
+
+def test_model_name_must_match_on_token_boundaries():
+    conflicting = submit_mod.conflicting_job
+    # substring but not a token -> not a conflict
+    assert conflicting("m", "best", {"sjm-manager"}) is None
+    assert conflicting("linf_1_init1", "best", {"aaswp_xlinf_1_init1_last"}) is None
+    assert conflicting("l2_1_init1", "best", {"train_l2_1_init10_probe"}) is None
+    # delimited occurrence -> conflict
+    assert conflicting("linf_1_init1", "best", {"manual_linf_1_init1_eval"}) == "manual_linf_1_init1_eval"
+    assert conflicting("linf_1_init1", "best", {"eval-linf_1_init1"}) == "eval-linf_1_init1"
+
+
+def test_conflicting_job_matches_full_untruncated_names():
+    """A %.40j-style truncated name must not be what we compare against."""
+    full = config.job_name("convnext_base_linftrades_2_init0", "last")
+    assert len(full) > 40
+    assert submit_mod.conflicting_job("convnext_base_linftrades_2_init0", "last", {full}) == full
+    # The truncated form is a substring of the model dir name check, so it still blocks -- but via
+    # the foreign-job path, which is the conservative outcome we want rather than a silent miss.
+    assert submit_mod.conflicting_job("convnext_base_linftrades_2_init0", "last", {full[:40]}) is not None
+
+
+def test_squeue_failure_fails_closed(monkeypatch):
+    """No queue view means no way to know what is running; skip the night rather than duplicate."""
+    def failing(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="slurm_load_jobs error")
+
+    monkeypatch.setattr(submit_mod, "notify", lambda *a: None)
+    try:
+        submit_mod.live_job_names(run=failing)
+    except RuntimeError as exc:
+        assert "squeue failed" in str(exc)
+    else:
+        raise AssertionError("live_job_names must raise when squeue fails")
+
+
 def test_dry_run_submits_nothing(monkeypatch, capsys):
     submitted = _install_fakes(monkeypatch, _empty_probe(), sjm_finished=["m"])
 
