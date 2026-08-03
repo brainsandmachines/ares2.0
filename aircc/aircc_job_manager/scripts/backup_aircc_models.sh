@@ -22,14 +22,16 @@ DEST="/mnt/data/robustness_models/aircc_models"
 REPO_ROOT="${ARES_REPO:-/home/tomer_a/Documents/ares}"
 STATUS_SCRIPT="${AIRCC_STATUS_SCRIPT:-$HOME/.claude/skills/aircc-status/scripts/aircc_status.py}"
 LOCK_FILE="${AIRCC_BACKUP_LOCK:-$DEST/.backup.lock}"
+# Written when a run takes the lock, removed when it finishes. A skipped run compares its age
+# against STALE_HOURS to tell "yesterday's run is still going" from "a run is wedged".
+STAMP_FILE="${AIRCC_BACKUP_STAMP:-$DEST/.backup.started}"
+STALE_HOURS="${AIRCC_BACKUP_STALE_HOURS:-24}"
+# Hard cap on the rsync itself. The full pass moves ~200GB over sshfs and has taken ~17h, so this
+# has to be generous -- but it must stay under 24h or a wedged run would still be holding the lock
+# when the next night's cron fires.
+RSYNC_TIMEOUT="${AIRCC_BACKUP_RSYNC_TIMEOUT:-20h}"
 
 mkdir -p -m 0755 "$DEST"
-
-exec 9>"$LOCK_FILE"
-if ! flock -n 9; then
-    echo "[backup] $(date -Is) SKIP: another backup run already holds $LOCK_FILE" >&2
-    exit 0
-fi
 
 notify() {
     local subject="$1" body="$2"
@@ -45,6 +47,51 @@ else:
     emailer(subject, body)
 PYEOF
 }
+
+# --- 0. single-instance lock ---
+# On 2026-07-27 a run wedged here for a week: the aircc sshfs mount was remounted underneath it, so
+# its rsync sat in uninterruptible D state on the abandoned FUSE connection, ignoring SIGKILL. rsync
+# inherits fd 9, and an flock belongs to the open file description, so the lock outlived the script
+# and every night after that silently SKIPped. A skip is normal; a skip on a day-old lock is not.
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    held_since="$(cat "$STAMP_FILE" 2>/dev/null || echo "unknown")"
+    holders="$(fuser "$LOCK_FILE" 2>/dev/null | tr -s ' ')"
+    stale=0
+    if [[ -f "$STAMP_FILE" ]]; then
+        age_h=$(( ( $(date +%s) - $(stat -c %Y "$STAMP_FILE") ) / 3600 ))
+        [[ "$age_h" -ge "$STALE_HOURS" ]] && stale=1
+    else
+        # Lock held with no stamp: a pre-hardening run, or the stamp was lost. Treat as suspect.
+        age_h="unknown"
+        stale=1
+    fi
+
+    if [[ "$stale" -eq 1 ]]; then
+        echo "[backup] $(date -Is) STALE LOCK: held ${age_h}h (since $held_since), holders:${holders:- none}" >&2
+        notify "[aircc] backup lock held for ${age_h}h -- backups are not running" \
+"$LOCK_FILE has been held since $held_since (${age_h}h), so tonight's backup SKIPped.
+Every run will keep skipping until the holder dies.
+
+holding pids:${holders:- (none found)}
+
+If a holder is in D state it is stuck on a dead sshfs connection and SIGKILL will not work.
+Find the stale FUSE connection (one with no matching mount in /proc/self/mountinfo and
+waiting > 0) and abort just that one:
+
+  ls -l /sys/fs/fuse/connections/
+  for c in /sys/fs/fuse/connections/*/; do echo \"\$c waiting=\$(cat \$c/waiting)\"; done
+  echo 1 > /sys/fs/fuse/connections/<stale-id>/abort
+"
+        exit 1
+    fi
+
+    echo "[backup] $(date -Is) SKIP: another backup run already holds $LOCK_FILE (${age_h}h, since $held_since)" >&2
+    exit 0
+fi
+
+date -Is > "$STAMP_FILE"
+trap 'rm -f "$STAMP_FILE"' EXIT
 
 # --- 1. aircc-status check ---
 # expected_running comes from aircc_status.py itself, computed live from squeue
@@ -99,8 +146,13 @@ err_tmp="$(mktemp "${TMPDIR:-/tmp}/aircc_rsync_err.XXXXXX")"
 # --delete-excluded also purges any such checkpoints already on the destination.
 # protect the script's own log/lock (they live in $DEST, not in $SRC, so the
 # --delete flags would otherwise remove them mid-run).
-rsync -rt --no-perms --no-owner --no-group --partial --delete-after --delete-excluded \
+# timeout caps a run that is merely slow or stalled on a live connection. It cannot kill an rsync
+# wedged in D state on a dead FUSE connection -- the stale-lock alert above is what catches that.
+# --kill-after escalates to SIGKILL if the rsync ignores SIGTERM.
+timeout --kill-after=5m "$RSYNC_TIMEOUT" \
+    rsync -rt --no-perms --no-owner --no-group --partial --delete-after --delete-excluded \
     --filter='protect /backup.log' --filter='protect /.backup.lock' \
+    --filter='protect /.backup.started' \
     --exclude='checkpoint-*.pth.tar' --info=stats2,progress2 \
     "$SRC/" "$DEST/" 2>"$err_tmp" || rsync_rc=$?
 cat "$err_tmp" >&2   # keep the stderr lines in the log
@@ -111,6 +163,9 @@ benign_pat='^(file has vanished: .*|rsync warning: .*|rsync error: some files/at
 
 if [[ "$rsync_rc" -eq 0 ]]; then
     echo "[backup] $(date -Is) done"
+elif [[ "$rsync_rc" -eq 124 || "$rsync_rc" -eq 137 ]]; then
+    # 124 = timeout fired, 137 = had to escalate to SIGKILL.
+    echo "[backup] $(date -Is) ERROR: rsync exceeded ${RSYNC_TIMEOUT} and was killed (rc=$rsync_rc)" >&2
 elif [[ "$rsync_rc" -eq 23 || "$rsync_rc" -eq 24 ]]; then
     # rc=24: files vanished before transfer; rc=23: vanished mid-transfer / read
     # error. Forgive either ONLY if every stderr line is a known-benign vanish.

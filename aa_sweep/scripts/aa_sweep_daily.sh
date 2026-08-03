@@ -16,9 +16,23 @@ set -u -o pipefail
 REPO_ROOT="${ARES_REPO:-/home/tomer_a/Documents/ares}"
 PYTHON="${AA_SWEEP_PYTHON:-/home/tomer_a/miniconda3/envs/ares/bin/python}"
 LOCK_FILE="${AA_SWEEP_LOCK:-$REPO_ROOT/aa_sweep/logs/.aa_sweep.lock}"
+# Optional pause: a file holding an ISO timestamp. While now < that timestamp the run is skipped,
+# and the file is removed once it expires, so a hold never has to be cleaned up by hand.
+#   date -Is -d 'tomorrow 06:00' > aa_sweep/logs/.hold
+HOLD_FILE="${AA_SWEEP_HOLD:-$REPO_ROOT/aa_sweep/logs/.hold}"
 EXTRA_ARGS="${AA_SWEEP_ARGS:-}"
 
 mkdir -p -m 0755 "$(dirname "$LOCK_FILE")"
+
+if [[ -f "$HOLD_FILE" ]]; then
+    hold_until="$(head -n1 "$HOLD_FILE")"
+    if hold_ts="$(date -d "$hold_until" +%s 2>/dev/null)" && [[ "$(date +%s)" -lt "$hold_ts" ]]; then
+        echo "[aa_sweep] $(date -Is) HOLD: submissions paused until $hold_until ($HOLD_FILE)"
+        exit 0
+    fi
+    echo "[aa_sweep] $(date -Is) hold expired ($hold_until), resuming and clearing $HOLD_FILE"
+    rm -f "$HOLD_FILE"
+fi
 
 # A sweep run can take minutes (staging GBs); never let two overlap.
 exec 9>"$LOCK_FILE"
