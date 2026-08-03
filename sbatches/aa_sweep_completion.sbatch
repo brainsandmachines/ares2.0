@@ -21,6 +21,7 @@
 #SBATCH --partition=main
 #SBATCH --gpus=1
 #SBATCH --constraint="rtx_3090|rtx_4090|rtx_6000|rtx_pro_6000"
+#SBATCH --exclude=cs-pheno-[01-12],ise-pheno-[01-12]
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=ashtomer@post.bgu.ac.il
 #SBATCH --output=/home/ashtomer/projects/ares/outs/aa_sweep/%j.out
@@ -28,6 +29,12 @@
 # No --mem: that is host RAM, not VRAM. The --constraint is what guarantees a >=24GB GPU (it
 # excludes the 11GB gtx_1080/rtx_2080 nodes on `main`); the partition default RAM is plenty for a
 # batch-size-32 eval.
+#
+# --exclude: the *-pheno-* nodes hold ONE rtx_3090 *and* ONE gtx_1080
+# (gres=gpu:rtx_3090:1,gpu:gtx_1080:1). They satisfy the constraint on their feature list, but
+# --gpus=1 does not pin which of the two cards you get, so a job there can land on the 11GB card.
+# Slurm cannot OR GPU types in a --gpus request, so excluding the mixed nodes is the only
+# deterministic fix. ~90 single-type nodes on `main` still qualify.
 
 set -euo pipefail
 
@@ -60,6 +67,16 @@ if [[ ! -d "${VAL_DIR}" ]]; then
   echo "[ERROR] ImageNet val dir is not available on host $(hostname): ${VAL_DIR}" >&2
   exit 1
 fi
+
+# Defence in depth behind --constraint/--exclude: bail in seconds rather than OOM twenty hours
+# into a sweep if this job somehow landed on an 11GB card.
+GPU_TOTAL="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n 1)"
+MIN_GPU_MB="${AA_MIN_GPU_MB:-20000}"
+if [[ -z "${GPU_TOTAL}" || "${GPU_TOTAL}" -lt "${MIN_GPU_MB}" ]]; then
+  echo "[ERROR] GPU on $(hostname) has ${GPU_TOTAL:-unknown} MB < ${MIN_GPU_MB} MB required for bsz ${AA_BATCH_SIZE}" >&2
+  exit 1
+fi
+echo "[INFO] gpu_total_mb   : ${GPU_TOTAL}"
 
 mkdir -p "${REPO_ROOT}/outs/aa_sweep"
 
