@@ -77,6 +77,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--val-dir", type=Path, default=DEFAULT_VAL_DIR)
     parser.add_argument("--array-index", type=int, default=None, help="Defaults to SLURM_ARRAY_TASK_ID.")
     parser.add_argument("--model-name", default=None, help="Evaluate this model directory name instead of selecting by array index.")
+    parser.add_argument(
+        "--model-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Evaluate this run directory directly, bypassing --models-root discovery and its "
+            "epoch>=199 eligibility filter. Use for continuation runs that stop well short of 199."
+        ),
+    )
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--num-batches", type=int, default=8)
     parser.add_argument("--num-workers", type=int, default=4)
@@ -95,6 +104,19 @@ def parse_args() -> argparse.Namespace:
         default=",".join(str(eps) for eps in EPS_INPUTS),
         help="Comma-separated epsilon inputs evaluated for every norm.",
     )
+    parser.add_argument(
+        "--norms",
+        default=",".join(NORMS),
+        help="Comma-separated attack norms swept for every epsilon input.",
+    )
+    parser.add_argument(
+        "--plot-comparison",
+        action="store_true",
+        help=(
+            "After the sweep, regenerate autoattack_eval_comparation_<model>.png from whichever "
+            "checkpoint-kind CSVs exist. Idempotent, so every job of a model can pass it."
+        ),
+    )
     parser.add_argument("--force", action="store_true", help="Rerun even if this sweep CSV is complete.")
     parser.add_argument("--dry-run", action="store_true", help="Print selection/model info without running attacks.")
     parser.add_argument("--list-models", action="store_true", help="List eligible models and exit.")
@@ -111,6 +133,16 @@ def parse_eps_inputs(raw: str) -> tuple[float, ...]:
     values = tuple(float(part.strip()) for part in raw.split(",") if part.strip())
     if not values:
         raise ValueError("--eps-inputs must contain at least one numeric value")
+    return values
+
+
+def parse_norms(raw: str) -> tuple[str, ...]:
+    values = tuple(part.strip().lower() for part in raw.split(",") if part.strip())
+    if not values:
+        raise ValueError("--norms must contain at least one norm")
+    unknown = [norm for norm in values if norm not in NORMS]
+    if unknown:
+        raise ValueError(f"Unsupported norm(s): {', '.join(unknown)}")
     return values
 
 
@@ -730,7 +762,6 @@ def run_autoattack_sweep_for_checkpoint(
     eps_inputs = tuple(eps_inputs)
     norms = tuple(norms)
     settings = expected_settings(max_settings, eps_inputs=eps_inputs, norms=norms)
-    expected_keys = {_setting_key(norm, eps_input) for norm, eps_input, _ in settings}
 
     if is_complete_output(
         csv_path,
@@ -747,14 +778,12 @@ def run_autoattack_sweep_for_checkpoint(
     existing = observed_settings(csv_path, checkpoint_path=checkpoint_path, model_name=model_dir.name)
     if force:
         settings_to_run = settings
-        replace_settings = expected_keys
     else:
         settings_to_run = [
             (norm, eps_input, epsilon)
             for norm, eps_input, epsilon in settings
             if _setting_key(norm, eps_input) not in existing
         ]
-        replace_settings = {_setting_key(norm, eps_input) for norm, eps_input, _ in settings_to_run}
 
     if not settings_to_run:
         logger.info("No missing AutoAttack settings for %s in %s", model_dir.name, csv_path)
@@ -811,12 +840,19 @@ def run_autoattack_sweep_for_checkpoint(
     logger.info("clean_acc=%.4f", clean_acc * 100.0)
 
     timestamp = dt.datetime.now().isoformat(timespec="seconds")
+    logger.info(
+        "settings_to_run=%d of %d expected (%d already present in %s)",
+        len(settings_to_run),
+        len(settings),
+        len(settings) - len(settings_to_run),
+        csv_path.name,
+    )
     out_rows = []
     for norm, eps_input, epsilon in settings_to_run:
         set_seed(seed)
         logger.info("running AutoAttack norm=%s epsilon_input=%s epsilon_eval=%s", norm, eps_input, epsilon)
         robust_acc = run_autoattack_setting(model, loader, device_obj, norm, epsilon, seed, logger)
-        out_rows.append({
+        row = {
             "run_id": run_id,
             "timestamp": timestamp,
             "model_name": model_dir.name,
@@ -834,11 +870,17 @@ def run_autoattack_sweep_for_checkpoint(
             "num_batches": num_batches,
             "seed": seed,
             "selection_json": str(selection_path),
-        })
+        }
+        out_rows.append(row)
+        # Flush after every setting rather than once at the end: a sweep is many hours per
+        # checkpoint, and a job killed at the Slurm time limit used to lose every completed
+        # setting. write_rows' default replace_settings keys off the rows being written, so
+        # each flush upserts exactly this (norm, eps) and leaves the rest of the CSV alone.
+        write_rows(csv_path, [row])
+        logger.info("upserted norm=%s epsilon_input=%s to %s", norm, eps_input, csv_path)
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    write_rows(csv_path, out_rows, replace_settings=replace_settings)
     logger.info("upserted %d rows to %s", len(out_rows), csv_path)
     return csv_path
 
@@ -846,8 +888,19 @@ def run_autoattack_sweep_for_checkpoint(
 def main() -> None:
     args = parse_args()
     eps_inputs = parse_eps_inputs(args.eps_inputs)
+    norms = parse_norms(args.norms)
     checkpoint_kinds = parse_checkpoint_kinds(args.checkpoint_kinds)
     set_seed(args.seed)
+
+    # --model-dir short-circuits discovery entirely: eligible_models() requires epoch >= 199,
+    # which excludes the continuation runs (~40 epochs) this sweep also has to cover.
+    if args.model_dir is not None:
+        model_dir = Path(args.model_dir)
+        if not model_dir.is_dir():
+            raise SystemExit(f"--model-dir is not a directory: {model_dir}")
+        run_sweep_for_model_dir(model_dir, args, eps_inputs, norms, checkpoint_kinds)
+        return
+
     if args.existing_csv_only:
         rows = existing_csv_models(args.models_root, args.output_csv)
     else:
@@ -873,9 +926,27 @@ def main() -> None:
         selected = rows[idx]
     model_dir = selected["model_dir"]
     logger = setup_logger(model_dir, args.dry_run)
-
     logger.info("eligible_models=%d selected_index=%d", len(rows), idx)
-    logger.info("model=%s checkpoint_kinds=%s", model_dir.name, ",".join(checkpoint_kinds))
+    run_sweep_for_model_dir(model_dir, args, eps_inputs, norms, checkpoint_kinds, logger=logger)
+
+
+def run_sweep_for_model_dir(
+    model_dir: Path,
+    args: argparse.Namespace,
+    eps_inputs: tuple[float, ...],
+    norms: tuple[str, ...],
+    checkpoint_kinds: tuple[str, ...],
+    logger: Optional[logging.Logger] = None,
+) -> None:
+    """Sweep every requested checkpoint kind of one run directory."""
+    logger = logger or setup_logger(model_dir, args.dry_run)
+    logger.info(
+        "model=%s checkpoint_kinds=%s norms=%s eps_inputs=%s",
+        model_dir.name,
+        ",".join(checkpoint_kinds),
+        ",".join(norms),
+        ",".join(str(eps) for eps in eps_inputs),
+    )
 
     for checkpoint_kind in checkpoint_kinds:
         checkpoint = find_checkpoint_for_kind(model_dir, checkpoint_kind)
@@ -909,12 +980,31 @@ def main() -> None:
             run_id=args.run_id,
             checkpoint_kind=checkpoint_kind,
             eps_inputs=eps_inputs,
+            norms=norms,
             force=args.force,
             dry_run=args.dry_run,
             max_settings=args.max_settings,
             logger=logger,
             epoch=epoch,
         )
+
+    if args.plot_comparison and not args.dry_run:
+        maybe_plot_comparison(model_dir, eps_inputs, logger)
+
+
+def maybe_plot_comparison(model_dir: Path, eps_inputs: Iterable[float], logger: logging.Logger) -> None:
+    """Regenerate autoattack_eval_comparation_<model>.png from whichever kind CSVs exist.
+
+    Reuses the in-training hook's plotting helper so a sweep-completion job produces exactly the
+    same artifact a full_sweep training run would. Idempotent and best-effort: it is called by
+    every per-kind job of a model, and the last one to finish is the one whose plot sticks.
+    """
+    try:
+        from ares.utils.final_eval_helpers import _maybe_plot_aa_checkpoint_comparison
+    except Exception as exc:  # pragma: no cover - import guard only
+        logger.warning("AA comparison plot skipped (import failed): %s", exc)
+        return
+    _maybe_plot_aa_checkpoint_comparison(str(model_dir), tuple(eps_inputs), logger)
 
 
 if __name__ == "__main__":
