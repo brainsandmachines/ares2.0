@@ -17,7 +17,7 @@ import subprocess
 import sys
 from datetime import datetime
 
-from aa_sweep import config, plan as plan_mod, stage as stage_mod
+from aa_sweep import config, mirror, plan as plan_mod, stage as stage_mod
 
 
 def _now() -> str:
@@ -150,6 +150,11 @@ def main(argv: list[str] | None = None) -> int:
         notify("[aa_sweep] squeue check failed", str(exc))
         return 1
 
+    # One check per run, not per model: whether the nightly backup that fills the local mirror
+    # completed cleanly. If it did not, every model falls back to reading the AIRCC mount.
+    backup_ok, backup_message = mirror.backup_log_ok()
+    log(f"mirror source: {'usable' if backup_ok else 'NOT usable'} ({backup_message})")
+
     submitted: list[str] = []
     skipped_live = 0
     staged_bytes = 0
@@ -163,14 +168,19 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         if work.staging_files or work.aircc_dir is not None:
-            res = stage_mod.stage_model(work, work.aircc_csvs, work.slurm_csvs, dry_run=args.dry_run)
+            res = stage_mod.stage_model(
+                work, work.aircc_csvs, work.slurm_csvs, dry_run=args.dry_run,
+                backup_ok=backup_ok, backup_message=backup_message,
+            )
             staged_bytes += res.bytes_planned
             if not res.ok:
                 failures.append(f"{work.model_name}: {res.error}")
                 log(f"{work.model_name}: STAGING FAILED ({res.error}), not submitting")
                 continue
             if res.files:
-                log(f"{work.model_name}: staged {', '.join(res.files)} ({res.bytes_planned / 1e9:.1f} GB)")
+                via = res.source + (f" [{res.source_reason}]" if res.source_reason else "")
+                log(f"{work.model_name}: staged {', '.join(res.files)} "
+                    f"({res.bytes_planned / 1e9:.1f} GB) via {via}")
             if res.merged_csvs:
                 log(f"{work.model_name}: merged aircc-only rows into {', '.join(res.merged_csvs)} csv(s)")
 

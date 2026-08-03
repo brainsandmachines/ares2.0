@@ -21,10 +21,29 @@ crontab ──▶ scripts/aa_sweep_daily.sh ──▶ python -m aa_sweep.submit
    3. CENSUS      one batched ssh probe of the BGU dirs + local read of the AIRCC mount
                   → missing(kind) = grid − (AIRCC cells ∪ BGU cells)
                   → models with nothing missing stop here: no rsync, no job, no bytes
-   4. stage       rsync AIRCC → BGU, --ignore-existing, ONLY the gapped kinds' checkpoints
+   4. stage       rsync → BGU, --ignore-existing, ONLY the gapped kinds' checkpoints.
+                  Source is the local mirror when verified fresh, else the AIRCC mount.
    5. dedupe      squeue: skip any (model, kind) already pending/running
    6. submit      one sbatch per (model, kind) → sbatches/aa_sweep_completion.sbatch
 ```
+
+### Staging source
+
+Reading the AIRCC sshfs mount measures ~3.4 MB/s, so a 2.8 GB model takes ~14 minutes. The 03:00
+backup cron already mirrors that tree to local disk at `/mnt/data/robustness_models/aircc_models`,
+so `mirror.py` prefers the mirror — but only when it is *provably* a faithful copy:
+
+1. **Global** — the latest `backup.log` block validated, via
+   `aircc.aircc_job_manager.daily_monitor.check_backup_log` (one definition of "backup succeeded").
+2. **Per file** — every file about to be staged (checkpoints *and* the CSVs/selection json that
+   ride along) matches the AIRCC source on both size and mtime. `rsync -rt` preserves mtime, so a
+   mismatch means stale or mid-flight.
+
+Either gate failing falls back to the AIRCC mount for that model, and the reason is logged. A model
+that finished after the last backup is simply not mirrored yet and takes the same fallback. Set
+`AA_SWEEP_USE_MIRROR=0` to force the mount.
+
+The cron runs at **19:30**, 16.5 h after the backup starts, so even a long backup has finished.
 
 ## Usage
 
@@ -38,12 +57,11 @@ python -m aa_sweep.submit --limit 3          # cap submissions (debugging)
 Install the cron (see the header of `scripts/aa_sweep_daily.sh`):
 
 ```cron
-30 7 * * * /home/tomer_a/Documents/ares/aa_sweep/scripts/aa_sweep_daily.sh >> /home/tomer_a/Documents/ares/aa_sweep/logs/aa_sweep.log 2>&1
+30 19 * * * /home/tomer_a/Documents/ares/aa_sweep/scripts/aa_sweep_daily.sh >> /home/tomer_a/Documents/ares/aa_sweep/logs/aa_sweep.log 2>&1
 ```
 
-07:30 follows the 03:00 AIRCC backup and the 06:00 sjm status check. Quiet unless something breaks;
-emails via `aircc.aircc_job_manager.notify.make_emailer` on mounts down, unreadable DB, or a failed
-rsync/sbatch.
+Quiet unless something breaks; emails via `aircc.aircc_job_manager.notify.make_emailer` on mounts
+down, unreadable DB, or a failed rsync/sbatch.
 
 ## Files
 
