@@ -18,6 +18,36 @@ logger = logging.getLogger("aircc.notify")
 
 _ENV_PATH = Path(__file__).resolve().parent / ".env"
 
+# An alert body can quote whatever it was inspecting, and some of those are
+# unbounded: an in-progress `rsync --info=progress2` block is a single
+# multi-megabyte "line" of redraws, which SMTP will happily send and no mail
+# client will render usefully. Every body goes through _clamp_body first.
+MAX_BODY_CHARS = int(os.environ.get("AIRCC_ALERT_MAX_BODY_CHARS", "20000"))
+MAX_SUBJECT_CHARS = 200
+
+
+def _clamp_body(body: str, limit: int = MAX_BODY_CHARS) -> str:
+    """Keep an alert readable: split \\r redraws into lines, then head+tail it."""
+    text = body.replace("\r\n", "\n").replace("\r", "\n")
+    if len(text) <= limit:
+        return text
+    head = limit // 4
+    tail = limit - head
+    trimmed = len(text) - limit
+    return f"{text[:head]}\n\n[... {trimmed:,} characters trimmed ...]\n\n{text[-tail:]}"
+
+
+def _clamp_subject(subject: str) -> str:
+    """One line, bounded -- a newline in a subject is a header injection."""
+    return " ".join(subject.split())[:MAX_SUBJECT_CHARS]
+
+
+def _clamped(send: Callable[[str, str], None]) -> Callable[[str, str], None]:
+    def _wrapped(subject: str, body: str) -> None:
+        send(_clamp_subject(subject), _clamp_body(body))
+
+    return _wrapped
+
 
 def _load_dotenv(path: Path) -> dict[str, str]:
     """Minimal KEY=VALUE .env parser (no external dependency)."""
@@ -75,7 +105,7 @@ def make_emailer() -> Optional[Callable[[str, str], None]]:
                     smtp.login(user, password)
                 smtp.send_message(msg)
 
-        return _send_smtp
+        return _clamped(_send_smtp)
 
     mail = shutil.which("mail") or shutil.which("mailx")
     if not mail:
@@ -92,4 +122,4 @@ def make_emailer() -> Optional[Callable[[str, str], None]]:
             timeout=60,
         )
 
-    return _send
+    return _clamped(_send)

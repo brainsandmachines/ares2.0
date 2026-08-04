@@ -50,6 +50,13 @@ LLMClient = Callable[[str], str]
 Runner = Callable[[list[str]], subprocess.CompletedProcess]
 
 
+# backup_aircc_models.sh's "nothing to do" exit: not due yet under its
+# MIN_INTERVAL_HOURS pacing, or a previous pass is still holding the lock. The
+# backup log's latest block then belongs to some other run -- possibly one still
+# writing progress into it -- so validating it would alert on a healthy system.
+BACKUP_SKIPPED_RC = 75
+
+
 @dataclass
 class BackupCheck:
     ok: bool
@@ -89,6 +96,8 @@ def _extract_backup_blocks(log_text: str) -> list[str]:
 
 
 def check_backup_log(log_path: Path, backup_rc: int) -> BackupCheck:
+    if backup_rc == BACKUP_SKIPPED_RC:
+        return BackupCheck(True, "no backup ran this cycle (skipped); log not checked")
     if backup_rc != 0:
         return BackupCheck(False, f"rsync exited with rc={backup_rc}")
     if not log_path.is_file():
@@ -431,7 +440,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="AIRCC backup-linked daily monitor.")
     ap.add_argument("--db", type=Path, default=DEFAULT_DB)
     ap.add_argument("--backup-log", type=Path, default=DEFAULT_BACKUP_LOG)
-    ap.add_argument("--backup-rc", type=int, default=0)
+    ap.add_argument("--backup-rc", type=int, default=0,
+                    help="exit code of the backup script that ran just before this "
+                         f"(0 = backed up, {BACKUP_SKIPPED_RC} = nothing to do so the "
+                         "backup log is not validated, other = failure)")
     ap.add_argument("--expected-running", type=int, default=None,
                     help="override the running-slot expectation (default: derive it "
                          f"live from squeue as {N_SLOTS} x RUNNING {SLURM_JOB_NAME} tasks)")
