@@ -71,6 +71,36 @@ def test_check_backup_log_rejects_incomplete_latest_block(tmp_path):
     assert "missing" in out.message
 
 
+def test_check_backup_log_ignores_the_log_when_the_backup_was_skipped(tmp_path):
+    # The in-flight block of someone else's still-running rsync: incomplete, and
+    # not this run's business. rc=75 means no backup ran, so it must not alert.
+    log = _write_log(
+        tmp_path,
+        GOOD_BACKUP + "\n[backup] 2026-07-02T03:00:02+03:00 rsync /src/ -> /dest/\n",
+    )
+    out = daily_monitor.check_backup_log(log, backup_rc=daily_monitor.BACKUP_SKIPPED_RC)
+    assert out.ok
+    assert "skipped" in out.message
+
+
+def test_run_once_sends_no_backup_email_when_the_backup_was_skipped(tmp_path):
+    emails = []
+    rc = daily_monitor.run_once(
+        db_path=_db(tmp_path),
+        backup_log=_write_log(
+            tmp_path,
+            GOOD_BACKUP + "\n[backup] 2026-07-02T03:00:02+03:00 rsync /src/ -> /dest/\n",
+        ),
+        backup_rc=daily_monitor.BACKUP_SKIPPED_RC,
+        expected=32,
+        recommendations_dir=tmp_path / "recommendations",
+        mount_repo=tmp_path / "mount",
+        emailer=lambda subject, body: emails.append((subject, body)),
+    )
+    assert rc == 0
+    assert emails == []
+
+
 def test_check_db_accepts_expected_running_and_no_failures(tmp_path):
     out = daily_monitor.check_db(_db(tmp_path), expected=32)
     assert out.ok

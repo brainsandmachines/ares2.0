@@ -37,7 +37,7 @@ deliberate `seed_db.py` step.
 | `status.py` | Read-only dashboard. |
 | `slurm/job_manager.sbatch` | Pyxis array `1-200%16` on `sandbox`, v2 image. |
 | `slurm/smoke_train.sbatch` | One 1-epoch training in the v2 image (launch test). |
-| `scripts/backup_aircc_models.sh` | Nightly rsync from the sshfs AIRCC mount to Botero. |
+| `scripts/backup_aircc_models.sh` | Nightly status check + every-3-days rsync from the sshfs AIRCC mount to Botero. |
 | `tests/` | DB unit tests + standalone GPU-cleanup test. |
 
 ## CSV columns
@@ -105,5 +105,14 @@ final_eval plot) · `mark_finished` / `mark_failed`.
 ## Backup
 
 `scripts/backup_aircc_models.sh` rsyncs the AIRCC `results/models` (via the local
-sshfs mount) to `/mnt/data/robustness_models/aircc_models` nightly. Install the
-cron line shown in the script header.
+sshfs mount) to `/mnt/data/robustness_models/aircc_models`. Install the cron line
+shown in the script header.
+
+The cron fires nightly but the two halves run at different cadences: the
+aircc-status check runs every night, while the rsync runs at most every
+`AIRCC_BACKUP_MIN_INTERVAL_HOURS` (default 72h), paced off `.backup.attempted`.
+A full pass moves ~450GB over sshfs at ~3.5MB/s and takes well over a day, so
+nightly attempts mostly collided with the previous night's run. On a night with
+no rsync the script exits **75**, which tells `daily_monitor --backup-rc` not to
+validate a `backup.log` block it did not produce — the DB health checks still
+run. Any other non-zero exit is a real backup failure.
