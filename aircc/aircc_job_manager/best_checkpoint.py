@@ -13,6 +13,7 @@ Reuses the scoring helpers from ``data_analysis/plot_autoattack_comparation.py``
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -48,7 +49,7 @@ def _best_from_eps_norm_json(
     if json_norm != norm or abs(json_eps - eps) > 1e-9 or not scores:
         return None
     best_file, best_val = max(scores.items(), key=lambda kv: kv[1])
-    return str((model_dir / best_file).resolve()), float(best_val)
+    return os.path.abspath(model_dir / best_file), float(best_val)
 
 
 def best_checkpoint_for_threat(
@@ -107,4 +108,4 @@ def best_checkpoint_for_threat(
 
     if best_kind is None:
         return None, None
-    return str((model_dir / CKPT_FILE_FOR_KIND[best_kind]).resolve()), best_val
+    return os.path.abspath(model_dir / CKPT_FILE_FOR_KIND[best_kind]), best_val
