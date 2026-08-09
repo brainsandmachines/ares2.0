@@ -4,9 +4,12 @@
 # stages any missing AIRCC checkpoints onto the BGU cluster, and submits one sbatch per
 # (model, checkpoint kind) on the `main` partition. Quiet unless something breaks.
 #
-# Install (Botero crontab -e) -- 19:30 is 16.5h after the 03:00 AIRCC backup, so a long backup has
-# finished and the local mirror it fills is usable as the staging source (see aa_sweep/mirror.py):
-#   30 19 * * * /home/tomer_a/Documents/ares/aa_sweep/scripts/aa_sweep_daily.sh >> /home/tomer_a/Documents/ares/aa_sweep/logs/aa_sweep.log 2>&1
+# Install (Botero crontab -e) -- 21:30 is 18.5h after the 03:00 AIRCC backup, so even a full backup
+# pass has finished and the local mirror it fills is usable as the staging source (see
+# aa_sweep/mirror.py). This slot used to be 19:30, but a full pass takes ~16.5h (03:00 -> ~19:35 on
+# 2026-08-08) and the cron read the log five minutes too early, correctly rejected the in-progress
+# block, and fell back to the slower AIRCC mount for the night:
+#   30 21 * * * /home/tomer_a/Documents/ares/aa_sweep/scripts/aa_sweep_daily.sh >> /home/tomer_a/Documents/ares/aa_sweep/logs/aa_sweep.log 2>&1
 #
 # Safe to run by hand; add --dry-run via AA_SWEEP_ARGS to see the plan without submitting:
 #   AA_SWEEP_ARGS=--dry-run aa_sweep/scripts/aa_sweep_daily.sh
