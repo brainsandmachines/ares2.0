@@ -24,6 +24,14 @@ STATUS_RUNNING = "running"
 STATUS_FAILED = "failed"
 STATUS_FINISHED = "finished"
 
+# Literal substrings of a stored `last_error` that mean the DB write itself failed
+# (transient sqlite CANTOPEN/locked on the shared FS) rather than training failing
+# for a real reason. A row can end up `failed` with one of these even after training
+# and eval both completed, if the exception escaped the final mark_finished call --
+# see scripts/reclaim_completed_failures.py. Keep this narrow: it gates an automatic
+# failed -> finished flip, so it must never match a genuine training error.
+TRANSIENT_ERROR_MARKERS = ("unable to open database file", "DB write failed after")
+
 STALE_SECONDS = 15 * 60  # 15 minutes without a heartbeat -> requeue
 
 _BUSY_TIMEOUT_MS = 30_000
