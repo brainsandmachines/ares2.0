@@ -20,3 +20,4 @@ wandb/
 outputs/
 # aa_sweep operational state (machine-local)
 aa_sweep/logs/
+*.html
