@@ -4,8 +4,10 @@
 This is intended to run directly after ``scripts/backup_aircc_models.sh`` from
 the same cron entry. It validates the just-finished rsync block, checks the live
 AIRCC DB on the sshfs mount, repairs finished rows whose best-checkpoint write
-was lost, and escalates failed model rows to a read-only LLM diagnosis saved as
-markdown.
+was lost, reclaims failed rows whose training actually completed (a transient
+DB-write error on the final write can leave a fully-finished run marked
+`failed`), and escalates any remaining failed model rows to a read-only LLM
+diagnosis saved as markdown.
 """
 
 from __future__ import annotations
@@ -19,11 +21,11 @@ import shutil
 import sqlite3
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
-from aircc.aircc_job_manager.db import AirccDB, Job
+from aircc.aircc_job_manager.db import AirccDB, Job, TRANSIENT_ERROR_MARKERS
 from aircc.aircc_job_manager.job_manager import N_SLOTS
 from aircc.aircc_job_manager.notify import make_emailer
 
@@ -44,6 +46,7 @@ SLURM_USER = os.environ.get("AIRCC_SLURM_USER", "ashtomer")
 SLURM_JOB_NAME = "aircc_jm"  # #SBATCH --job-name in slurm/job_manager.sbatch
 REMOTE_PYTHON = "/usr/bin/python3"
 BACKFILL_MODULE = "aircc.aircc_job_manager.scripts.backfill_best_checkpoints"
+RECLAIM_MODULE = "aircc.aircc_job_manager.scripts.reclaim_completed_failures"
 
 Emailer = Callable[[str, str], None]
 LLMClient = Callable[[str], str]
@@ -78,6 +81,10 @@ class RepairCheck:
     models: list[str]
     message: str
     output: str = ""
+    # Only meaningful for repair_falsely_failed_jobs: the subset of `models` the
+    # remote script actually flipped failed -> finished (parsed from its
+    # `RECLAIMED:` line), so callers know which rows to skip in the diagnosis loop.
+    reclaimed: list[str] = field(default_factory=list)
 
 
 def _extract_backup_blocks(log_text: str) -> list[str]:
@@ -258,6 +265,80 @@ def repair_missing_best_checkpoints(
                        output)
 
 
+def find_falsely_failed_jobs(db_path: Path) -> list[str]:
+    """Failed models whose last_error is a DB-write failure, not a training failure.
+
+    lifecycle.run()'s final DB write (best-checkpoint + mark_finished) can hit the
+    same transient sqlite CANTOPEN as the in-training hook find_missing_best_checkpoints
+    guards against -- but on that *last* write the exception escapes lifecycle.run()
+    entirely and job_manager's outer handler marks the row `failed`, even though
+    training and the AutoAttack eval both completed.
+
+    This only flags candidates by the DB-side error-text signature (cheap, DB-only);
+    it does NOT check the filesystem, so a name here is not a guarantee. Actual
+    verification (via best_checkpoint_for_threat against on-disk AutoAttack output)
+    and the write both happen in scripts/reclaim_completed_failures.py on AIRCC.
+
+    Read with immutable=1 for the same reasons as find_missing_best_checkpoints.
+    """
+    if not db_path.is_file():
+        return []
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?immutable=1", uri=True)
+    except sqlite3.Error:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT model_name, last_error FROM jobs WHERE status='failed' "
+            "ORDER BY model_name"
+        ).fetchall()
+    except sqlite3.Error as exc:
+        logger.warning("cannot scan for falsely-failed rows: %s", exc)
+        return []
+    finally:
+        conn.close()
+    return [name for name, err in rows
+            if any(marker in (err or "") for marker in TRANSIENT_ERROR_MARKERS)]
+
+
+def repair_falsely_failed_jobs(
+    models: list[str],
+    *,
+    ssh_host: str = DEFAULT_SSH_HOST,
+    remote_repo: str = DEFAULT_REMOTE_REPO,
+    runner: Optional[Runner] = None,
+) -> RepairCheck:
+    """Re-verify and reclaim failed rows whose training actually completed.
+
+    Runs ``scripts/reclaim_completed_failures.py --apply`` on the AIRCC login node.
+    It only flips a row failed -> finished when it can resolve a real checkpoint from
+    on-disk AutoAttack output; anything it can't resolve is left failed so run_once's
+    diagnosis loop still handles it normally -- see ``RepairCheck.reclaimed``.
+    """
+    if not models:
+        return RepairCheck(True, [], "no falsely-failed rows")
+
+    runner = runner or _default_runner
+    remote = f"cd {remote_repo} && {REMOTE_PYTHON} -m {RECLAIM_MODULE} --apply"
+    argv = ["ssh", "-o", "ConnectTimeout=15", ssh_host, f"bash -lc {shlex.quote(remote)}"]
+    try:
+        proc = runner(argv)
+    except Exception as exc:
+        return RepairCheck(False, models, f"reclaim could not run: {exc}")
+
+    output = ((proc.stdout or "") + (proc.stderr or "")).strip()
+    if proc.returncode != 0:
+        return RepairCheck(False, models, f"reclaim exited rc={proc.returncode}", output)
+
+    reclaimed_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("RECLAIMED:")), "RECLAIMED:")
+    reclaimed = [m for m in reclaimed_line[len("RECLAIMED:"):].split(",") if m]
+    summary = next((ln for ln in reversed(output.splitlines())
+                    if ln.startswith(("reclaimed ", "nothing to reclaim"))), "see output")
+    return RepairCheck(True, models, f"reclaim ran for {len(models)} flagged row(s): {summary}",
+                       output, reclaimed=reclaimed)
+
+
 def _job_signature(job: Job) -> str:
     raw = "\n".join([
         job.model_name,
@@ -422,7 +503,42 @@ def run_once(
             )
             logger.info("AIRCC best-checkpoint repair: %s", fix.message)
 
+    falsely_failed = find_falsely_failed_jobs(db_path)
+    reclaimed_names: set[str] = set()
+    if falsely_failed:
+        listing = "\n".join(f"  - {m}" for m in falsely_failed)
+        if not repair:
+            rc = 1
+            _send(
+                emailer,
+                "[aircc] failed rows that may have actually completed",
+                f"{len(falsely_failed)} failed model(s) have a DB-write-failure "
+                f"last_error, which can mean the run finished but the final DB write "
+                f"failed:\n{listing}\n\n"
+                f"repair is disabled (--no-repair); run on {ssh_host}:\n"
+                f"  cd {remote_repo} && {REMOTE_PYTHON} -m {RECLAIM_MODULE} --apply\n",
+            )
+        else:
+            fix = repair_falsely_failed_jobs(
+                falsely_failed, ssh_host=ssh_host, remote_repo=remote_repo, runner=runner)
+            if not fix.ok:
+                rc = 1
+            reclaimed_names = set(fix.reclaimed)
+            _send(
+                emailer,
+                f"[aircc] failed-row reclaim {'ok' if fix.ok else 'FAILED'}",
+                f"{len(falsely_failed)} failed model(s) had a DB-write-failure "
+                f"last_error:\n{listing}\n\n"
+                f"result: {fix.message}\n\n{fix.output or '(no output)'}\n",
+            )
+            logger.info("AIRCC falsely-failed reclaim: %s", fix.message)
+
+    # Rows repair_falsely_failed_jobs actually flipped to finished get no diagnosis
+    # -- they didn't fail, and an LLM report + "failure on X" email would be noise.
+    # Anything it couldn't resolve (or --no-repair) falls through to the normal path.
     for job in db.failed_jobs or []:
+        if job.model_name in reclaimed_names:
+            continue
         report_path = diagnose_failed_job(job, recommendations_dir, mount_repo, llm_client)
         _send(
             emailer,

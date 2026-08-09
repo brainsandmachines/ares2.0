@@ -276,6 +276,160 @@ def test_run_once_repairs_and_emails_the_backfill_result(tmp_path):
     assert "dep_model" in body and "wrote 1 row(s)" in body
 
 
+def _db_with_falsely_failed(tmp_path: Path) -> Path:
+    """One row that actually finished but hit a transient DB error on the final
+    write (mark_failed instead of mark_finished), and one row that genuinely
+    failed for an unrelated reason."""
+    path = tmp_path / "aircc_jobs.sqlite"
+    db = AirccDB(str(path))
+    db.upsert_pending("flaky_model", 40, 0)
+    db.claim_next(1, {})
+    db.mark_failed("flaky_model",
+                    "lifecycle crash: DB write failed after 8 retries: "
+                    "unable to open database file")
+    db.upsert_pending("real_failure", 40, 1)
+    db.claim_next(2, {})
+    db.mark_failed("real_failure", "RuntimeError: CUDA out of memory")
+    return path
+
+
+def test_find_falsely_failed_jobs_flags_only_transient_db_errors(tmp_path):
+    found = daily_monitor.find_falsely_failed_jobs(_db_with_falsely_failed(tmp_path))
+    assert found == ["flaky_model"]
+
+
+def test_find_falsely_failed_jobs_is_quiet_when_all_rows_are_healthy(tmp_path):
+    assert daily_monitor.find_falsely_failed_jobs(_db(tmp_path)) == []
+
+
+def test_repair_falsely_failed_runs_the_reclaim_script_in_a_login_shell(tmp_path):
+    seen = {}
+
+    def runner(argv):
+        seen["argv"] = argv
+        return subprocess.CompletedProcess(
+            argv, 0,
+            stdout="reclaimed 1 row(s); 0 unresolved (left failed)\nRECLAIMED:flaky_model",
+            stderr="")
+
+    out = daily_monitor.repair_falsely_failed_jobs(
+        ["flaky_model"], ssh_host="aircc", remote_repo="/shared/ares", runner=runner)
+
+    assert out.ok and out.reclaimed == ["flaky_model"]
+    assert "1 flagged row(s): reclaimed 1 row(s); 0 unresolved" in out.message
+    argv = seen["argv"]
+    assert argv[0] == "ssh" and argv[3] == "aircc"
+    assert len(argv) == 5
+    assert argv[4].startswith("bash -lc ")
+    assert "cd /shared/ares" in argv[4] and "--apply" in argv[4]
+    assert "reclaim_completed_failures" in argv[4]
+
+
+def test_repair_falsely_failed_is_a_noop_without_candidates(tmp_path):
+    def runner(argv):  # pragma: no cover - must never be reached
+        raise AssertionError("should not ssh when there is nothing to reclaim")
+
+    assert daily_monitor.repair_falsely_failed_jobs([], runner=runner).ok
+
+
+def test_repair_falsely_failed_failure_is_reported_not_raised(tmp_path):
+    def runner(argv):
+        return subprocess.CompletedProcess(argv, 255, stdout="", stderr="ssh: connect failed")
+
+    out = daily_monitor.repair_falsely_failed_jobs(["flaky_model"], runner=runner)
+    assert not out.ok
+    assert "rc=255" in out.message and "connect failed" in out.output
+    assert out.reclaimed == []
+
+
+def test_run_once_reclaims_and_skips_diagnosis_for_the_reclaimed_model(tmp_path):
+    emails = []
+    llm_calls = []
+
+    def runner(argv):
+        return subprocess.CompletedProcess(
+            argv, 0,
+            stdout="reclaimed 1 row(s); 0 unresolved (left failed)\nRECLAIMED:flaky_model",
+            stderr="")
+
+    def llm(prompt):
+        llm_calls.append(prompt)
+        return "# fix"
+
+    rec = tmp_path / "rec"
+    rc = daily_monitor.run_once(
+        db_path=_db_with_falsely_failed(tmp_path),
+        backup_log=_write_log(tmp_path),
+        expected=0,
+        recommendations_dir=rec,
+        mount_repo=tmp_path / "mount",
+        emailer=lambda s, b: emails.append((s, b)),
+        llm_client=llm,
+        runner=runner,
+    )
+
+    # real_failure is a genuine failure and still needs attention
+    assert rc == 1
+    assert len(llm_calls) == 1
+    assert "real_failure" in llm_calls[0] and "flaky_model" not in llm_calls[0]
+    reports = list(rec.glob("*.md"))
+    assert len(reports) == 1
+    assert reports[0].name.startswith("real_failure.")
+    assert any("failed-row reclaim" in s for s, _ in emails)
+    assert not any("failure on flaky_model" in s for s, _ in emails)
+    assert any("failure on real_failure" in s for s, _ in emails)
+
+
+def test_run_once_still_diagnoses_when_reclaim_cannot_resolve_it(tmp_path):
+    def runner(argv):
+        return subprocess.CompletedProcess(
+            argv, 0,
+            stdout="reclaimed 0 row(s); 1 unresolved (left failed)\nRECLAIMED:",
+            stderr="")
+
+    rec = tmp_path / "rec"
+    rc = daily_monitor.run_once(
+        db_path=_db_with_falsely_failed(tmp_path),
+        backup_log=_write_log(tmp_path),
+        expected=0,
+        recommendations_dir=rec,
+        mount_repo=tmp_path / "mount",
+        emailer=lambda s, b: None,
+        llm_client=lambda prompt: "# fix",
+        runner=runner,
+    )
+
+    assert rc == 1
+    # neither row was reclaimed, so both still go through the normal diagnosis path
+    reports = sorted(p.name for p in rec.glob("*.md"))
+    assert len(reports) == 2
+    assert any(r.startswith("flaky_model.") for r in reports)
+    assert any(r.startswith("real_failure.") for r in reports)
+
+
+def test_run_once_only_reports_falsely_failed_when_repair_is_disabled(tmp_path):
+    emails = []
+
+    def runner(argv):  # pragma: no cover - must never be reached
+        raise AssertionError("--no-repair must not ssh for the reclaim script either")
+
+    rc = daily_monitor.run_once(
+        db_path=_db_with_falsely_failed(tmp_path),
+        backup_log=_write_log(tmp_path),
+        expected=0,
+        recommendations_dir=tmp_path / "rec",
+        mount_repo=tmp_path / "mount",
+        emailer=lambda s, b: emails.append((s, b)),
+        llm_client=lambda prompt: "# fix",
+        repair=False,
+        runner=runner,
+    )
+
+    assert rc == 1
+    subject, body = [e for e in emails if "may have actually completed" in e[0]][0]
+    assert "flaky_model" in body and "--apply" in body
+
+
 def test_run_once_only_reports_when_repair_is_disabled(tmp_path):
     emails = []
 
