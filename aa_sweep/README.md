@@ -43,7 +43,9 @@ Either gate failing falls back to the AIRCC mount for that model, and the reason
 that finished after the last backup is simply not mirrored yet and takes the same fallback. Set
 `AA_SWEEP_USE_MIRROR=0` to force the mount.
 
-The cron runs at **19:30**, 16.5 h after the backup starts, so even a long backup has finished.
+The cron runs at **21:30**, 18.5 h after the 03:00 backup starts. The backup itself now runs only
+every 3 days and its full pass takes ~16.5 h (03:00 -> ~19:35 on 2026-08-08); a 19:30 cron raced it
+by five minutes and lost the mirror for that night, so the slot was moved back two hours.
 
 ## Usage
 
@@ -57,7 +59,7 @@ python -m aa_sweep.submit --limit 3          # cap submissions (debugging)
 Install the cron (see the header of `scripts/aa_sweep_daily.sh`):
 
 ```cron
-30 19 * * * /home/tomer_a/Documents/ares/aa_sweep/scripts/aa_sweep_daily.sh >> /home/tomer_a/Documents/ares/aa_sweep/logs/aa_sweep.log 2>&1
+30 21 * * * /home/tomer_a/Documents/ares/aa_sweep/scripts/aa_sweep_daily.sh >> /home/tomer_a/Documents/ares/aa_sweep/logs/aa_sweep.log 2>&1
 ```
 
 Quiet unless something breaks; emails via `aircc.aircc_job_manager.notify.make_emailer` on mounts
