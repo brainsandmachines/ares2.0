@@ -20,4 +20,7 @@ wandb/
 outputs/
 # aa_sweep operational state (machine-local)
 aa_sweep/logs/
+# Catastrophic-overfitting notifier operational state (machine-local)
+data_analysis/logs/catastrophic_notifier_state.json
+data_analysis/logs/catastrophic_notifier_state.json.lock
 *.html
