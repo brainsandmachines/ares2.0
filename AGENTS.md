@@ -23,8 +23,9 @@ running training campaigns (`slurm_job_manager/`, `aircc/aircc_job_manager/`).
 2. **Slurm cluster** (`ssh slurm`, remote repo `/home/ashtomer/projects/ares`) — run via
    `slurm_job_manager/`. Partitions `rtx_pro_6000` (96GB) / `rtx6000`. One array task = one GPU =
    one model, single-process train→final_eval→plot.
-3. **AIRCC B200 allocation** (`sandbox`) — run via `aircc/aircc_job_manager/`. 16 GPUs, 2 training
-   lifecycles per GPU (memory-fraction capped).
+3. **AIRCC B200 allocation** (`ssh aircc`, remote repo `/shared/cycle2_bgu_golan_prj/ashtomer/ares`)
+   — run via `aircc/aircc_job_manager/`. 16 GPUs, 2 training lifecycles per GPU (memory-fraction
+   capped).
 
 Both job managers share the same philosophy: **the CSV is ground truth** (one column per Hydra
 override), the SQLite DB holds only operational state (claim status, progress, best checkpoint).
