@@ -70,6 +70,25 @@ def load_continuation_checkpoint(model, cfg, _logger):
     _logger.info(f'Initialized model weights from continuation checkpoint: {path}')
 
 
+def maybe_save_periodic_checkpoint(saver, epoch, interval, metric=None):
+    """Snapshot every `interval` completed epochs into <checkpoint_dir>/periodic/.
+
+    Uses the same timm CheckpointSaver payload as model_best/last, but saves outside the
+    saver's own history so max_history rotation never deletes these. `epoch` is 0-based.
+    """
+    interval = int(interval or 0)
+    if saver is None or interval <= 0:
+        return None
+    completed = epoch + 1
+    if completed % interval != 0:
+        return None
+    save_dir = os.path.join(saver.checkpoint_dir, 'periodic')
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, f'epoch_{completed:04d}' + saver.extension)
+    saver._save(save_path, epoch, metric)
+    return save_path
+
+
 def maybe_save_best_adv_checkpoint(saver, epoch, eval_metrics, best_metric, best_epoch):
     if saver is None or 'advtop1' not in eval_metrics:
         return best_metric, best_epoch

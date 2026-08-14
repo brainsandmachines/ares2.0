@@ -1,2 +1,5 @@
 # Keep existing model_best behavior unchanged; optionally add an adv-best checkpoint.
 save_best_adv: False
+# Extra periodic snapshots every N completed epochs, written to <output_dir>/periodic/
+# and never rotated out by model.max_history. 0 disables.
+save_every_n_epochs: 15
