@@ -3,7 +3,12 @@ from pathlib import Path
 
 from omegaconf import OmegaConf
 
-from ares.utils.continuation import current_active_epsilon_user, maybe_save_best_adv_checkpoint, set_active_epsilon
+from ares.utils.continuation import (
+    current_active_epsilon_user,
+    maybe_save_best_adv_checkpoint,
+    maybe_save_periodic_checkpoint,
+    set_active_epsilon,
+)
 from ares.utils.epsilon_schedule import (
     L1_EPS_MULTIPLIER,
     V1_FEATURE_L2_EPS_MULTIPLIER,
@@ -97,3 +102,30 @@ def test_best_adv_checkpoint_tracks_advtop1(tmp_path):
     best = maybe_save_best_adv_checkpoint(saver, 2, {"advtop1": 11.0}, *best)
     assert best == (11.0, 2)
     assert (tmp_path / "model_best_adv.pth.tar").read_text() == "2,11.0"
+
+
+def test_periodic_checkpoint_saves_on_interval_only(tmp_path):
+    class _Saver:
+        checkpoint_dir = str(tmp_path)
+        extension = ".pth.tar"
+
+        def _save(self, path, epoch, metric):
+            Path(path).write_text(f"{epoch},{metric}")
+
+    saver = _Saver()
+    # epoch is 0-based: epochs 0..18 are no-ops, epoch 19 = 20 completed epochs.
+    for epoch in range(19):
+        assert maybe_save_periodic_checkpoint(saver, epoch, 20, 1.0) is None
+    assert not (tmp_path / "periodic").exists()
+
+    path = maybe_save_periodic_checkpoint(saver, 19, 20, 42.0)
+    assert path == str(tmp_path / "periodic" / "epoch_0020.pth.tar")
+    assert Path(path).read_text() == "19,42.0"
+
+    assert maybe_save_periodic_checkpoint(saver, 39, 20, 43.0) is not None
+    assert (tmp_path / "periodic" / "epoch_0040.pth.tar").exists()
+
+    # disabled / missing config
+    assert maybe_save_periodic_checkpoint(saver, 19, 0, 1.0) is None
+    assert maybe_save_periodic_checkpoint(saver, 19, None, 1.0) is None
+    assert maybe_save_periodic_checkpoint(None, 19, 20, 1.0) is None

@@ -36,6 +36,7 @@ from ares.utils.continuation import (
     current_active_epsilon_user,
     load_continuation_checkpoint,
     maybe_save_best_adv_checkpoint,
+    maybe_save_periodic_checkpoint,
     set_active_epsilon,
 )
 
@@ -404,7 +405,13 @@ def main(cfg: DictConfig):
                 best_adv_metric, best_adv_epoch = maybe_save_best_adv_checkpoint(
                     saver, epoch, eval_metrics, best_adv_metric, best_adv_epoch
                 )
-            
+            periodic_path = maybe_save_periodic_checkpoint(
+                saver, epoch, cfg.checkpointing.get('save_every_n_epochs', 0), eval_metrics[eval_metric]
+            )
+            if periodic_path is not None:
+                _logger.info(f'Saved periodic checkpoint: {periodic_path}')
+
+
         # -------- aircc job manager: end-of-epoch progress (no-op if not tracked) --------
         aircc_progress.update_epoch(
             epoch + 1, rank=cfg.dist.rank,
