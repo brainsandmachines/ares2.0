@@ -26,16 +26,17 @@ fi
 
 notify() {
     local subject="$1" body="$2"
-    PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" python3 - "$subject" "$body" <<'PYEOF'
+    local dedup="${3:-}" urgent="${4:-}"
+    PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" python3 - "$subject" "$body" "$dedup" "$urgent" <<'PYEOF'
 import sys
 from aircc.aircc_job_manager.notify import make_emailer
 
-subject, body = sys.argv[1], sys.argv[2]
-emailer = make_emailer()
+subject, body, dedup, urgent = sys.argv[1:5]
+emailer = make_emailer(source="sjm.status")
 if emailer is None:
     print(f"[notify] no emailer configured; would send: {subject}", file=sys.stderr)
 else:
-    emailer(subject, body)
+    emailer(subject, body, dedup_key=dedup or None, urgent=bool(urgent))
 PYEOF
 }
 
@@ -48,7 +49,7 @@ if [[ "$status_rc" -ne 0 ]]; then
     echo "[status] $(date -Is) ERROR: slurm_status.py failed rc=$status_rc" >&2
     notify "[sjm] status check failed" "$STATUS_SCRIPT exited rc=$status_rc:
 
-$status_out"
+$status_out" "sjm-status-check-failed"
     exit "$status_rc"
 fi
 
@@ -64,7 +65,8 @@ echo "[status] $(date -Is) old_hb=$old_hb_n cpu_stuck=$stuck_n cpu_unavailable=$
 
 if [[ "$old_hb_n" -gt 0 || "$stuck_n" -gt 0 ]]; then
     echo "[status] $(date -Is) ALERT: old_hb=$old_hb_n cpu_stuck=$stuck_n" >&2
-    notify "[sjm] status alert: old_hb=$old_hb_n cpu_stuck=$stuck_n" "$status_out"
+    notify "[sjm] status alert: old_hb=$old_hb_n cpu_stuck=$stuck_n" "$status_out" \
+        "sjm-status:old_hb=$old_hb_n:stuck=$stuck_n"
 elif [[ "$cpu_unavailable" -eq 1 ]]; then
     echo "[status] $(date -Is) note: cpu-utilization check unavailable (ssh unreachable this run), heartbeats clean"
 else

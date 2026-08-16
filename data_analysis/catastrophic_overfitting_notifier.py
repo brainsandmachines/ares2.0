@@ -541,7 +541,7 @@ def notifier_lock(state_path: Path) -> Iterator[bool]:
 def _make_emailer():
     from aircc.aircc_job_manager.notify import make_emailer
 
-    return make_emailer()
+    return make_emailer(source="ares.catastrophic")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -616,6 +616,9 @@ def run(
                 f"[ares] catastrophic overfitting suspected: {len(new_events)} event(s), "
                 f"{len(unique_models)} model(s)",
                 format_event_report(new_events, selection_counts),
+                # Never spooled: a collapsed run is burning GPU hours right now,
+                # and event_id dedup upstream already keeps this to one mail.
+                urgent=True,
             )
         except Exception as exc:
             print(f"Catastrophic-overfitting email failed: {exc}", file=sys.stderr)
@@ -634,6 +637,7 @@ def run(
             emailer(
                 "[ares] catastrophic notifier scan incomplete",
                 format_scan_errors(errors, selection_counts),
+                dedup_key="catastrophic-scan-incomplete",
             )
         except Exception as exc:
             print(f"Scan-incomplete email failed: {exc}", file=sys.stderr)

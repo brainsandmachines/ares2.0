@@ -3,20 +3,46 @@
 Self-contained: reads ``AIRCC_ALERT_EMAIL`` / ``AIRCC_SMTP_*`` from the real
 environment or ``aircc_job_manager/.env``, and prefers SMTP (no local MTA
 needed) over the local ``mail``/``mailx`` command when configured.
+
+Every notifier in the repo (``daily_monitor``, ``aa_sweep``, the sjm and backup
+shell scripts, the catastrophic-overfitting notifier) sends through
+``make_emailer`` here, which makes this the one place to batch them. When
+``ARES_ALERT_SPOOL`` is set, a normal-urgency alert is appended to a JSONL spool
+instead of mailed, and ``digest.py`` mails the whole spool as one message the
+next morning. Urgent alerts ignore the spool and go out immediately.
+
+Spooling is off unless ``ARES_ALERT_SPOOL`` is set, so the default behaviour is
+byte-for-byte what it was before.
 """
 
 from __future__ import annotations
 
+import fcntl
+import json
 import logging
 import os
 import shutil
 import subprocess
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Optional
 
 logger = logging.getLogger("aircc.notify")
 
 _ENV_PATH = Path(__file__).resolve().parent / ".env"
+
+# emailer(subject, body, *, dedup_key=None, urgent=False) -> None
+Emailer = Callable[..., None]
+
+# Set ARES_ALERT_SPOOL=1 for the default path, or to an explicit path.
+SPOOL_ENV = "ARES_ALERT_SPOOL"
+DEFAULT_SPOOL_PATH = Path(__file__).resolve().parent / "logs" / "alerts.jsonl"
+
+# Safety net for the one way spooling can lose you an alert: if the digest cron
+# stops running, entries would pile up in a file nobody reads. The spool is
+# append-only, so its first line is its oldest -- when that is older than this,
+# assume the digest is broken and mail immediately instead of spooling.
+SPOOL_STALE_HOURS = float(os.environ.get("ARES_ALERT_SPOOL_STALE_HOURS", "36"))
 
 # An alert body can quote whatever it was inspecting, and some of those are
 # unbounded: an in-progress `rsync --info=progress2` block is a single
@@ -64,8 +90,73 @@ def _load_dotenv(path: Path) -> dict[str, str]:
     return out
 
 
-def make_emailer() -> Optional[Callable[[str, str], None]]:
+def spool_path() -> Optional[Path]:
+    """The JSONL alert spool, or None when spooling is off (the default)."""
+    raw = os.environ.get(SPOOL_ENV, "").strip()
+    if not raw or raw == "0":
+        return None
+    return DEFAULT_SPOOL_PATH if raw == "1" else Path(raw).expanduser()
+
+
+def append_spool(path: Path, *, source: str, subject: str, body: str,
+                 dedup_key: Optional[str] = None) -> None:
+    """Append one alert record to the JSONL spool.
+
+    flock'd rather than relying on O_APPEND alone: a record can carry a body up
+    to MAX_BODY_CHARS (20k), well over PIPE_BUF, so a bare append is not atomic
+    against the other cron jobs writing the same spool.
+    """
+    record = {
+        "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "source": source,
+        "subject": _clamp_subject(subject),
+        "body": _clamp_body(body),
+    }
+    if dedup_key:
+        record["dedup_key"] = dedup_key
+    line = json.dumps(record, ensure_ascii=False) + "\n"
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        os.write(fd, line.encode("utf-8"))
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def spool_is_stale(path: Path, max_age_hours: float = SPOOL_STALE_HOURS) -> bool:
+    """True when the spool's oldest entry is old enough to mean the digest died.
+
+    Reads only the first line: the spool is append-only, so that is the oldest
+    record, and a wedged spool must not cost us a full file read on every alert.
+    An unreadable or unparseable spool counts as stale -- mailing immediately is
+    the safe direction to fail.
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            first = fh.readline()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    if not first.strip():
+        return False
+    try:
+        ts = datetime.fromisoformat(json.loads(first)["ts"])
+    except (ValueError, KeyError, json.JSONDecodeError):
+        return True
+    return datetime.now().astimezone() - ts > timedelta(hours=max_age_hours)
+
+
+def make_emailer(*, source: str = "unknown") -> Optional[Emailer]:
     """Return an emailer, or None if no transport is configured.
+
+    The returned callable takes ``(subject, body)`` plus two keyword-only
+    options: ``dedup_key`` (the digest collapses a repeat of the same key to one
+    line instead of a full section) and ``urgent=True`` (never spooled -- mailed
+    the moment it happens). ``source`` labels the entry in the digest.
 
     Two transports, preferred in order:
 
@@ -105,7 +196,7 @@ def make_emailer() -> Optional[Callable[[str, str], None]]:
                     smtp.login(user, password)
                 smtp.send_message(msg)
 
-        return _clamped(_send_smtp)
+        return _spoolable(_clamped(_send_smtp), source)
 
     mail = shutil.which("mail") or shutil.which("mailx")
     if not mail:
@@ -122,4 +213,24 @@ def make_emailer() -> Optional[Callable[[str, str], None]]:
             timeout=60,
         )
 
-    return _clamped(_send)
+    return _spoolable(_clamped(_send), source)
+
+
+def _spoolable(send: Callable[[str, str], None], source: str) -> Emailer:
+    """Route normal-urgency alerts to the spool when one is configured."""
+
+    def _emit(subject: str, body: str, *, dedup_key: Optional[str] = None,
+              urgent: bool = False) -> None:
+        spool = spool_path()
+        if spool is None or urgent:
+            send(subject, body)
+            return
+        if spool_is_stale(spool):
+            logger.warning("alert spool %s is stale (digest not running?); "
+                           "mailing %r immediately", spool, subject)
+            send(subject, body)
+            return
+        append_spool(spool, source=source, subject=subject, body=body,
+                     dedup_key=dedup_key)
+
+    return _emit

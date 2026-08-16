@@ -48,7 +48,8 @@ REMOTE_PYTHON = "/usr/bin/python3"
 BACKFILL_MODULE = "aircc.aircc_job_manager.scripts.backfill_best_checkpoints"
 RECLAIM_MODULE = "aircc.aircc_job_manager.scripts.reclaim_completed_failures"
 
-Emailer = Callable[[str, str], None]
+# emailer(subject, body, *, dedup_key=None, urgent=False) -> None
+Emailer = Callable[..., None]
 LLMClient = Callable[[str], str]
 Runner = Callable[[list[str]], subprocess.CompletedProcess]
 
@@ -425,11 +426,17 @@ def diagnose_failed_job(
     return report_path
 
 
-def _send(emailer: Optional[Emailer], subject: str, body: str) -> None:
+def _dedup_hash(text: str) -> str:
+    """Short stable key for the digest's repeat-suppression."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+def _send(emailer: Optional[Emailer], subject: str, body: str, **options) -> None:
+    """Send one alert. ``options`` are notify's ``dedup_key`` / ``urgent``."""
     if emailer is None:
         logger.warning("no emailer configured; would send %s\n%s", subject, body)
         return
-    emailer(subject, body)
+    emailer(subject, body, **options)
 
 
 def run_once(
@@ -464,6 +471,9 @@ def run_once(
             f"AIRCC backup problem: {backup.message}\n\n"
             f"backup log: {backup_log}\n\n"
             f"latest block:\n{backup.block or '(unavailable)'}\n",
+            # A broken backup is the one failure that quietly costs you data, so
+            # it does not wait for the morning digest.
+            urgent=True,
         )
     if not db.ok:
         rc = 1
@@ -475,6 +485,10 @@ def run_once(
             f"running: {db.running_count}\n"
             f"expected: {expected if expected is not None else 'unknown (squeue unreachable)'}\n"
             f"failed: {len(db.failed_jobs or [])}\n",
+            # Keyed on the message, so a DB that stays unreadable for a week is
+            # one alert plus six "still open" lines -- but a changed failure
+            # count is a changed message, and alerts in full again.
+            dedup_key=f"aircc-db:{_dedup_hash(db.message)}",
         )
 
     if missing_best:
@@ -488,19 +502,23 @@ def run_once(
                 f"continuation row depending on them is silently gated:\n{listing}\n\n"
                 f"repair is disabled (--no-repair); run on {ssh_host}:\n"
                 f"  cd {remote_repo} && {REMOTE_PYTHON} -m {BACKFILL_MODULE} --apply\n",
+                dedup_key=f"aircc-missing-best:{_dedup_hash(listing)}",
             )
         else:
             fix = repair_missing_best_checkpoints(
                 missing_best, ssh_host=ssh_host, remote_repo=remote_repo, runner=runner)
+            # A repair that worked is log material, not mail: the monitor found
+            # the problem and already fixed it, and there is nothing to act on.
             if not fix.ok:
                 rc = 1
-            _send(
-                emailer,
-                f"[aircc] best-checkpoint backfill {'ok' if fix.ok else 'FAILED'}",
-                f"{len(missing_best)} finished model(s) had no best_checkpoint, gating any "
-                f"continuation row depending on them:\n{listing}\n\n"
-                f"result: {fix.message}\n\n{fix.output or '(no output)'}\n",
-            )
+                _send(
+                    emailer,
+                    "[aircc] best-checkpoint backfill FAILED",
+                    f"{len(missing_best)} finished model(s) had no best_checkpoint, gating any "
+                    f"continuation row depending on them:\n{listing}\n\n"
+                    f"result: {fix.message}\n\n{fix.output or '(no output)'}\n",
+                    dedup_key=f"aircc-backfill-failed:{_dedup_hash(listing)}",
+                )
             logger.info("AIRCC best-checkpoint repair: %s", fix.message)
 
     falsely_failed = find_falsely_failed_jobs(db_path)
@@ -517,20 +535,23 @@ def run_once(
                 f"failed:\n{listing}\n\n"
                 f"repair is disabled (--no-repair); run on {ssh_host}:\n"
                 f"  cd {remote_repo} && {REMOTE_PYTHON} -m {RECLAIM_MODULE} --apply\n",
+                dedup_key=f"aircc-falsely-failed:{_dedup_hash(listing)}",
             )
         else:
             fix = repair_falsely_failed_jobs(
                 falsely_failed, ssh_host=ssh_host, remote_repo=remote_repo, runner=runner)
+            reclaimed_names = set(fix.reclaimed)
+            # As above: only a reclaim that could not be applied needs you.
             if not fix.ok:
                 rc = 1
-            reclaimed_names = set(fix.reclaimed)
-            _send(
-                emailer,
-                f"[aircc] failed-row reclaim {'ok' if fix.ok else 'FAILED'}",
-                f"{len(falsely_failed)} failed model(s) had a DB-write-failure "
-                f"last_error:\n{listing}\n\n"
-                f"result: {fix.message}\n\n{fix.output or '(no output)'}\n",
-            )
+                _send(
+                    emailer,
+                    "[aircc] failed-row reclaim FAILED",
+                    f"{len(falsely_failed)} failed model(s) had a DB-write-failure "
+                    f"last_error:\n{listing}\n\n"
+                    f"result: {fix.message}\n\n{fix.output or '(no output)'}\n",
+                    dedup_key=f"aircc-reclaim-failed:{_dedup_hash(listing)}",
+                )
             logger.info("AIRCC falsely-failed reclaim: %s", fix.message)
 
     # Rows repair_falsely_failed_jobs actually flipped to finished get no diagnosis
@@ -546,6 +567,11 @@ def run_once(
             f"there is a failure on {job.model_name}, suggested fix is saved "
             f"as a markdown file at {report_path}\n\n"
             f"last_error: {job.last_error or '(empty)'}\n",
+            # A failed row sits in the DB until you clear it, so without this the
+            # same model re-mails every night. Keyed on the error too, so the
+            # same model failing a NEW way is a new alert.
+            dedup_key=f"aircc-failure:{job.model_name}:"
+                      f"{_dedup_hash(job.last_error or '')}",
         )
 
     logger.info("AIRCC daily monitor done: backup=%s db=%s", backup.message, db.message)
@@ -583,7 +609,7 @@ def main() -> int:
         expected=args.expected_running,
         recommendations_dir=args.recommendations_dir,
         mount_repo=args.mount_repo,
-        emailer=make_emailer(),
+        emailer=make_emailer(source="aircc.daily_monitor"),
         llm_client=make_llm_client(),
         ssh_host=args.ssh_host,
         remote_repo=args.remote_repo,

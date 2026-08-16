@@ -46,16 +46,17 @@ fi
 
 notify() {
     local subject="$1" body="$2"
-    PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" "$PYTHON" - "$subject" "$body" <<'PYEOF'
+    local dedup="${3:-}" urgent="${4:-}"
+    PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" "$PYTHON" - "$subject" "$body" "$dedup" "$urgent" <<'PYEOF'
 import sys
 from aircc.aircc_job_manager.notify import make_emailer
 
-subject, body = sys.argv[1], sys.argv[2]
-emailer = make_emailer()
+subject, body, dedup, urgent = sys.argv[1:5]
+emailer = make_emailer(source="aa_sweep")
 if emailer is None:
     print(f"[notify] no emailer configured; would send: {subject}", file=sys.stderr)
 else:
-    emailer(subject, body)
+    emailer(subject, body, dedup_key=dedup or None, urgent=bool(urgent))
 PYEOF
 }
 
@@ -70,7 +71,7 @@ echo "$out"
 if [[ "$rc" -ne 0 ]]; then
     echo "[aa_sweep] $(date -Is) ERROR: submit exited rc=$rc" >&2
     if ! grep -q '^\[aa_sweep\].*ABORT' <<<"$out"; then
-        notify "[aa_sweep] daily run failed rc=$rc" "$out"
+        notify "[aa_sweep] daily run failed rc=$rc" "$out" "aa_sweep-daily-failed"
     fi
 fi
 

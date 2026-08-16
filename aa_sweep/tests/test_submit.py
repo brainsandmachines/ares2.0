@@ -146,7 +146,7 @@ def test_squeue_failure_fails_closed(monkeypatch):
     def failing(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="slurm_load_jobs error")
 
-    monkeypatch.setattr(submit_mod, "notify", lambda *a: None)
+    monkeypatch.setattr(submit_mod, "notify", lambda *a, **kw: None)
     try:
         submit_mod.live_job_names(run=failing)
     except RuntimeError as exc:
@@ -176,7 +176,7 @@ def test_limit_caps_submissions(monkeypatch):
 
 def test_missing_mount_aborts_before_touching_the_cluster(monkeypatch, capsys):
     monkeypatch.setattr(submit_mod, "check_mounts", lambda: ["aircc mount is not mounted at /x"])
-    monkeypatch.setattr(submit_mod, "notify", lambda subject, body: None)
+    monkeypatch.setattr(submit_mod, "notify", lambda subject, body, **kw: None)
 
     def explode(*a, **k):
         raise AssertionError("must not reach the cluster when a mount is down")
@@ -190,7 +190,7 @@ def test_missing_mount_aborts_before_touching_the_cluster(monkeypatch, capsys):
 def test_submit_failure_is_reported_and_exits_nonzero(monkeypatch):
     _install_fakes(monkeypatch, _empty_probe(), sjm_finished=["m"])
     notified = []
-    monkeypatch.setattr(submit_mod, "notify", lambda subject, body: notified.append(subject))
+    monkeypatch.setattr(submit_mod, "notify", lambda subject, body, **kw: notified.append(subject))
 
     def failing_submit(*a, **k):
         raise RuntimeError("sbatch: Invalid partition")

@@ -107,19 +107,24 @@ def submit_job(model_dir: str, model_name: str, kind: str, run=subprocess.run) -
     return proc.stdout.strip().split(";")[0]
 
 
-def notify(subject: str, body: str) -> None:
-    """Email on real breakage only, matching the other two Botero cron scripts."""
+def notify(subject: str, body: str, dedup_key: str | None = None) -> None:
+    """Email on real breakage only, matching the other two Botero cron scripts.
+
+    ``dedup_key`` lets the morning digest collapse a repeat of the same
+    condition to one line -- these are mostly transient cluster/mount problems
+    that repeat verbatim for days.
+    """
     try:
         from aircc.aircc_job_manager.notify import make_emailer
 
-        emailer = make_emailer()
+        emailer = make_emailer(source="aa_sweep")
     except Exception as exc:  # pragma: no cover - optional dependency
         print(f"[notify] emailer unavailable ({exc}); would send: {subject}", file=sys.stderr)
         return
     if emailer is None:
         print(f"[notify] no emailer configured; would send: {subject}", file=sys.stderr)
         return
-    emailer(subject, body)
+    emailer(subject, body, dedup_key=dedup_key)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -140,7 +145,8 @@ def main(argv: list[str] | None = None) -> int:
         if problems:
             msg = "; ".join(problems)
             log(f"ABORT: {msg}")
-            notify("[aa_sweep] mounts down", f"Cannot plan the AutoAttack sweep:\n\n{msg}")
+            notify("[aa_sweep] mounts down", f"Cannot plan the AutoAttack sweep:\n\n{msg}",
+               dedup_key="aa_sweep-mounts-down")
             return 1
 
     try:
@@ -148,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         sjm_finished = plan_mod.finished_models(config.SJM_DB)
     except Exception as exc:
         log(f"ABORT: reading job DBs failed: {exc}")
-        notify("[aa_sweep] job DB read failed", str(exc))
+        notify("[aa_sweep] job DB read failed", str(exc), dedup_key="aa_sweep-db-read-failed")
         return 1
 
     if args.model:
@@ -163,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         probe = plan_mod.probe_slurm(candidates)
     except Exception as exc:
         log(f"ABORT: cluster probe failed: {exc}")
-        notify("[aa_sweep] cluster probe failed", str(exc))
+        notify("[aa_sweep] cluster probe failed", str(exc), dedup_key="aa_sweep-probe-failed")
         return 1
 
     works = plan_mod.build_plan(aircc_finished, sjm_finished, probe)
@@ -181,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
         running = live_job_names()
     except Exception as exc:
         log(f"ABORT: squeue check failed: {exc}")
-        notify("[aa_sweep] squeue check failed", str(exc))
+        notify("[aa_sweep] squeue check failed", str(exc), dedup_key="aa_sweep-squeue-failed")
         return 1
 
     # One check per run, not per model: whether the nightly backup that fills the local mirror
