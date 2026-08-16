@@ -55,16 +55,17 @@ mkdir -p -m 0755 "$DEST"
 
 notify() {
     local subject="$1" body="$2"
-    PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" python3 - "$subject" "$body" <<'PYEOF'
+    local dedup="${3:-}" urgent="${4:-}"
+    PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" python3 - "$subject" "$body" "$dedup" "$urgent" <<'PYEOF'
 import sys
 from aircc.aircc_job_manager.notify import make_emailer
 
-subject, body = sys.argv[1], sys.argv[2]
-emailer = make_emailer()
+subject, body, dedup, urgent = sys.argv[1:5]
+emailer = make_emailer(source="aircc.backup")
 if emailer is None:
     print(f"[notify] no emailer configured; would send: {subject}", file=sys.stderr)
 else:
-    emailer(subject, body)
+    emailer(subject, body, dedup_key=dedup or None, urgent=bool(urgent))
 PYEOF
 }
 
@@ -87,19 +88,21 @@ if [[ "$status_rc" -ne 0 ]]; then
     echo "[status] $(date -Is) ERROR: aircc_status.py failed rc=$status_rc" >&2
     notify "[aircc] status check failed" "$STATUS_SCRIPT exited rc=$status_rc:
 
-$status_out"
+$status_out" "aircc-status-check-failed"
 elif [[ -z "$expected_n" ]]; then
     # squeue SSH check was unavailable -- can't compare against a live expected
     # count, so only alert on failures, don't fabricate a running-count mismatch.
     if [[ "${failed_n:-0}" -ne 0 ]]; then
         echo "[status] $(date -Is) ALERT: failed=${failed_n:-0} (expected_running check unavailable)" >&2
-        notify "[aircc] status alert: failed=${failed_n:-0}" "$status_out"
+        notify "[aircc] status alert: failed=${failed_n:-0}" "$status_out" \
+            "aircc-status:failed=${failed_n:-0}"
     else
         echo "[status] $(date -Is) ok: running=${running_n:-0} failed=0 (expected_running check unavailable)"
     fi
 elif [[ "$check_state" != "[OK]" || "${failed_n:-0}" -ne 0 ]]; then
     echo "[status] $(date -Is) ALERT: running=${running_n:-0} (expected $expected_n) failed=${failed_n:-0}" >&2
-    notify "[aircc] status alert: running=${running_n:-0} (expected $expected_n) failed=${failed_n:-0}" "$status_out"
+    notify "[aircc] status alert: running=${running_n:-0} (expected $expected_n) failed=${failed_n:-0}" \
+        "$status_out" "aircc-status:running=${running_n:-0}:expected=${expected_n}:failed=${failed_n:-0}"
 else
     echo "[status] $(date -Is) ok: running=$running_n (expected $expected_n) failed=0"
 fi
@@ -149,7 +152,7 @@ waiting > 0) and abort just that one:
   ls -l /sys/fs/fuse/connections/
   for c in /sys/fs/fuse/connections/*/; do echo \"\$c waiting=\$(cat \$c/waiting)\"; done
   echo 1 > /sys/fs/fuse/connections/<stale-id>/abort
-"
+" "" urgent
         exit 1
     fi
 
@@ -165,7 +168,7 @@ if [[ ! -d "$SRC" ]]; then
     echo "[backup] ERROR: source not mounted/missing: $SRC" >&2
     echo "[backup] is the sshfs AIRCC mount up?" >&2
     notify "[aircc] backup source not mounted" "source not mounted/missing: $SRC
-is the sshfs AIRCC mount up?"
+is the sshfs AIRCC mount up?" "" urgent
     exit 1
 fi
 
@@ -220,7 +223,7 @@ if [[ "$rsync_rc" -ne 0 ]]; then
     notify "[aircc] backup rsync failed rc=$rsync_rc" "rsync $SRC/ -> $DEST/ failed rc=$rsync_rc
 
 stderr:
-$(cat "$err_tmp")"
+$(cat "$err_tmp")" "" urgent
 fi
 rm -f "$err_tmp"
 

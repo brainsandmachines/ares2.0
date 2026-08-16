@@ -95,7 +95,7 @@ def test_run_once_sends_no_backup_email_when_the_backup_was_skipped(tmp_path):
         expected=32,
         recommendations_dir=tmp_path / "recommendations",
         mount_repo=tmp_path / "mount",
-        emailer=lambda subject, body: emails.append((subject, body)),
+        emailer=lambda subject, body, **_: emails.append((subject, body)),
     )
     assert rc == 0
     assert emails == []
@@ -117,7 +117,7 @@ def test_check_db_reports_running_mismatch(tmp_path):
 def test_run_once_sends_failure_report_and_health_email(tmp_path):
     emails = []
 
-    def emailer(subject, body):
+    def emailer(subject, body, **_options):
         emails.append((subject, body))
 
     def llm(prompt):
@@ -155,7 +155,7 @@ def test_run_once_writes_fallback_report_when_llm_missing(tmp_path):
         expected=32,
         recommendations_dir=rec,
         mount_repo=tmp_path / "mount",
-        emailer=lambda subject, body: emails.append((subject, body)),
+        emailer=lambda subject, body, **_: emails.append((subject, body)),
         llm_client=None,
     )
 
@@ -182,7 +182,7 @@ def test_repeated_failure_reuses_existing_report_without_llm_call(tmp_path):
         expected=32,
         recommendations_dir=rec,
         mount_repo=tmp_path / "mount",
-        emailer=lambda _subject, _body: None,
+        emailer=lambda _subject, _body, **_: None,
     )
     assert daily_monitor.run_once(**kwargs, llm_client=llm) == 1
     assert daily_monitor.run_once(**kwargs, llm_client=llm) == 1
@@ -251,7 +251,9 @@ def test_repair_failure_is_reported_not_raised(tmp_path):
     assert "rc=255" in out.message and "connect failed" in out.output
 
 
-def test_run_once_repairs_and_emails_the_backfill_result(tmp_path):
+def test_run_once_repairs_the_backfill_without_mailing_about_it(tmp_path):
+    """A repair that worked is log material: the monitor found the problem and
+    already fixed it, so there is nothing for a reader to act on."""
     emails = []
     calls = []
 
@@ -265,15 +267,35 @@ def test_run_once_repairs_and_emails_the_backfill_result(tmp_path):
         expected=0,
         recommendations_dir=tmp_path / "rec",
         mount_repo=tmp_path / "mount",
-        emailer=lambda s, b: emails.append((s, b)),
+        emailer=lambda s, b, **_: emails.append((s, b)),
         runner=runner,
     )
 
     assert rc == 0
     assert len(calls) == 1
+    assert not [e for e in emails if "backfill" in e[0]]
+
+
+def test_run_once_mails_when_the_backfill_repair_fails(tmp_path):
+    emails = []
+
+    def runner(argv):
+        return subprocess.CompletedProcess(argv, 1, stdout="", stderr="ssh: connect failed")
+
+    rc = daily_monitor.run_once(
+        db_path=_db_with_missing_best(tmp_path),
+        backup_log=_write_log(tmp_path),
+        expected=0,
+        recommendations_dir=tmp_path / "rec",
+        mount_repo=tmp_path / "mount",
+        emailer=lambda s, b, **_: emails.append((s, b)),
+        runner=runner,
+    )
+
+    assert rc == 1
     subject, body = [e for e in emails if "backfill" in e[0]][0]
-    assert "ok" in subject
-    assert "dep_model" in body and "wrote 1 row(s)" in body
+    assert "FAILED" in subject
+    assert "dep_model" in body
 
 
 def _db_with_falsely_failed(tmp_path: Path) -> Path:
@@ -363,7 +385,7 @@ def test_run_once_reclaims_and_skips_diagnosis_for_the_reclaimed_model(tmp_path)
         expected=0,
         recommendations_dir=rec,
         mount_repo=tmp_path / "mount",
-        emailer=lambda s, b: emails.append((s, b)),
+        emailer=lambda s, b, **_: emails.append((s, b)),
         llm_client=llm,
         runner=runner,
     )
@@ -375,7 +397,8 @@ def test_run_once_reclaims_and_skips_diagnosis_for_the_reclaimed_model(tmp_path)
     reports = list(rec.glob("*.md"))
     assert len(reports) == 1
     assert reports[0].name.startswith("real_failure.")
-    assert any("failed-row reclaim" in s for s, _ in emails)
+    # the reclaim succeeded, so it stays out of the inbox
+    assert not any("failed-row reclaim" in s for s, _ in emails)
     assert not any("failure on flaky_model" in s for s, _ in emails)
     assert any("failure on real_failure" in s for s, _ in emails)
 
@@ -394,7 +417,7 @@ def test_run_once_still_diagnoses_when_reclaim_cannot_resolve_it(tmp_path):
         expected=0,
         recommendations_dir=rec,
         mount_repo=tmp_path / "mount",
-        emailer=lambda s, b: None,
+        emailer=lambda s, b, **_: None,
         llm_client=lambda prompt: "# fix",
         runner=runner,
     )
@@ -419,7 +442,7 @@ def test_run_once_only_reports_falsely_failed_when_repair_is_disabled(tmp_path):
         expected=0,
         recommendations_dir=tmp_path / "rec",
         mount_repo=tmp_path / "mount",
-        emailer=lambda s, b: emails.append((s, b)),
+        emailer=lambda s, b, **_: emails.append((s, b)),
         llm_client=lambda prompt: "# fix",
         repair=False,
         runner=runner,
@@ -442,7 +465,7 @@ def test_run_once_only_reports_when_repair_is_disabled(tmp_path):
         expected=0,
         recommendations_dir=tmp_path / "rec",
         mount_repo=tmp_path / "mount",
-        emailer=lambda s, b: emails.append((s, b)),
+        emailer=lambda s, b, **_: emails.append((s, b)),
         repair=False,
         runner=runner,
     )
@@ -506,7 +529,7 @@ def test_run_once_derives_the_expectation_and_does_not_cry_wolf(tmp_path):
         backup_log=_write_log(tmp_path),
         recommendations_dir=tmp_path / "rec",
         mount_repo=tmp_path / "mount",
-        emailer=lambda s, b: emails.append((s, b)),
+        emailer=lambda s, b, **_: emails.append((s, b)),
         runner=runner,
     )
 
