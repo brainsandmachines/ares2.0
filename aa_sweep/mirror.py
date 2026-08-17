@@ -1,7 +1,7 @@
 """Prefer the local Botero mirror over the AIRCC sshfs mount as the staging source.
 
 The 03:00 backup cron (`aircc/aircc_job_manager/scripts/backup_aircc_models.sh`) already pulls the
-AIRCC results tree to `/mnt/data/robustness_models/aircc_models` on local disk. Staging from there
+AIRCC results tree to `/mnt/data4t/aircc_archive/models` on local disk. Staging from there
 removes the slow half of the sshfs-read → ssh-write hop: reading the mount measured ~3.4 MB/s, so a
 2.8 GB model took ~14 minutes.
 

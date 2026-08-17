@@ -34,7 +34,7 @@ logger = logging.getLogger("aircc.daily_monitor")
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MOUNT_REPO = Path.home() / "aircc_mount" / "ashtomer" / "ares"
 DEFAULT_DB = DEFAULT_MOUNT_REPO / "aircc" / "aircc_job_manager" / "aircc_jobs.sqlite"
-DEFAULT_BACKUP_LOG = Path("/mnt/data/robustness_models/aircc_models/backup.log")
+DEFAULT_BACKUP_LOG = Path("/mnt/data4t/aircc_archive/models/backup.log")
 DEFAULT_RECOMMENDATIONS_DIR = (
     DEFAULT_REPO_ROOT / "aircc" / "aircc_job_manager" / "recommendations"
 )

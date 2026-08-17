@@ -6,11 +6,15 @@
 #       (2 models per RUNNING aircc_jm task) or any job has failed. Cheap, and
 #       these are the alerts worth having daily.
 #   (2) rsync backup -- at most every MIN_INTERVAL_HOURS (default 72h, i.e. every
-#       3 days). Backs up the AIRCC results/models tree to Botero, pulled through
-#       the local sshfs AIRCC mount (no ssh in the rsync itself), emailing only if
-#       the rsync itself fails. A full pass moves ~450GB over sshfs at a few MB/s
-#       and can run well over a day, so nightly attempts were mostly no-ops that
-#       collided with the previous night's run.
+#       3 days). Archives the AIRCC results/models tree to Botero over direct ssh,
+#       emailing only if the rsync itself fails. A full pass moves ~1.9TB at
+#       ~25MB/s and can run most of a day, so nightly attempts were mostly
+#       no-ops that collided with the previous night's run.
+#
+#       This is an ARCHIVE, not a mirror: AIRCC deletes the results tree in late
+#       August 2026, and it holds every checkpoint rather than just the best/last.
+#       See the rsync block below for why nothing is ever deleted from the
+#       destination and why mid-training dirs are skipped.
 #
 # Exit codes: 0 = backup ran and succeeded, 75 = nothing to do (not due yet, or a
 # previous backup is still running), anything else = a real failure. The caller
@@ -20,18 +24,27 @@
 # Install (Botero crontab -e) -- nightly; the every-3-days part is enforced here,
 # not in the cron expression, so the daily status check and daily_monitor's DB
 # health check keep running on the off days:
-#   0 3 * * * /home/tomer_a/Documents/ares/aircc/aircc_job_manager/scripts/backup_aircc_models.sh >> /mnt/data/robustness_models/aircc_models/backup.log 2>&1
+#   0 3 * * * /home/tomer_a/Documents/ares/aircc/aircc_job_manager/scripts/backup_aircc_models.sh >> /mnt/data4t/aircc_archive/models/backup.log 2>&1
 #
-# Permissions: --no-perms/--no-owner/--no-group drop the sshfs-reported perms so
+# Permissions: --no-perms/--no-owner/--no-group drop the remote-reported perms so
 # files land owned by your Botero user; the dest root is created mode 0755.
 
 set -u -o pipefail
 
 # --- CONFIRM THESE PATHS ---
-# Local sshfs mount of the AIRCC results/models dir, e.g.:
-#   ~/aircc_mount/shared/cycle2_bgu_golan_prj/ashtomer/ares/results/models
-SRC="${AIRCC_MOUNT:-$HOME/aircc_mount/ashtomer/ares/results/models}"
-DEST="${AIRCC_BACKUP_DEST:-/mnt/data/robustness_models/aircc_models}"
+# Pulled straight over ssh rather than through the sshfs mount: direct ssh measured 9.7MB/s vs
+# 3.7MB/s through the mount (measured 2026-08-17), which matters now that the intermediate
+# checkpoints are included too. Real rsync throughput runs ~25MB/s; the 9.7 figure was a dd probe.
+# REMOTE_DIR is the same path without the host, for the pre-flight existence test.
+AIRCC_HOST="${AIRCC_HOST:-aircc}"
+REMOTE_DIR="${AIRCC_REMOTE_DIR:-/shared/cycle2_bgu_golan_prj/ashtomer/ares/results/models}"
+SRC="${AIRCC_SRC:-$AIRCC_HOST:$REMOTE_DIR}"
+# The archive lives on /mnt/data4t (3.6T): the full tree incl. every checkpoint is ~1.9TB, which
+# does not fit alongside everything else on /mnt/data. Deletions are never propagated here.
+DEST="${AIRCC_BACKUP_DEST:-/mnt/data4t/aircc_archive/models}"
+# Job DB, read (immutable) only to find which models are mid-training. Still via the sshfs mount --
+# it is a 12KB file and the status check above already depends on the mount being up.
+AIRCC_DB_PATH="${AIRCC_DB_PATH:-$HOME/aircc_mount/ashtomer/ares/aircc/aircc_job_manager/aircc_jobs.sqlite}"
 REPO_ROOT="${ARES_REPO:-/home/tomer_a/Documents/ares}"
 STATUS_SCRIPT="${AIRCC_STATUS_SCRIPT:-$HOME/.claude/skills/aircc-status/scripts/aircc_status.py}"
 LOCK_FILE="${AIRCC_BACKUP_LOCK:-$DEST/.backup.lock}"
@@ -42,9 +55,9 @@ STAMP_FILE="${AIRCC_BACKUP_STAMP:-$DEST/.backup.started}"
 # failed or killed pass still waits its turn instead of retrying every night.
 ATTEMPT_FILE="${AIRCC_BACKUP_ATTEMPT:-$DEST/.backup.attempted}"
 MIN_INTERVAL_HOURS="${AIRCC_BACKUP_MIN_INTERVAL_HOURS:-72}"
-# Hard cap on the rsync itself. The full pass moves ~450GB over sshfs at ~3.5MB/s and has taken
-# well over a day, so this has to be generous -- but it must stay under MIN_INTERVAL_HOURS with
-# room to spare, or a wedged run would still hold the lock when the next backup is due.
+# Hard cap on the rsync itself. A first/catch-all pass moves up to ~1.9TB at ~25MB/s (~21h), so this
+# has to be generous -- but it must stay under MIN_INTERVAL_HOURS with room to spare, or a wedged run
+# would still hold the lock when the next backup is due.
 RSYNC_TIMEOUT="${AIRCC_BACKUP_RSYNC_TIMEOUT:-60h}"
 # A lock older than this is not "still going" (the timeout above would have killed it) -- it is
 # wedged. Keep between RSYNC_TIMEOUT and MIN_INTERVAL_HOURS.
@@ -123,6 +136,8 @@ fi
 # its rsync sat in uninterruptible D state on the abandoned FUSE connection, ignoring SIGKILL. rsync
 # inherits fd 9, and an flock belongs to the open file description, so the lock outlived the script
 # and every night after that silently SKIPped. A skip is normal; a skip on an old lock is not.
+# The rsync now goes over direct ssh, so that exact FUSE wedge can no longer happen to it -- but a
+# hung ssh holds the lock just as effectively, so this check still earns its place.
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
     held_since="$(cat "$STAMP_FILE" 2>/dev/null || echo "unknown")"
@@ -145,9 +160,12 @@ Every run will keep skipping until the holder dies.
 
 holding pids:${holders:- (none found)}
 
+A holder in S state is usually a hung ssh/rsync -- SIGKILL clears it.
+
 If a holder is in D state it is stuck on a dead sshfs connection and SIGKILL will not work.
-Find the stale FUSE connection (one with no matching mount in /proc/self/mountinfo and
-waiting > 0) and abort just that one:
+The rsync itself no longer reads through the mount, but the status check does. Find the stale
+FUSE connection (one with no matching mount in /proc/self/mountinfo and waiting > 0) and abort
+just that one:
 
   ls -l /sys/fs/fuse/connections/
   for c in /sys/fs/fuse/connections/*/; do echo \"\$c waiting=\$(cat \$c/waiting)\"; done
@@ -164,11 +182,10 @@ date -Is > "$STAMP_FILE"
 trap 'rm -f "$STAMP_FILE"' EXIT
 
 # --- 4. rsync backup ---
-if [[ ! -d "$SRC" ]]; then
-    echo "[backup] ERROR: source not mounted/missing: $SRC" >&2
-    echo "[backup] is the sshfs AIRCC mount up?" >&2
-    notify "[aircc] backup source not mounted" "source not mounted/missing: $SRC
-is the sshfs AIRCC mount up?" "" urgent
+if ! ssh -o BatchMode=yes -o ConnectTimeout=30 "$AIRCC_HOST" test -d "$REMOTE_DIR"; then
+    echo "[backup] ERROR: cannot reach $AIRCC_HOST, or $REMOTE_DIR is gone" >&2
+    notify "[aircc] backup source unreachable" "ssh $AIRCC_HOST test -d $REMOTE_DIR failed.
+Either the cluster is unreachable or the results tree no longer exists." "" urgent
     exit 1
 fi
 
@@ -179,19 +196,55 @@ rsync_rc=0
 # cluster deleting superseded checkpoints mid-transfer) from real read/IO errors.
 # stdout (stats2/progress2) still flows straight to the cron log.
 err_tmp="$(mktemp "${TMPDIR:-/tmp}/aircc_rsync_err.XXXXXX")"
-# Skip the per-epoch intermediate checkpoints (checkpoint-N.pth.tar, ~1.4GB each);
-# we only keep last.pth.tar, model_best*.pth.tar, configs, logs and summaries.
-# --delete-excluded also purges any such checkpoints already on the destination.
-# protect the script's own log/lock (they live in $DEST, not in $SRC, so the
-# --delete flags would otherwise remove them mid-run).
-# timeout caps a run that is merely slow or stalled on a live connection. It cannot kill an rsync
-# wedged in D state on a dead FUSE connection -- the stale-lock alert above is what catches that.
-# --kill-after escalates to SIGKILL if the rsync ignores SIGTERM.
+# APPEND-ONLY, by design. AIRCC deletes the results tree in late August; with --delete the next
+# pass after that would faithfully erase the only remaining copy. Nothing here ever removes a file
+# from $DEST -- superseded files just accumulate, which is the cheap side of the trade.
+#
+# Everything is kept now, intermediate checkpoint-N.pth.tar (~1.4GB each) included: this archive is
+# the last copy, not a convenience mirror.
+#
+# That is only affordable because actively-training dirs are skipped -- a running model rewrites its
+# checkpoints every few epochs, and re-pulling superseded ones over a ~25MB/s link would never
+# converge. A model is picked up in full on the first pass after it leaves 'running'. Failed runs
+# get moved out to results/models_failed entirely, so they are archived separately, once.
+# AIRCC_BACKUP_SKIP_RUNNING=0 forces a full catch-all sweep (use before the cluster deletion).
+running_excludes=()
+if [[ "${AIRCC_BACKUP_SKIP_RUNNING:-1}" != "0" ]]; then
+    # Read into a variable, NOT `mapfile < <(...)`: a process substitution's exit status is not
+    # propagated to mapfile, so a dead DB would look like "no running models" and quietly sync
+    # every mid-training dir -- days of link time on checkpoints about to be superseded.
+    if ! running_raw="$(python3 - "$AIRCC_DB_PATH" <<'PYEOF'
+import sqlite3, sys
+con = sqlite3.connect(f"file:{sys.argv[1]}?immutable=1", uri=True)
+for (name,) in con.execute("SELECT model_name FROM jobs WHERE status='running'"):
+    print(f"--exclude=/{name}/")
+PYEOF
+    )"; then
+        echo "[backup] ERROR: cannot read job DB $AIRCC_DB_PATH" >&2
+        notify "[aircc] backup: cannot read job DB" \
+            "$AIRCC_DB_PATH unreadable, so the running-model exclusions could not be built.
+Refusing to sync rather than pulling every mid-training checkpoint. Is the sshfs mount up?" \
+            "" urgent
+        exit 1
+    fi
+    # Guard the empty case separately: `mapfile <<<""` yields one empty element, which would hand
+    # rsync a bare `--exclude=`.
+    if [[ -n "$running_raw" ]]; then
+        mapfile -t running_excludes <<<"$running_raw"
+    fi
+    echo "[backup] skipping ${#running_excludes[@]} running model dir(s)"
+fi
+
+# -rt (mtime preservation) is load-bearing: aa_sweep/mirror.py only stages a file out of this tree
+# when its size AND mtime match the AIRCC source, so dropping -t would silently disable that path.
+# protect the script's own log/lock, which live in $DEST rather than under $SRC.
+# timeout caps a run that is merely slow or stalled on a live connection; --kill-after escalates to
+# SIGKILL if the rsync ignores SIGTERM. A wedged ssh is caught by the stale-lock alert above.
 timeout --kill-after=5m "$RSYNC_TIMEOUT" \
-    rsync -rt --no-perms --no-owner --no-group --partial --delete-after --delete-excluded \
+    rsync -rt --no-perms --no-owner --no-group --partial \
     --filter='protect /backup.log' --filter='protect /.backup.lock' \
     --filter='protect /.backup.started' --filter='protect /.backup.attempted' \
-    --exclude='checkpoint-*.pth.tar' --info=stats2,progress2 \
+    "${running_excludes[@]}" --info=stats2,progress2 \
     "$SRC/" "$DEST/" 2>"$err_tmp" || rsync_rc=$?
 cat "$err_tmp" >&2   # keep the stderr lines in the log
 
