@@ -30,7 +30,7 @@ crontab ──▶ scripts/aa_sweep_daily.sh ──▶ python -m aa_sweep.submit
 ### Staging source
 
 Reading the AIRCC sshfs mount measures ~3.4 MB/s, so a 2.8 GB model takes ~14 minutes. The 03:00
-backup cron already mirrors that tree to local disk at `/mnt/data/robustness_models/aircc_models`,
+backup cron already archives that tree to local disk at `/mnt/data4t/aircc_archive/models`,
 so `mirror.py` prefers the mirror — but only when it is *provably* a faithful copy:
 
 1. **Global** — the latest `backup.log` block validated, via

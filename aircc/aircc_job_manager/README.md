@@ -104,9 +104,17 @@ final_eval plot) · `mark_finished` / `mark_failed`.
 
 ## Backup
 
-`scripts/backup_aircc_models.sh` rsyncs the AIRCC `results/models` (via the local
-sshfs mount) to `/mnt/data/robustness_models/aircc_models`. Install the cron line
-shown in the script header.
+`scripts/backup_aircc_models.sh` rsyncs the AIRCC `results/models` (over direct
+ssh) to `/mnt/data4t/aircc_archive/models`. Install the cron line shown in the
+script header.
+
+It is an **archive, not a mirror**: AIRCC deletes the results tree in late August
+2026, so nothing is ever deleted from the destination and every checkpoint is kept
+(~1.9TB). That is affordable only because dirs whose DB status is `running` are
+skipped — their checkpoints are rewritten every few epochs — and each is picked up
+in full on the first pass after it finishes. Failed runs live in a separate
+`results/models_failed` tree, archived once by hand. `AIRCC_BACKUP_SKIP_RUNNING=0`
+forces a full catch-all sweep.
 
 The cron fires nightly but the two halves run at different cadences: the
 aircc-status check runs every night, while the rsync runs at most every
