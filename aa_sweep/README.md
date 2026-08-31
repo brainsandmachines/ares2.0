@@ -47,6 +47,60 @@ The cron runs at **21:30**, 18.5 h after the 03:00 backup starts. The backup its
 every 3 days and its full pass takes ~16.5 h (03:00 -> ~19:35 on 2026-08-08); a 19:30 cron raced it
 by five minutes and lost the mirror for that night, so the slot was moved back two hours.
 
+## The Botero lane
+
+The BGU queue is chronically jammed behind `QOSMaxGRESPerUser` — on 2026-08-30, 163 of 170 `aaswp`
+jobs were PENDING and 154 of those still needed 14 of their 15 cells. Botero's own RTX 4090 is the
+same 24 GB class the sbatch demands via `--constraint`, so it is a second lane:
+
+```
+21:30 cron ──▶ aa_sweep.submit ──▶ botero.topup()      keep 5 units queued locally
+                                        │
+*/10 cron  ──▶ aa_sweep_botero_runner.sh ──▶ botero_runner.tick()
+                                        │
+   flock (held for the whole job)  ──▶  one job at a time, never two on one card
+   GPU gate (any foreign CUDA proc) ──▶  defer; the workstation's user always wins
+   claim oldest queued  ──▶  autoattack_array_eval.py --model-dir <local archive>
+```
+
+**Depth 5, concurrency 1.** `BOTERO_SLOTS` is a *backlog*, not a parallelism level. A full 14-cell
+checkpoint is days of work on one card; the backlog exists so the lane never idles waiting for the
+next nightly top-up.
+
+**Moving beats adding.** Top-up prefers to take work that is already queued on Slurm — `scancel`
+there, enqueue here — starting from the **highest job id**, i.e. the jobs Slurm would pick up last.
+Only when there is nothing left to move does it enqueue work that was never queued anywhere. A unit
+still pending on Slurm is never enqueued locally, so nothing can run in both lanes.
+
+**Models come from the local archives**, searched in order: `/mnt/data4t/slurm_archive/models`,
+`/mnt/data4t/aircc_archive/models`, then the two `/mnt/botero` (QNAP) twins. A directory qualifies
+only if it holds both the checkpoint *and* `autoattack_sweep_selection.json` — without the selection
+the run would attack a different 1024 images and the rows would not be comparable. The two archives
+are not cleanly split by originating cluster, so all four roots are searched.
+
+**Results stay on Botero.** Rows are written into the archive dir they were read from and echoed
+(CSV + comparison PNG only) onto the QNAP twin; nothing is pushed back to either cluster. That is
+why `census.kind_status` takes a third source — see *Things that are easy to get wrong* below.
+
+### Operating it
+
+```bash
+python -m aa_sweep.botero status                  # the queue
+python -m aa_sweep.botero status --all            # including finished/failed
+python -m aa_sweep.botero enqueue <model> <kind>  # queue one by hand
+python -m aa_sweep.botero reset <id>              # a failed row back into the queue
+python -m aa_sweep.botero drop <id>               # delete a row
+
+python -m aa_sweep.submit --botero-topup-only     # top up now, submit no sbatch
+python -m aa_sweep.submit --no-botero             # cluster only
+aa_sweep/scripts/aa_sweep_botero_runner.sh        # one tick by hand
+AA_BOTERO_ARGS=--check-gpu aa_sweep/scripts/aa_sweep_botero_runner.sh
+date -Is -d 'tomorrow 06:00' > aa_sweep/logs/.botero_hold   # pause the lane
+```
+
+Per-job logs are `aa_sweep/logs/botero/<model>__<kind>.log`; the cron's own log is
+`aa_sweep/logs/botero_runner.log`, quiet on idle ticks.
+
 ## Usage
 
 ```bash
@@ -75,6 +129,9 @@ down, unreadable DB, or a failed rsync/sbatch.
 | `stage.py` | The `--ignore-existing` rsync and the AIRCC-only CSV row merge. |
 | `submit.py` | Entrypoint: preflight → plan → stage → dedupe → sbatch. |
 | `scripts/aa_sweep_daily.sh` | Cron wrapper: `flock`, notify-on-crash. |
+| `botero.py` | The local lane: queue DB, archive-dir resolution, top-up, `status`/`enqueue` CLI. |
+| `botero_runner.py` | The local worker: GPU gate, claim, run the engine, echo to the QNAP. |
+| `scripts/aa_sweep_botero_runner.sh` | Cron wrapper for the worker: `flock`, hold file, quiet ticks. |
 
 Cluster side: `sbatches/aa_sweep_completion.sbatch` runs
 `data_analysis/autoattack_array_eval.py --model-dir … --checkpoint-kinds <one kind>`.
@@ -95,6 +152,12 @@ Cluster side: `sbatches/aa_sweep_completion.sbatch` runs
 - **CSV rows key off the directory basename.** sjm names are nested (`vit_b_cvst/linf_1_init1`) but
   `model_name` in the CSV is `linf_1_init1`. Job names flatten `/` to `__` so they survive
   `squeue -o %j`.
+- **Botero results are invisible to the cluster.** They are never pushed back, so `kind_status`
+  reads the local archive as a *third* census source next to the BGU probe and the AIRCC mount.
+  Drop that and the nightly run resubmits to Slurm every cell Botero has already computed.
+- **The Botero queue is part of the dedupe set.** `live_job_names()` unions the local queue's rows
+  in under the same `aaswp_<model>_<kind>` names, so a unit this machine owns is never also sent to
+  the cluster. One unit, one lane.
 - **Runtime is hours per cell.** ~25–40 h per checkpoint on a 3090/4090. The engine flushes the CSV
   after every setting, so a job that hits the 7-day limit loses at most one cell and the next day's
   cron picks up exactly where it stopped.

@@ -32,6 +32,12 @@ def no_aircc(_name):
     return {}, {}
 
 
+def no_botero(_name):
+    """Keep the census hermetic: without this the default reader reads the real /mnt/data4t
+    archive, and fixture model names that happen to exist there arrive with real CSV rows."""
+    return {}, {}, None
+
+
 def test_finished_models_selects_only_finished(tmp_path):
     db = tmp_path / "jobs.sqlite"
     make_db(db, [("a", "finished"), ("b", "running"), ("c", "finished"), ("d", "pending")])
@@ -49,6 +55,7 @@ def test_model_with_a_full_sweep_is_complete_and_stages_nothing():
         aircc_finished=["m"], sjm_finished=[],
         slurm_probe={"m": probe({v: BIG for v in CKPT.values()}, csvs)},
         aircc_reader=no_aircc,
+        botero_reader=no_botero,
     )
     assert works[0].is_complete
     assert works[0].runnable_kinds == []
@@ -69,6 +76,7 @@ def test_only_the_gapped_kinds_checkpoint_is_staged():
         aircc_finished=["m"], sjm_finished=[],
         slurm_probe={"m": probe({}, {}, exists=False)},
         aircc_reader=aircc_reader,
+        botero_reader=no_botero,
     )
     work = works[0]
     assert work.runnable_kinds == ["advbest"]
@@ -84,6 +92,7 @@ def test_baseline_without_advbest_checkpoint_gets_no_advbest_job():
         aircc_finished=["m"], sjm_finished=[],
         slurm_probe={"m": probe({}, {}, exists=False)},
         aircc_reader=aircc_reader,
+        botero_reader=no_botero,
     )
     assert works[0].runnable_kinds == ["best", "last"]
     assert "model_best_adv.pth.tar" not in works[0].staging_files
@@ -98,6 +107,7 @@ def test_differing_checkpoint_sizes_are_reported_as_a_conflict():
         aircc_finished=["convnext_base_linf_cont4to6_pgd5_init0"], sjm_finished=[],
         slurm_probe={"convnext_base_linf_cont4to6_pgd5_init0": probe({"last.pth.tar": BIG})},
         aircc_reader=aircc_reader,
+        botero_reader=no_botero,
     )
     work = works[0]
     assert any("last.pth.tar" in c and "keeping slurm" in c for c in work.conflicts)
@@ -113,6 +123,7 @@ def test_nested_sjm_name_resolves_dir_and_matches_rows_by_basename():
         aircc_finished=[], sjm_finished=[name],
         slurm_probe={name: probe({v: BIG for v in CKPT.values()}, csvs)},
         aircc_reader=no_aircc,
+        botero_reader=no_botero,
     )
     work = works[0]
     assert work.slurm_dir.endswith("/results/models/vit_b_cvst/linf_1_init1")
@@ -125,6 +136,7 @@ def test_sjm_model_is_never_staged_even_when_incomplete():
         aircc_finished=[], sjm_finished=["vit_b_cvst/l2_1_init1"],
         slurm_probe={"vit_b_cvst/l2_1_init1": probe({v: BIG for v in CKPT.values()})},
         aircc_reader=no_aircc,
+        botero_reader=no_botero,
     )
     work = works[0]
     assert work.runnable_kinds == ["best", "last", "advbest"]

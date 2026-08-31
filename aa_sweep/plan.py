@@ -14,7 +14,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aa_sweep import config
+from aa_sweep import botero, config
 from aa_sweep.census import Cell, KindStatus, grid_cells, kind_status
 
 # Read the BGU side in one ssh round trip: list the run dir and slurp the three sweep CSVs for
@@ -58,6 +58,7 @@ class ModelWork:
     sources: set[str] = field(default_factory=set)
     slurm_dir: str = ""
     aircc_dir: Path | None = None
+    botero_dir: Path | None = None
     slurm_dir_exists: bool = False
     kinds: dict[str, KindStatus] = field(default_factory=dict)
     conflicts: list[str] = field(default_factory=list)
@@ -65,6 +66,7 @@ class ModelWork:
     # into an existing BGU CSV without re-reading anything.
     slurm_csvs: dict[str, str] = field(default_factory=dict)
     aircc_csvs: dict[str, str] = field(default_factory=dict)
+    botero_csvs: dict[str, str] = field(default_factory=dict)
 
     @property
     def runnable_kinds(self) -> list[str]:
@@ -154,15 +156,31 @@ def build_plan(
     sjm_finished: list[str],
     slurm_probe: dict[str, dict],
     aircc_reader=None,
+    botero_reader=None,
 ) -> list[ModelWork]:
-    """Census every finished model on both clusters and return one ModelWork each.
+    """Census every finished model on all three lanes and return one ModelWork each.
 
     ``aircc_reader(model_name) -> (files, csvs)`` is injectable so tests can supply fixtures
     instead of an sshfs mount; the default reads the real AIRCC mount.
+
+    ``botero_reader(model_name) -> (files, csvs, dir)`` reads the local archive copy. It is what
+    keeps the Botero lane's results visible: those rows are written only into the local archive and
+    never pushed to a cluster, so without this census source the nightly run would keep submitting
+    cells Botero has already finished. Local stats over ~160 dirs, negligible beside the ssh probe.
     """
     if aircc_reader is None:
         def aircc_reader(name: str):
             return _read_local_dir(config.AIRCC_MODELS_ROOT / name)
+
+    if botero_reader is None:
+        def botero_reader(name: str):
+            model_dir = botero.resolve_model_dir(name, config.CKPT_FILE_FOR_KIND["best"]) or \
+                botero.resolve_model_dir(name, config.CKPT_FILE_FOR_KIND["last"]) or \
+                botero.resolve_model_dir(name, config.CKPT_FILE_FOR_KIND["advbest"])
+            if model_dir is None:
+                return {}, {}, None
+            files, csvs = _read_local_dir(model_dir)
+            return files, csvs, model_dir
 
     grid: set[Cell] = grid_cells(config.NORMS, config.EPS_INPUTS)
 
@@ -184,14 +202,18 @@ def build_plan(
         if is_aircc:
             aircc_files, aircc_csvs = aircc_reader(model_name)
 
+        botero_files, botero_csvs, botero_dir = botero_reader(model_name)
+
         work = ModelWork(
             model_name=model_name,
             sources=sources[model_name],
             slurm_dir=f"{config.SLURM_MODELS_ROOT}/{model_name}",
             aircc_dir=(config.AIRCC_MODELS_ROOT / model_name) if is_aircc else None,
+            botero_dir=botero_dir,
             slurm_dir_exists=bool(probe.get("exists")),
             slurm_csvs=slurm_csvs,
             aircc_csvs=aircc_csvs,
+            botero_csvs=botero_csvs,
         )
 
         for kind in config.CHECKPOINT_KINDS:
@@ -207,6 +229,8 @@ def build_plan(
                 slurm_csv_text=slurm_csvs.get(kind, ""),
                 aircc_files=set(aircc_files),
                 aircc_csv_text=aircc_csvs.get(kind, ""),
+                botero_files=set(botero_files),
+                botero_csv_text=botero_csvs.get(kind, ""),
             )
             # Both sides hold this checkpoint at different sizes: two different training runs
             # sharing a name across clusters. Never overwrite the BGU one -- report and move on.
