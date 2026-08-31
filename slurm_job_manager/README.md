@@ -30,7 +30,7 @@ the SQLite DB holds operational state only — but simplified to Botero's rules:
 | `db.py` | `JobDB`: atomic claim (test lane + dep gate), liveness requeue, `release`, failure-hash dedup. |
 | `lifecycle.py` | Build the command from a row (+resume/continuation ckpt) and run one subprocess; stream + return `(rc, tail)`. |
 | `controller.py` | Cluster worker: requeue dead → claim one → run → finish/requeue/fail. `--dry-run` shows commands. |
-| `classify.py` / `failure_analyzer.py` / `notify.py` | Deterministic failure classification + codex/email escalation. |
+| `classify.py` / `failure_analyzer.py` / `notify.py` | Deterministic failure classification + codex/email escalation. `notify.make_emailer` maps `SJM_SMTP_*` onto the shared `aircc_job_manager.notify` transport (so sjm alerts share the digest and the mail archive), and only falls back to its own SMTP/`mail` sender if that finds none. |
 | `monitor.py` | Botero pass: escalate new failure signatures to codex (DB-driven, no ssh). |
 | `seed.py` | Upsert / `--reconcile` rows from a CSV (the "add a job" flow). |
 | `release.py` | SIGTERM-trap entrypoint: return a row to `pending`. |

@@ -38,7 +38,33 @@ deliberate `seed_db.py` step.
 | `slurm/job_manager.sbatch` | Pyxis array `1-200%16` on `sandbox`, v2 image. |
 | `slurm/smoke_train.sbatch` | One 1-epoch training in the v2 image (launch test). |
 | `scripts/backup_aircc_models.sh` | Nightly status check + every-3-days rsync from the sshfs AIRCC mount to Botero. |
+| `notify.py` | The one email transport every notifier in the repo uses: SMTP/`mail`, spooling, and the mail archive. |
+| `digest.py` | Drains the alert spool into one morning mail (07:30 cron). |
+| `mail_log.py` | Reader for the mail archive -- what the notifiers have sent you. |
 | `tests/` | DB unit tests + standalone GPU-cleanup test. |
+
+## Alert mail
+
+Every alert -- from `daily_monitor`, the two backup scripts, the QNAP mirror,
+`aa_sweep`, the catastrophic-overfitting notifier and the sjm failure analyzer --
+goes through `notify.make_emailer(source=...)`, which does three things:
+
+1. **Archives it**, always, to `logs/mail/YYYY-MM.jsonl` (one JSON record per
+   mail: `ts`, `msg_id`, `source`, `subject`, `body`, `urgent`, `routed`, and
+   `send_error` if the send failed). `ARES_MAIL_ARCHIVE=0` turns this off; a path
+   relocates it. This is the durable record -- the spool below is deleted daily.
+2. **Spools it** when `ARES_ALERT_SPOOL` is set, so `digest.py` mails a normal
+   alert as part of the next morning's digest instead of on its own.
+3. **Mails it immediately** when the alert is `urgent=True` (a collapsing run, a
+   broken backup), when no spool is configured, or when the spool has gone stale
+   (`ARES_ALERT_SPOOL_STALE_HOURS`, default 36 -- i.e. the digest cron died).
+
+```bash
+python -m aircc.aircc_job_manager.mail_log                       # last 7 days, one line each
+python -m aircc.aircc_job_manager.mail_log --since 30d --source aircc.backup
+python -m aircc.aircc_job_manager.mail_log --grep rsync --full   # with bodies
+python -m aircc.aircc_job_manager.mail_log --id 4f2a1c9b0e77     # one alert
+```
 
 ## CSV columns
 

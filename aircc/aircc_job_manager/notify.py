@@ -13,11 +13,16 @@ next morning. Urgent alerts ignore the spool and go out immediately.
 
 Spooling is off unless ``ARES_ALERT_SPOOL`` is set, so the default behaviour is
 byte-for-byte what it was before.
+
+Independently of that, every alert -- spooled, mailed, or urgent -- is appended
+to a permanent JSONL archive under ``logs/mail/YYYY-MM.jsonl`` so you can read
+back what the notifiers sent you (``python -m aircc.aircc_job_manager.mail_log``).
 """
 
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import logging
 import os
@@ -43,6 +48,14 @@ DEFAULT_SPOOL_PATH = Path(__file__).resolve().parent / "logs" / "alerts.jsonl"
 # append-only, so its first line is its oldest -- when that is older than this,
 # assume the digest is broken and mail immediately instead of spooling.
 SPOOL_STALE_HOURS = float(os.environ.get("ARES_ALERT_SPOOL_STALE_HOURS", "36"))
+
+# Every alert is also appended to a permanent JSONL archive, one file per month,
+# so past mail can be read back long after the spool that batched it was drained
+# (digest.py deletes the spool once the digest is away). Unlike the spool this is
+# on by default and covers urgent alerts too -- those never reach the spool at
+# all. Set ARES_MAIL_ARCHIVE=0 to switch it off, or to a directory to relocate it.
+ARCHIVE_ENV = "ARES_MAIL_ARCHIVE"
+DEFAULT_ARCHIVE_DIR = Path(__file__).resolve().parent / "logs" / "mail"
 
 # An alert body can quote whatever it was inspecting, and some of those are
 # unbounded: an in-progress `rsync --info=progress2` block is a single
@@ -114,6 +127,11 @@ def append_spool(path: Path, *, source: str, subject: str, body: str,
     }
     if dedup_key:
         record["dedup_key"] = dedup_key
+    _append_jsonl(path, record)
+
+
+def _append_jsonl(path: Path, record: dict) -> None:
+    """Append one JSON record as a line, locked against the other cron writers."""
     line = json.dumps(record, ensure_ascii=False) + "\n"
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,6 +142,54 @@ def append_spool(path: Path, *, source: str, subject: str, body: str,
     finally:
         fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)
+
+
+def archive_path(now: Optional[datetime] = None) -> Optional[Path]:
+    """This month's mail-archive file, or None when archiving is switched off.
+
+    One file per month rather than one growing file: at a handful of alerts a
+    day nothing needs rotating, and "what did it send in July" stays one `cat`.
+    """
+    raw = os.environ.get(ARCHIVE_ENV, "").strip()
+    if raw == "0":
+        return None
+    root = Path(raw).expanduser() if raw and raw != "1" else DEFAULT_ARCHIVE_DIR
+    return root / f"{(now or datetime.now().astimezone()):%Y-%m}.jsonl"
+
+
+def archive_mail(*, source: str, subject: str, body: str,
+                 dedup_key: Optional[str] = None, urgent: bool = False,
+                 routed: str = "mailed", send_error: Optional[str] = None) -> None:
+    """Record one outgoing alert in the append-only mail archive.
+
+    Best-effort by construction: a failure to write the archive must never cost
+    you the alert it was only meant to remember, so every error here is logged
+    and swallowed.
+    """
+    path = archive_path()
+    if path is None:
+        return
+    ts = datetime.now().astimezone().isoformat(timespec="seconds")
+    subject = _clamp_subject(subject)
+    record = {
+        "ts": ts,
+        # Stable handle for one alert, so a digest section can be traced back to
+        # the entry it collapsed.
+        "msg_id": hashlib.sha1(f"{ts}|{source}|{subject}".encode()).hexdigest()[:12],
+        "source": source,
+        "subject": subject,
+        "body": _clamp_body(body),
+        "urgent": urgent,
+        "routed": routed,
+    }
+    if dedup_key:
+        record["dedup_key"] = dedup_key
+    if send_error:
+        record["send_error"] = send_error
+    try:
+        _append_jsonl(path, record)
+    except OSError as exc:
+        logger.warning("could not archive alert %r to %s: %s", subject, path, exc)
 
 
 def spool_is_stale(path: Path, max_age_hours: float = SPOOL_STALE_HOURS) -> bool:
@@ -217,20 +283,34 @@ def make_emailer(*, source: str = "unknown") -> Optional[Emailer]:
 
 
 def _spoolable(send: Callable[[str, str], None], source: str) -> Emailer:
-    """Route normal-urgency alerts to the spool when one is configured."""
+    """Route normal-urgency alerts to the spool when one is configured.
+
+    Whichever way an alert goes, it is also archived (see ``archive_mail``) --
+    including one that fails to send, which is recorded with ``send_error`` set.
+    """
 
     def _emit(subject: str, body: str, *, dedup_key: Optional[str] = None,
               urgent: bool = False) -> None:
         spool = spool_path()
-        if spool is None or urgent:
-            send(subject, body)
-            return
-        if spool_is_stale(spool):
-            logger.warning("alert spool %s is stale (digest not running?); "
-                           "mailing %r immediately", spool, subject)
-            send(subject, body)
-            return
-        append_spool(spool, source=source, subject=subject, body=body,
-                     dedup_key=dedup_key)
+        routed = "mailed"
+        error: Optional[str] = None
+        try:
+            if spool is None or urgent:
+                send(subject, body)
+            elif spool_is_stale(spool):
+                logger.warning("alert spool %s is stale (digest not running?); "
+                               "mailing %r immediately", spool, subject)
+                send(subject, body)
+            else:
+                append_spool(spool, source=source, subject=subject, body=body,
+                             dedup_key=dedup_key)
+                routed = "spooled"
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+            raise
+        finally:
+            archive_mail(source=source, subject=subject, body=body,
+                         dedup_key=dedup_key, urgent=urgent, routed=routed,
+                         send_error=error)
 
     return _emit

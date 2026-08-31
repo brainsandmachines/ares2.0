@@ -21,6 +21,15 @@ from .config import Config
 
 logger = logging.getLogger("sjm.notify")
 
+# SJM_* settings -> the AIRCC_* names the shared notifier reads.
+_SMTP_ALIASES = {
+    "SJM_SMTP_HOST": "AIRCC_SMTP_HOST",
+    "SJM_SMTP_PORT": "AIRCC_SMTP_PORT",
+    "SJM_SMTP_USER": "AIRCC_SMTP_USER",
+    "SJM_SMTP_PASS": "AIRCC_SMTP_PASS",
+    "SJM_SMTP_FROM": "AIRCC_SMTP_FROM",
+}
+
 _LLM_PROMPT = (
     "You are debugging a failed ML training job on a SLURM cluster (ARES, "
     "adversarial robustness, PyTorch/Hydra). Given the traceback below, produce "
@@ -61,11 +70,29 @@ def make_llm_client() -> Optional[Callable[[str], str]]:
 def make_emailer(cfg: Config) -> Optional[Callable[[str, str], None]]:
     """Return an emailer, or None if no transport is configured.
 
-    Prefers SMTP (``SJM_SMTP_HOST`` + ``SJM_SMTP_USER``/``SJM_SMTP_PASS``, no local
-    MTA needed) and falls back to the local ``mail``/``mailx`` command.
+    Delegates to ``aircc_job_manager.notify`` so that sjm alerts land in the same
+    spool/digest and the same mail archive as every other notifier in the repo;
+    the ``SJM_*`` settings here are mapped onto the ``AIRCC_*`` names it reads.
+    Only if that finds no transport do we fall back to the local one below --
+    SMTP via ``SJM_SMTP_HOST``, else the ``mail``/``mailx`` command.
     """
     if not cfg.alert_email:
         return None
+
+    # cfg wins over the shared .env: it is the more specific statement of intent.
+    os.environ.setdefault("AIRCC_ALERT_EMAIL", cfg.alert_email)
+    for sjm_key, aircc_key in _SMTP_ALIASES.items():
+        val = os.environ.get(sjm_key)
+        if val:
+            os.environ.setdefault(aircc_key, val)
+    try:
+        from aircc.aircc_job_manager.notify import make_emailer as _shared
+    except ImportError as exc:  # pragma: no cover - only if the package moves
+        logger.info("shared notifier unavailable (%s); using the local transport", exc)
+    else:
+        shared = _shared(source="sjm.failure_analyzer")
+        if shared is not None:
+            return shared
 
     host = os.environ.get("SJM_SMTP_HOST")
     if host:
