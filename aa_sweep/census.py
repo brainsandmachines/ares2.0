@@ -47,15 +47,22 @@ def observed_cells(csv_text: str, model_name: str, ckpt_filename: str) -> set[Ce
 
 @dataclass
 class KindStatus:
-    """State of one checkpoint kind of one model, unified across both clusters."""
+    """State of one checkpoint kind of one model, unified across both clusters and Botero."""
 
     kind: str
     ckpt_on_slurm: bool = False
     ckpt_on_aircc: bool = False
+    ckpt_on_botero: bool = False
     missing: set[Cell] = field(default_factory=set)
 
     @property
     def has_checkpoint(self) -> bool:
+        """A checkpoint the *cluster* sweep can reach, possibly after staging.
+
+        Deliberately excludes Botero: ``runnable`` gates sbatch submission, and a checkpoint that
+        exists only in the local archive is not something the cluster can attack. The Botero lane
+        keys off ``ckpt_on_botero`` instead.
+        """
         return self.ckpt_on_slurm or self.ckpt_on_aircc
 
     @property
@@ -78,19 +85,31 @@ def kind_status(
     slurm_csv_text: str,
     aircc_files: set[str],
     aircc_csv_text: str,
+    botero_files: set[str] = frozenset(),
+    botero_csv_text: str = "",
 ) -> KindStatus:
-    """Fold both clusters' view of one checkpoint kind into a single status.
+    """Fold all three views of one checkpoint kind into a single status.
 
-    Cells count as done if *either* side already has them: the sweep runs on the BGU cluster, and
-    staging carries the AIRCC CSV across (merging it when the BGU side has one too), so an
-    AIRCC-only row is a row the BGU job will find and skip.
+    Cells count as done if *any* side already has them:
+
+    * BGU -- where the sbatch lane runs.
+    * AIRCC -- staging carries its CSV across (merging it when the BGU side has one too), so an
+      AIRCC-only row is a row the BGU job will find and skip.
+    * Botero -- the local lane writes its results only into the local archive and never pushes them
+      to either cluster, so without counting them here the nightly run would keep re-submitting
+      cells Botero has already computed.
+
+    The Botero arguments default to empty so every pre-existing caller keeps its old behaviour.
     """
-    observed = observed_cells(slurm_csv_text, model_name, ckpt_filename) | observed_cells(
-        aircc_csv_text, model_name, ckpt_filename
+    observed = (
+        observed_cells(slurm_csv_text, model_name, ckpt_filename)
+        | observed_cells(aircc_csv_text, model_name, ckpt_filename)
+        | observed_cells(botero_csv_text, model_name, ckpt_filename)
     )
     return KindStatus(
         kind=kind,
         ckpt_on_slurm=ckpt_filename in slurm_files,
         ckpt_on_aircc=ckpt_filename in aircc_files,
+        ckpt_on_botero=ckpt_filename in botero_files,
         missing=grid - observed,
     )

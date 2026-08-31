@@ -115,3 +115,41 @@ def test_kind_status_without_any_checkpoint_is_not_runnable():
     )
     assert status.missing == GRID
     assert not status.runnable and not status.needs_staging
+
+
+def test_kind_status_counts_cells_computed_on_botero():
+    """The whole reason the Botero lane is safe to run: its results are never pushed to a cluster,
+    so if the census did not read them the nightly run would re-submit them to Slurm forever."""
+    status = kind_status(
+        kind="last", ckpt_filename="last.pth.tar", model_name="m", grid=GRID,
+        slurm_files={"last.pth.tar"},
+        slurm_csv_text=csv_text("m", "/x/m/last.pth.tar", [("l2", 1.0)]),
+        aircc_files=set(), aircc_csv_text="",
+        botero_files={"last.pth.tar"},
+        botero_csv_text=csv_text("m", "/mnt/data4t/slurm_archive/models/m/last.pth.tar",
+                                 [("l1", 6.0), ("linf", 8.0)]),
+    )
+    assert ("l1", 6.0) not in status.missing
+    assert ("linf", 8.0) not in status.missing
+    assert len(status.missing) == 12
+    assert status.ckpt_on_botero
+
+
+def test_a_checkpoint_only_on_botero_is_not_runnable_on_the_cluster():
+    """`runnable` gates sbatch submission; the local archive is not something Slurm can read."""
+    status = kind_status(
+        kind="advbest", ckpt_filename="model_best_adv.pth.tar", model_name="m", grid=GRID,
+        slurm_files=set(), slurm_csv_text="", aircc_files=set(), aircc_csv_text="",
+        botero_files={"model_best_adv.pth.tar"}, botero_csv_text="",
+    )
+    assert status.ckpt_on_botero
+    assert not status.has_checkpoint and not status.runnable
+
+
+def test_botero_arguments_are_optional():
+    """Every pre-existing caller keeps its exact behaviour."""
+    without = kind_status(
+        kind="last", ckpt_filename="last.pth.tar", model_name="m", grid=GRID,
+        slurm_files={"last.pth.tar"}, slurm_csv_text="", aircc_files=set(), aircc_csv_text="",
+    )
+    assert without.missing == GRID and not without.ckpt_on_botero

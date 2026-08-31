@@ -14,6 +14,17 @@ CKPT = config.CKPT_FILE_FOR_KIND
 BIG = 1_418_062_559
 
 
+class _NoBotero:
+    """Stands in for aa_sweep.botero inside plan.build_plan: no local archive, no filesystem."""
+
+    @staticmethod
+    def resolve_model_dir(*_args, **_kwargs):
+        return None
+
+
+_NO_BOTERO = _NoBotero()
+
+
 def _install_fakes(monkeypatch, probe, live_names=(), aircc_finished=(), sjm_finished=()):
     """Point submit.main() at in-memory fixtures instead of the mounts and the cluster."""
     submitted = []
@@ -25,7 +36,10 @@ def _install_fakes(monkeypatch, probe, live_names=(), aircc_finished=(), sjm_fin
     )
     monkeypatch.setattr(plan_mod, "probe_slurm", lambda names: probe)
     monkeypatch.setattr(plan_mod, "_read_local_dir", lambda d: ({}, {}))
+    monkeypatch.setattr(plan_mod, "botero", _NO_BOTERO)
     monkeypatch.setattr(submit_mod, "live_job_names", lambda: set(live_names))
+    # The Botero lane has its own suite; here it must not reach ssh or the real local queue.
+    monkeypatch.setattr(submit_mod.botero_mod, "topup", lambda works, **kw: [])
     monkeypatch.setattr(
         submit_mod.stage_mod, "stage_model",
         lambda work, a, s, **kw: submit_mod.stage_mod.StageResult(model_name=work.model_name),

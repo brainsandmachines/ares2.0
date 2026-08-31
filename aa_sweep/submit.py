@@ -18,7 +18,7 @@ import subprocess
 import sys
 from datetime import datetime
 
-from aa_sweep import config, mirror, plan as plan_mod, stage as stage_mod
+from aa_sweep import botero as botero_mod, config, mirror, plan as plan_mod, stage as stage_mod
 
 
 def _now() -> str:
@@ -43,7 +43,7 @@ def check_mounts() -> list[str]:
 
 
 def live_job_names(run=subprocess.run) -> set[str]:
-    """Job names already on the cluster, so a 30h job is not resubmitted daily.
+    """Job names already in flight, so a 30h job is not resubmitted daily.
 
     squeue's default state filter covers PENDING as well as RUNNING, which matters here: a job can
     sit pending for days behind the queue and must not be submitted again in the meantime.
@@ -51,6 +51,10 @@ def live_job_names(run=subprocess.run) -> set[str]:
     ``-o '%j'`` is deliberately unwidthed. A width like ``%.40j`` truncates
     ``aaswp_convnext_base_linftrades_2_init0_last`` to 40 characters, and every comparison against
     a full job name would then miss.
+
+    The Botero lane's queue is folded in under the same naming scheme, so a unit this machine owns
+    is never also sent to the cluster. It has to be a union rather than a separate check: the
+    dedupe below reasons about one set of names, and a unit belongs to exactly one lane.
     """
     proc = run(
         ["ssh", "-o", f"ConnectTimeout={config.SSH_TIMEOUT_SECONDS}", config.SLURM_SSH_HOST,
@@ -63,7 +67,8 @@ def live_job_names(run=subprocess.run) -> set[str]:
         # Fail closed: without a reliable queue view we cannot tell what is already running, and
         # submitting duplicates of a multi-day job is worse than skipping a night.
         raise RuntimeError(f"squeue failed rc={proc.returncode}: {proc.stderr.strip()}")
-    return {line.strip() for line in proc.stdout.splitlines() if line.strip()}
+    names = {line.strip() for line in proc.stdout.splitlines() if line.strip()}
+    return names | botero_mod.active_job_names()
 
 
 def conflicting_job(model_name: str, kind: str, live_names: set[str]) -> str | None:
@@ -134,6 +139,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", action="append", default=None,
                         help="Restrict to this model name (repeatable). Debugging knob.")
     parser.add_argument("--skip-mount-check", action="store_true", help="For testing on a host without the mounts.")
+    parser.add_argument("--no-botero", action="store_true",
+                        help="Skip the Botero-lane top-up; submit to the cluster only.")
+    parser.add_argument("--botero-topup-only", action="store_true",
+                        help="Only top the Botero queue up; stage nothing and submit no sbatch.")
     return parser
 
 
@@ -199,6 +208,19 @@ def main(argv: list[str] | None = None) -> int:
     skipped_live = 0
     staged_bytes = 0
     failures: list[str] = []
+    moved: list[str] = []
+
+    if args.botero_topup_only:
+        log("--botero-topup-only: staging nothing and submitting no sbatch")
+        try:
+            moved = botero_mod.topup(works, dry_run=args.dry_run, log=log)
+        except Exception as exc:
+            log(f"botero top-up failed: {exc}")
+            notify("[aa_sweep] botero top-up failed", str(exc), dedup_key="aa_sweep-botero-topup-failed")
+            return 1
+        verb = "would move" if args.dry_run else "moved"
+        log(f"summary: {verb} {len(moved)} unit(s) to the Botero lane")
+        return 0
 
     for work in pending:
         kinds = []
@@ -249,10 +271,20 @@ def main(argv: list[str] | None = None) -> int:
         if args.limit is not None and len(submitted) >= args.limit:
             break
 
+    # Last, deliberately: the Botero lane prefers to *move* work already queued on Slurm, so it
+    # should see tonight's submissions as candidates too rather than a queue that is one day stale.
+    if not args.no_botero:
+        try:
+            moved = botero_mod.topup(works, dry_run=args.dry_run, log=log)
+        except Exception as exc:
+            # A local-lane problem must not cost the cluster submissions that already succeeded.
+            failures.append(f"botero top-up: {exc}")
+            log(f"botero top-up FAILED {exc}")
+
     verb = "would submit" if args.dry_run else "submitted"
     log(
         f"summary: {verb} {len(submitted)} jobs; {skipped_live} already in flight; "
-        f"{staged_bytes / 1e9:.1f} GB staged; {len(failures)} failures"
+        f"{staged_bytes / 1e9:.1f} GB staged; {len(moved)} moved to botero; {len(failures)} failures"
     )
 
     if failures:
