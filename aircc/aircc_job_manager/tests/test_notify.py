@@ -122,3 +122,82 @@ def test_an_unparseable_spool_counts_as_stale(tmp_path):
     spool = tmp_path / "alerts.jsonl"
     spool.write_text("not json at all\n")
     assert notify.spool_is_stale(spool) is True
+
+
+# --- mail archive ---------------------------------------------------------
+
+def _archived(tmp_path):
+    directory = tmp_path / "mail_archive"
+    return [json.loads(line)
+            for path in sorted(directory.glob("*.jsonl"))
+            for line in path.read_text().splitlines()]
+
+
+def test_archive_path_is_one_file_per_month_and_can_be_switched_off(monkeypatch, tmp_path):
+    monkeypatch.setenv(notify.ARCHIVE_ENV, "0")
+    assert notify.archive_path() is None
+
+    monkeypatch.setenv(notify.ARCHIVE_ENV, str(tmp_path))
+    when = datetime(2026, 8, 26).astimezone()
+    assert notify.archive_path(when) == tmp_path / "2026-08.jsonl"
+
+    monkeypatch.setenv(notify.ARCHIVE_ENV, "1")
+    assert notify.archive_path(when) == notify.DEFAULT_ARCHIVE_DIR / "2026-08.jsonl"
+
+
+def test_archiving_is_on_by_default(monkeypatch):
+    monkeypatch.delenv(notify.ARCHIVE_ENV, raising=False)
+    path = notify.archive_path()
+    assert path is not None and path.parent == notify.DEFAULT_ARCHIVE_DIR
+
+
+def test_every_alert_is_archived_whichever_way_it_was_routed(monkeypatch, tmp_path):
+    # The spool is drained and deleted by the digest, so it is the archive -- not
+    # the spool -- that has to remember both of these.
+    monkeypatch.setenv(notify.SPOOL_ENV, str(tmp_path / "alerts.jsonl"))
+    emit = notify._spoolable(_fake_transport([]), "aircc.backup")
+
+    emit("normal one", "body", dedup_key="k")
+    emit("urgent one", "body", urgent=True)
+
+    records = _archived(tmp_path)
+    assert [(r["subject"], r["routed"], r["urgent"]) for r in records] == [
+        ("normal one", "spooled", False),
+        ("urgent one", "mailed", True),
+    ]
+    assert records[0]["source"] == "aircc.backup"
+    assert records[0]["dedup_key"] == "k"
+    assert len({r["msg_id"] for r in records}) == 2
+
+
+def test_a_failed_send_is_archived_with_the_error_and_still_raises(monkeypatch, tmp_path):
+    monkeypatch.delenv(notify.SPOOL_ENV, raising=False)
+
+    def _boom(subject, body):
+        raise RuntimeError("smtp down")
+
+    with pytest.raises(RuntimeError):
+        notify._spoolable(_boom, "sjm.status")("subject", "body")
+
+    record, = _archived(tmp_path)
+    assert record["subject"] == "subject"
+    assert record["send_error"] == "RuntimeError: smtp down"
+
+
+def test_an_unwritable_archive_never_costs_you_the_alert(monkeypatch, tmp_path):
+    monkeypatch.delenv(notify.SPOOL_ENV, raising=False)
+    blocker = tmp_path / "blocked"
+    blocker.write_text("not a directory")
+    monkeypatch.setenv(notify.ARCHIVE_ENV, str(blocker))
+
+    sent = []
+    notify._spoolable(_fake_transport(sent), "aircc.backup")("subject", "body")
+    assert [s for s, _ in sent] == ["subject"]
+
+
+def test_archived_bodies_are_clamped(monkeypatch, tmp_path):
+    monkeypatch.delenv(notify.SPOOL_ENV, raising=False)
+    notify._spoolable(_fake_transport([]), "qnap.mirror")("subject", "x" * 200_000)
+
+    record, = _archived(tmp_path)
+    assert len(record["body"]) < notify.MAX_BODY_CHARS + 200
