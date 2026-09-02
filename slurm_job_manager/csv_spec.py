@@ -31,7 +31,7 @@ ARCHES = ("convnext_small", "convnext_base", "convnext_large", "vit-b-cvst_swin-
 METADATA_COLUMNS = [
     "model_name", "arch", "init", "protocol", "init_mode", "epoch_variant",
     "dependency_model_name", "threat_norm", "threat_eps", "priority", "is_test",
-    "notes",
+    "notes", "resume_offset_assumed",
 ]
 
 # Columns whose header is the Hydra key; emitted as key=value when non-empty.
@@ -75,10 +75,17 @@ OVERRIDE_COLUMNS = [
 ALL_COLUMNS = METADATA_COLUMNS + OVERRIDE_COLUMNS
 
 
-def build_overrides(row: dict) -> list[str]:
-    """Return ``key=value`` Hydra tokens for every non-empty override cell."""
+def build_overrides(row: dict, skip: Iterable[str] | None = None) -> list[str]:
+    """Return ``key=value`` Hydra tokens for every non-empty override cell.
+
+    ``skip`` omits columns the caller re-emits itself (Hydra errors on a
+    duplicated key) -- used by the resume-shift path in ``lifecycle``.
+    """
+    skipped = set(skip or ())
     out: list[str] = []
     for col in OVERRIDE_COLUMNS:
+        if col in skipped:
+            continue
         val = str(row.get(col, "")).strip()
         if val != "":
             out.append(f"{col}={val}")
