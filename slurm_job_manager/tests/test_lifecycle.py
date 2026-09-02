@@ -131,13 +131,24 @@ def test_zero_shift_reproduces_static_csv_values(db, monkeypatch, tmp_path):
     assert _val(cmd, "training.epochs") == "240"
 
 
-def test_failed_peek_falls_back_to_static_csv(db, monkeypatch, tmp_path):
+def test_failed_peek_falls_back_to_static_csv_and_warns(db, monkeypatch, tmp_path, capsys):
+    """A failed peek silently overtrains by up to 51 epochs -- it must be loud."""
     monkeypatch.setattr(lifecycle, "_peek_resume_epoch", lambda p: None)
     db.upsert_pending("dep", 150, 1)
     db.set_best_checkpoint("dep", "/ckpt/dep/model_best.pth.tar", 80.0)
     row = _row(init_mode="resume", dependency_model_name="dep", resume_offset_assumed="150")
     cmd = lifecycle.build_command(row, tmp_path, db, python_exe="py")
     assert _val(cmd, "training.epochs") == "200"
+    assert "WARNING" in capsys.readouterr().err
+
+
+def test_successful_shift_does_not_warn(db, monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(lifecycle, "_peek_resume_epoch", lambda p: 108)
+    db.upsert_pending("dep", 150, 1)
+    db.set_best_checkpoint("dep", "/ckpt/dep/model_best.pth.tar", 80.0)
+    row = _row(init_mode="resume", dependency_model_name="dep", resume_offset_assumed="150")
+    lifecycle.build_command(row, tmp_path, db, python_exe="py")
+    assert "WARNING" not in capsys.readouterr().err
 
 
 def test_target_is_cached_and_survives_a_later_restart(db, monkeypatch, tmp_path):

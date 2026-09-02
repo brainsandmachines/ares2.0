@@ -219,6 +219,15 @@ def build_command(row: dict, models_root: Path, db, *, python_exe: Optional[str]
         overrides.append(f"model.resume={resume_path}")
         if shift_managed:
             target = _resolve_resume_target(row, resume_path, own_last, models_root, name, db=db)
+            if target is None:
+                # Falling back to the static CSV epochs is a real protocol change
+                # (on aircc these rows shifted by up to 51 epochs), and the usual
+                # cause is an unreadable checkpoint or a torch-less interpreter --
+                # both invisible otherwise. Never let that pass silently.
+                print(f"[lifecycle] WARNING {name}: could not peek the resume epoch from "
+                      f"{resume_path}; using the static CSV training.epochs="
+                      f"{row.get('training.epochs')} instead of a shifted target",
+                      file=sys.stderr)
             overrides += _shifted_resume_overrides(row, target)
     else:  # scratch
         overrides.append(f"model.resume={own_last}")
