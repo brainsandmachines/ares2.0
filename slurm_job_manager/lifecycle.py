@@ -16,6 +16,7 @@ One clean single-GPU process -- no memory fractions, no multi-proc.
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import subprocess
@@ -30,9 +31,126 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 DEFAULT_WANDB_PROJECT = "adv_train_slurm"
 
+# init_mode="resume" rows whose CSV row carries a non-empty resume_offset_assumed
+# are "shift-managed": training.epochs and the epsilon ramp boundaries are
+# re-derived from the checkpoint the run ACTUALLY resumes from (see
+# _resolve_resume_target below), so these 5 columns must never be emitted twice.
+RESUME_SHIFT_COLUMNS = (
+    "training.epochs",
+    "epsilon_schedule.warmup_epochs",
+    "epsilon_schedule.ramp_start_epoch",
+    "epsilon_schedule.ramp_end_epoch",
+    "epsilon_schedule.fixed_start_epoch",
+)
+
 
 def _own_last(models_root: Path, model_name: str) -> Path:
     return models_root / model_name / "last.pth.tar"
+
+
+def _resume_target_file(models_root: Path, model_name: str) -> Path:
+    # Deliberately the same sidecar name aircc writes, so runs migrated off the
+    # AIRCC cluster reuse the target they already resolved there.
+    return models_root / model_name / ".aircc_resume_target.json"
+
+
+def _peek_resume_epoch(checkpoint_path) -> Optional[int]:
+    """Best-effort read of the epoch a timm-style checkpoint will resume at.
+
+    Mirrors ``timm.models.resume_checkpoint``'s epoch extraction exactly (incl.
+    the ``version>1`` +1 adjustment) without touching a model, so we can decide
+    the resume target *before* launching training. Returns None on any failure
+    (missing file, unreadable checkpoint, no 'epoch' key) -- callers must treat
+    that as "unknown, don't shift".
+    """
+    p = Path(checkpoint_path)
+    if not p.is_file():
+        return None
+    try:
+        import torch  # heavy, import lazily
+
+        ckpt = torch.load(str(p), map_location="cpu", weights_only=False)
+    except Exception:
+        return None
+    if not isinstance(ckpt, dict) or "epoch" not in ckpt:
+        return None
+    try:
+        epoch = int(ckpt["epoch"])
+    except (TypeError, ValueError):
+        return None
+    if int(ckpt.get("version", 1) or 1) > 1:
+        epoch += 1  # old checkpoints incremented before save; match timm's convention
+    return epoch
+
+
+def _sync_db_total_epochs(db, name: str, target: int) -> None:
+    if db is None:
+        return
+    try:
+        db.reconcile(name, target)
+    except Exception:
+        pass  # cosmetic only -- never let a dashboard-sync failure break the launch
+
+
+def _resolve_resume_target(row: dict, resume_path, own_last: Path, models_root: Path,
+                           name: str, db=None) -> Optional[int]:
+    """Return the total-epochs target a shift-managed resume row should train to.
+
+    Computed ONCE, the first time this model actually launches (from the dep's
+    checkpoint), as ``peeked_start_epoch + (csv_training_epochs - resume_offset_assumed)``
+    -- i.e. "whatever epoch we really start at, plus the originally-intended
+    number of new epochs". Persisted next to the model's own checkpoints so
+    every subsequent restart (which resumes from own_last, already past that
+    start) reuses the SAME target instead of re-deriving it from a now-later
+    epoch, which would silently shrink the remaining training length on every
+    restart. Returns None if the peek fails (e.g. dep checkpoint has no 'epoch'
+    key) -- caller falls back to the static CSV values.
+
+    Also mirrors the resolved target into the DB's total_epochs (best-effort,
+    via db.reconcile) purely so dashboards show the true denominator.
+    """
+    target_file = _resume_target_file(models_root, name)
+    if own_last.exists() and target_file.exists():
+        try:
+            target = int(json.loads(target_file.read_text())["target_epochs"])
+        except Exception:
+            target = None  # corrupt/unreadable sidecar -- fall through and recompute
+        if target is not None:
+            _sync_db_total_epochs(db, name, target)
+            return target
+
+    start_epoch = _peek_resume_epoch(resume_path)
+    if start_epoch is None:
+        return None
+    offset = int(row["resume_offset_assumed"])
+    increment = int(row["training.epochs"]) - offset
+    target = start_epoch + increment
+    try:
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        target_file.write_text(json.dumps({
+            "target_epochs": target, "start_epoch": start_epoch,
+            "resume_offset_assumed": offset, "resume_path": str(resume_path),
+        }))
+    except OSError:
+        pass  # best-effort; a missing sidecar just means the next restart re-peeks
+    _sync_db_total_epochs(db, name, target)
+    return target
+
+
+def _shifted_resume_overrides(row: dict, target: Optional[int]) -> list[str]:
+    """Re-emit RESUME_SHIFT_COLUMNS shifted by (target - csv training.epochs).
+
+    shift=0 (target is None, or exactly matches the CSV's offset assumption)
+    reproduces the static CSV values untouched.
+    """
+    shift = 0 if target is None else target - int(row["training.epochs"])
+    out: list[str] = []
+    for col in RESUME_SHIFT_COLUMNS:
+        val = str(row.get(col, "")).strip()
+        if val == "":
+            continue
+        out.append(f"{col}={int(val) + shift}")
+    return out
 
 
 def _dep_best(db, dep: str, name: str) -> str:
@@ -77,27 +195,35 @@ def build_command(row: dict, models_root: Path, db, *, python_exe: Optional[str]
       * scratch      -> model.resume=<own last> (auto-resume if present)
       * continuation -> continuation.checkpoint_path=<dep DB-best> + model.resume=<own last>
       * resume       -> model.resume=<own last if present else dep DB-best>
+                        (inherits epoch+optimizer to continue the counter). If the row
+                        has resume_offset_assumed set, training.epochs + the epsilon
+                        ramp boundaries are shifted to match the ACTUAL resumed epoch
+                        (see _resolve_resume_target) instead of trusting that the dep's
+                        DB-best checkpoint is at its final epoch.
     """
     python_exe = python_exe or sys.executable
     name = row["model_name"]
     init_mode = (row.get("init_mode") or "scratch").strip()
     dep = (row.get("dependency_model_name") or "").strip()
     own_last = _own_last(models_root, name)
+    shift_managed = init_mode == "resume" and bool((row.get("resume_offset_assumed") or "").strip())
 
-    cmd = [python_exe, "-m", "robust_training.adversarial_training"]
-    cmd += _apply_batch_divisor(build_overrides(row))
+    overrides = build_overrides(row, skip=RESUME_SHIFT_COLUMNS if shift_managed else None)
 
     if init_mode == "continuation":
         dep_best = _dep_best(db, dep, name)
-        cmd.append(f"continuation.checkpoint_path={dep_best}")
-        cmd.append(f"model.resume={own_last}")
+        overrides.append(f"continuation.checkpoint_path={dep_best}")
+        overrides.append(f"model.resume={own_last}")
     elif init_mode == "resume":
         resume_path = own_last if own_last.exists() else _dep_best(db, dep, name)
-        cmd.append(f"model.resume={resume_path}")
+        overrides.append(f"model.resume={resume_path}")
+        if shift_managed:
+            target = _resolve_resume_target(row, resume_path, own_last, models_root, name, db=db)
+            overrides += _shifted_resume_overrides(row, target)
     else:  # scratch
-        cmd.append(f"model.resume={own_last}")
+        overrides.append(f"model.resume={own_last}")
 
-    return cmd
+    return [python_exe, "-m", "robust_training.adversarial_training"] + _apply_batch_divisor(overrides)
 
 
 def _lifecycle_env(row: dict, db) -> dict:
