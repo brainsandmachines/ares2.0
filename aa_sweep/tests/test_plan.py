@@ -28,14 +28,16 @@ def probe(files: dict[str, int], csvs: dict[str, str] | None = None, exists=True
     return {"exists": exists, "files": files, "csvs": csvs or {}}
 
 
-def no_aircc(_name):
-    return {}, {}
-
-
 def no_botero(_name):
-    """Keep the census hermetic: without this the default reader reads the real /mnt/data4t
-    archive, and fixture model names that happen to exist there arrive with real CSV rows."""
+    """Keep the census hermetic: without this the default reader reads the real local store, and
+    fixture model names that happen to exist there arrive with real CSV rows."""
     return {}, {}, None
+
+
+def botero_dir(files, csvs=None, path="/mnt/data4t/models/arch/m"):
+    def reader(_name):
+        return files, csvs or {}, Path(path)
+    return reader
 
 
 def test_finished_models_selects_only_finished(tmp_path):
@@ -49,70 +51,105 @@ def test_finished_models_reports_a_missing_db_clearly(tmp_path):
         plan_mod.finished_models(tmp_path / "nope.sqlite")
 
 
-def test_model_with_a_full_sweep_is_complete_and_stages_nothing():
+def test_a_model_on_the_cluster_belongs_to_the_slurm_lane():
+    """Presence of a directory on the cluster decides the lane -- whichever DB finished it."""
+    works = plan_mod.build_plan(
+        aircc_finished=["m"], sjm_finished=[],
+        slurm_probe={"m": probe({v: BIG for v in CKPT.values()})},
+        botero_reader=no_botero,
+    )
+    work = works[0]
+    assert work.lane == config.SLURM_LANE
+    assert work.slurm_dir.endswith("/results/models/m")
+    assert work.botero_dir is None
+    assert work.runnable_kinds == ["best", "last", "advbest"]
+
+
+def test_an_aircc_model_absent_from_the_cluster_belongs_to_the_botero_lane():
+    works = plan_mod.build_plan(
+        aircc_finished=["m"], sjm_finished=[],
+        slurm_probe={"m": probe({}, {}, exists=False)},
+        botero_reader=botero_dir({v: BIG for v in CKPT.values()}),
+    )
+    work = works[0]
+    assert work.lane == config.BOTERO_LANE
+    assert work.botero_dir == Path("/mnt/data4t/models/arch/m")
+    assert work.runnable_kinds == ["best", "last", "advbest"]
+
+
+def test_the_two_lanes_are_disjoint():
+    """The property the per-lane census depends on: no model is ever in both lanes."""
+    works = plan_mod.build_plan(
+        aircc_finished=["on_cluster", "local_only"], sjm_finished=["sjm_only"],
+        slurm_probe={
+            "on_cluster": probe({v: BIG for v in CKPT.values()}),
+            "sjm_only": probe({v: BIG for v in CKPT.values()}),
+            "local_only": probe({}, {}, exists=False),
+        },
+        botero_reader=botero_dir({v: BIG for v in CKPT.values()}),
+    )
+    lanes = {w.model_name: w.lane for w in works}
+    assert lanes == {
+        "on_cluster": config.SLURM_LANE,
+        "sjm_only": config.SLURM_LANE,
+        "local_only": config.BOTERO_LANE,
+    }
+
+
+def test_an_aircc_model_with_no_local_copy_is_dropped_entirely():
+    """The three `models_failed/` runs that never wrote a checkpoint: not the cluster's, not ours."""
+    works = plan_mod.build_plan(
+        aircc_finished=["convnext_base_linf_cont4to6_init0"], sjm_finished=[],
+        slurm_probe={"convnext_base_linf_cont4to6_init0": probe({}, {}, exists=False)},
+        botero_reader=no_botero,
+    )
+    assert works == []
+
+
+def test_an_sjm_model_absent_from_the_cluster_is_dropped():
+    """Not the cluster's to run (no dir) and not AIRCC's to hand us."""
+    works = plan_mod.build_plan(
+        aircc_finished=[], sjm_finished=["vit_b_cvst/l2_1_init1"],
+        slurm_probe={"vit_b_cvst/l2_1_init1": probe({}, {}, exists=False)},
+        botero_reader=no_botero,
+    )
+    assert works == []
+
+
+def test_model_with_a_full_sweep_is_complete():
     csvs = {k: csv_text("m", f"/x/m/{CKPT[k]}", ALL_CELLS) for k in config.CHECKPOINT_KINDS}
     works = plan_mod.build_plan(
         aircc_finished=["m"], sjm_finished=[],
         slurm_probe={"m": probe({v: BIG for v in CKPT.values()}, csvs)},
-        aircc_reader=no_aircc,
         botero_reader=no_botero,
     )
     assert works[0].is_complete
     assert works[0].runnable_kinds == []
-    assert works[0].staging_files == []
 
 
-def test_only_the_gapped_kinds_checkpoint_is_staged():
+def test_only_the_gapped_kind_is_runnable():
     """dvd_b_l2_1_init0's real shape: best+last swept, advbest never run."""
     csvs = {
         "best": csv_text("m", "results/models/m/model_best.pth.tar", ALL_CELLS),
         "last": csv_text("m", "results/models/m/last.pth.tar", ALL_CELLS),
     }
-
-    def aircc_reader(_name):
-        return {v: BIG for v in CKPT.values()}, csvs
-
     works = plan_mod.build_plan(
         aircc_finished=["m"], sjm_finished=[],
         slurm_probe={"m": probe({}, {}, exists=False)},
-        aircc_reader=aircc_reader,
-        botero_reader=no_botero,
+        botero_reader=botero_dir({v: BIG for v in CKPT.values()}, csvs),
     )
     work = works[0]
     assert work.runnable_kinds == ["advbest"]
-    assert work.staging_files == ["model_best_adv.pth.tar"]
     assert work.missing_cell_count == 15
 
 
 def test_baseline_without_advbest_checkpoint_gets_no_advbest_job():
-    def aircc_reader(_name):
-        return {"model_best.pth.tar": BIG, "last.pth.tar": BIG}, {}
-
     works = plan_mod.build_plan(
         aircc_finished=["m"], sjm_finished=[],
         slurm_probe={"m": probe({}, {}, exists=False)},
-        aircc_reader=aircc_reader,
-        botero_reader=no_botero,
+        botero_reader=botero_dir({"model_best.pth.tar": BIG, "last.pth.tar": BIG}),
     )
     assert works[0].runnable_kinds == ["best", "last"]
-    assert "model_best_adv.pth.tar" not in works[0].staging_files
-
-
-def test_differing_checkpoint_sizes_are_reported_as_a_conflict():
-    """The 5 *pgd5* names exist as real BGU runs and as near-empty AIRCC husks."""
-    def aircc_reader(_name):
-        return {"last.pth.tar": 1}, {}
-
-    works = plan_mod.build_plan(
-        aircc_finished=["convnext_base_linf_cont4to6_pgd5_init0"], sjm_finished=[],
-        slurm_probe={"convnext_base_linf_cont4to6_pgd5_init0": probe({"last.pth.tar": BIG})},
-        aircc_reader=aircc_reader,
-        botero_reader=no_botero,
-    )
-    work = works[0]
-    assert any("last.pth.tar" in c and "keeping slurm" in c for c in work.conflicts)
-    # The BGU checkpoint is already there, so nothing is copied over it.
-    assert work.staging_files == []
 
 
 def test_nested_sjm_name_resolves_dir_and_matches_rows_by_basename():
@@ -122,25 +159,28 @@ def test_nested_sjm_name_resolves_dir_and_matches_rows_by_basename():
     works = plan_mod.build_plan(
         aircc_finished=[], sjm_finished=[name],
         slurm_probe={name: probe({v: BIG for v in CKPT.values()}, csvs)},
-        aircc_reader=no_aircc,
         botero_reader=no_botero,
     )
     work = works[0]
     assert work.slurm_dir.endswith("/results/models/vit_b_cvst/linf_1_init1")
-    assert work.aircc_dir is None  # sjm-only: never staged
     assert work.is_complete
 
 
-def test_sjm_model_is_never_staged_even_when_incomplete():
-    works = plan_mod.build_plan(
-        aircc_finished=[], sjm_finished=["vit_b_cvst/l2_1_init1"],
-        slurm_probe={"vit_b_cvst/l2_1_init1": probe({v: BIG for v in CKPT.values()})},
-        aircc_reader=no_aircc,
-        botero_reader=no_botero,
+def test_the_cluster_lane_never_reads_the_local_store():
+    """A cell computed on Botero must not stop the cluster submitting it: the cluster's own engine
+    diffs its own CSV, so a row it cannot see is a row it would recompute anyway."""
+    calls = []
+
+    def spy(name):
+        calls.append(name)
+        return {}, {}, None
+
+    plan_mod.build_plan(
+        aircc_finished=["m"], sjm_finished=[],
+        slurm_probe={"m": probe({v: BIG for v in CKPT.values()})},
+        botero_reader=spy,
     )
-    work = works[0]
-    assert work.runnable_kinds == ["best", "last", "advbest"]
-    assert work.staging_files == []
+    assert calls == []
 
 
 def test_job_names_flatten_nested_model_names():

@@ -1,8 +1,18 @@
-"""Turn "what is finished in the two job DBs" into "what sbatch jobs should exist".
+"""Turn "what is finished in the two job DBs" into "what work each lane should run".
 
-Reads both SQLite queues read-only over their sshfs mounts, then censuses each finished model on
-both clusters before a single byte is copied, so models whose sweep is already complete cost
-nothing at all.
+Reads both SQLite queues read-only -- the sjm one over the BGU sshfs mount, the AIRCC one from the
+frozen snapshot in the QNAP archive -- then splits every finished model into exactly one of two
+independent lanes:
+
+* **Slurm** -- the model has a directory on the BGU cluster. The cluster attacks its own copy and
+  writes its own CSVs; the planner's only job over there is a read-only ssh census.
+* **Botero** -- the model was finished on AIRCC and the cluster does *not* have a directory for it.
+  This machine attacks its own copy out of ``config.BOTERO_STORE_ROOT`` and writes its results
+  beside it.
+
+The split is by construction disjoint, which is what makes it safe for each lane's missing-cell
+census to look only at its own machine's CSVs (see census.py). No model is ever copied between the
+two: whatever propagation is wanted between machines is the weekly rsync's business.
 """
 
 from __future__ import annotations
@@ -50,36 +60,26 @@ json.dump(out, sys.stdout)
 """
 
 
+SLURM_LANE = config.SLURM_LANE
+BOTERO_LANE = config.BOTERO_LANE
+
+
 @dataclass
 class ModelWork:
-    """Everything the submitter needs to know about one finished model."""
+    """One finished model, assigned to exactly one lane, with that lane's own census."""
 
     model_name: str
+    lane: str = SLURM_LANE
     sources: set[str] = field(default_factory=set)
+    # The dir the lane's evaluation reads and writes. A remote path string for the Slurm lane, a
+    # local Path for the Botero lane.
     slurm_dir: str = ""
-    aircc_dir: Path | None = None
     botero_dir: Path | None = None
-    slurm_dir_exists: bool = False
     kinds: dict[str, KindStatus] = field(default_factory=dict)
-    conflicts: list[str] = field(default_factory=list)
-    # Raw sweep-CSV text per kind from each side, kept so the stager can merge AIRCC-only rows
-    # into an existing BGU CSV without re-reading anything.
-    slurm_csvs: dict[str, str] = field(default_factory=dict)
-    aircc_csvs: dict[str, str] = field(default_factory=dict)
-    botero_csvs: dict[str, str] = field(default_factory=dict)
 
     @property
     def runnable_kinds(self) -> list[str]:
         return [k for k in config.CHECKPOINT_KINDS if k in self.kinds and self.kinds[k].runnable]
-
-    @property
-    def staging_files(self) -> list[str]:
-        """Checkpoint filenames to copy over: only for kinds that actually have missing cells."""
-        return [
-            config.CKPT_FILE_FOR_KIND[k]
-            for k in config.CHECKPOINT_KINDS
-            if k in self.kinds and self.kinds[k].needs_staging
-        ]
 
     @property
     def is_complete(self) -> bool:
@@ -155,28 +155,26 @@ def build_plan(
     aircc_finished: list[str],
     sjm_finished: list[str],
     slurm_probe: dict[str, dict],
-    aircc_reader=None,
     botero_reader=None,
 ) -> list[ModelWork]:
-    """Census every finished model on all three lanes and return one ModelWork each.
+    """Assign every finished model to one lane and census it there.
 
-    ``aircc_reader(model_name) -> (files, csvs)`` is injectable so tests can supply fixtures
-    instead of an sshfs mount; the default reads the real AIRCC mount.
+    A model goes to the **Slurm** lane if the ssh probe found a directory for it on the cluster --
+    whichever DB reported it finished. 102 of the 127 AIRCC-finished models are in this position,
+    having been copied over by the staging step this package used to have; the cluster owns them now
+    and this machine never touches them again.
 
-    ``botero_reader(model_name) -> (files, csvs, dir)`` reads the local archive copy. It is what
-    keeps the Botero lane's results visible: those rows are written only into the local archive and
-    never pushed to a cluster, so without this census source the nightly run would keep submitting
-    cells Botero has already finished. Local stats over ~160 dirs, negligible beside the ssh probe.
+    Everything else that AIRCC finished goes to the **Botero** lane, evaluated from this machine's
+    own copy. Models finished only by sjm but with no cluster directory are dropped: the cluster
+    cannot attack what it does not have, and they are not this machine's to run.
+
+    ``botero_reader(model_name) -> (files, csvs, dir)`` is injectable so tests can supply fixtures;
+    the default reads ``config.BOTERO_STORE_ROOT``. It is consulted only for Botero-lane candidates,
+    so the local stat walk stays small.
     """
-    if aircc_reader is None:
-        def aircc_reader(name: str):
-            return _read_local_dir(config.AIRCC_MODELS_ROOT / name)
-
     if botero_reader is None:
         def botero_reader(name: str):
-            model_dir = botero.resolve_model_dir(name, config.CKPT_FILE_FOR_KIND["best"]) or \
-                botero.resolve_model_dir(name, config.CKPT_FILE_FOR_KIND["last"]) or \
-                botero.resolve_model_dir(name, config.CKPT_FILE_FOR_KIND["advbest"])
+            model_dir = botero.resolve_model_dir(name)
             if model_dir is None:
                 return {}, {}, None
             files, csvs = _read_local_dir(model_dir)
@@ -193,51 +191,44 @@ def build_plan(
     plan: list[ModelWork] = []
     for model_name in sorted(sources):
         probe = slurm_probe.get(model_name, {})
-        slurm_files: dict[str, int] = probe.get("files", {}) or {}
-        slurm_csvs: dict[str, str] = probe.get("csvs", {}) or {}
+        on_slurm = bool(probe.get("exists"))
 
-        is_aircc = "aircc" in sources[model_name]
-        aircc_files: dict[str, int] = {}
-        aircc_csvs: dict[str, str] = {}
-        if is_aircc:
-            aircc_files, aircc_csvs = aircc_reader(model_name)
-
-        botero_files, botero_csvs, botero_dir = botero_reader(model_name)
-
-        work = ModelWork(
-            model_name=model_name,
-            sources=sources[model_name],
-            slurm_dir=f"{config.SLURM_MODELS_ROOT}/{model_name}",
-            aircc_dir=(config.AIRCC_MODELS_ROOT / model_name) if is_aircc else None,
-            botero_dir=botero_dir,
-            slurm_dir_exists=bool(probe.get("exists")),
-            slurm_csvs=slurm_csvs,
-            aircc_csvs=aircc_csvs,
-            botero_csvs=botero_csvs,
-        )
+        if on_slurm:
+            files: dict[str, int] = probe.get("files", {}) or {}
+            csvs: dict[str, str] = probe.get("csvs", {}) or {}
+            work = ModelWork(
+                model_name=model_name,
+                lane=SLURM_LANE,
+                sources=sources[model_name],
+                slurm_dir=f"{config.SLURM_MODELS_ROOT}/{model_name}",
+            )
+        elif "aircc" in sources[model_name]:
+            files_i, csvs, botero_dir = botero_reader(model_name)
+            if botero_dir is None:
+                # Finished on AIRCC, absent from the cluster, and no local copy either -- the three
+                # `models_failed/` runs that never wrote a checkpoint land here. Nothing to run.
+                continue
+            files = files_i
+            work = ModelWork(
+                model_name=model_name,
+                lane=BOTERO_LANE,
+                sources=sources[model_name],
+                botero_dir=botero_dir,
+            )
+        else:
+            continue
 
         for kind in config.CHECKPOINT_KINDS:
-            ckpt = config.CKPT_FILE_FOR_KIND[kind]
             work.kinds[kind] = kind_status(
                 kind=kind,
-                ckpt_filename=ckpt,
+                ckpt_filename=config.CKPT_FILE_FOR_KIND[kind],
                 # CSV rows key off the *directory* name, which is the last path segment for the
                 # nested sjm names (vit_b_cvst/linf_1_init1 -> linf_1_init1).
                 model_name=model_name.rsplit("/", 1)[-1],
                 grid=grid,
-                slurm_files=set(slurm_files),
-                slurm_csv_text=slurm_csvs.get(kind, ""),
-                aircc_files=set(aircc_files),
-                aircc_csv_text=aircc_csvs.get(kind, ""),
-                botero_files=set(botero_files),
-                botero_csv_text=botero_csvs.get(kind, ""),
+                files=set(files),
+                csv_text=csvs.get(kind, ""),
             )
-            # Both sides hold this checkpoint at different sizes: two different training runs
-            # sharing a name across clusters. Never overwrite the BGU one -- report and move on.
-            if ckpt in slurm_files and ckpt in aircc_files and slurm_files[ckpt] != aircc_files[ckpt]:
-                work.conflicts.append(
-                    f"{ckpt}: slurm={slurm_files[ckpt]}B aircc={aircc_files[ckpt]}B (keeping slurm)"
-                )
 
         plan.append(work)
     return plan

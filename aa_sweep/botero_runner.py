@@ -6,7 +6,10 @@ lane serial: a tick that lands while a job is running exits immediately.
 
 A tick:
 
-    reap dead runners -> GPU free? -> claim oldest queued -> run the engine -> echo to QNAP -> repeat
+    reap dead runners -> GPU free? -> claim oldest queued -> run the engine -> repeat
+
+The engine writes its rows into the model's own directory in the local store, so there is no copy
+step at the end and nothing leaves this machine.
 
 The GPU gate is deliberately conservative: *any* foreign CUDA compute process (the ad-hoc epoch-90
 eval, an interactive notebook, a training run) defers the tick. Botero is a workstation first, and
@@ -109,33 +112,6 @@ def engine_command(job: botero.Job) -> list[str]:
     ]
 
 
-def echo_to_qnap(job: botero.Job) -> list[str]:
-    """Copy the run's small artifacts to the QNAP twin of the archive dir.
-
-    Only the KB-sized outputs -- the checkpoints are already there and are not touched by an eval.
-    The weekly ``mirror_archives_to_qnap.sh`` cron that would otherwise do this is disabled, so the
-    runner keeps the share current itself. Best effort: a share that is down must not fail a job
-    whose real result is already safely on local disk.
-    """
-    source = Path(job.model_dir)
-    target = botero.qnap_counterpart(source, job.model_name)
-    if target is None:
-        return []
-    copied: list[str] = []
-    patterns = ("autoattack_sweep_results*.csv", "autoattack_eval_comparation_*.png",
-                "autoattack_eps_norm_scores.json")
-    try:
-        target.mkdir(parents=True, exist_ok=True)
-        for pattern in patterns:
-            for path in sorted(source.glob(pattern)):
-                subprocess.run(["cp", "-p", str(path), str(target / path.name)],
-                               check=True, capture_output=True, timeout=600)
-                copied.append(path.name)
-    except Exception as exc:
-        log(f"{job.model_name}:{job.checkpoint_kind}: QNAP echo failed ({exc}); local results are intact")
-    return copied
-
-
 def run_job(job: botero.Job, conn) -> bool:
     """Run one unit to completion in the foreground. Returns True on a clean exit."""
     config.BOTERO_LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -156,10 +132,10 @@ def run_job(job: botero.Job, conn) -> bool:
         rc = proc.wait()
 
     if rc == 0:
-        copied = echo_to_qnap(job)
+        # Nothing to copy anywhere: the engine wrote its rows into the model's own dir in the local
+        # store, which is where they belong and where the weekly rsync will find them.
         botero.finish(conn, job.id, ok=True)
-        log(f"job {job.id} DONE {job.model_name}:{job.checkpoint_kind}"
-            + (f" (echoed {len(copied)} file(s) to the QNAP)" if copied else ""))
+        log(f"job {job.id} DONE {job.model_name}:{job.checkpoint_kind} -> {job.model_dir}")
         return True
 
     tail = ""

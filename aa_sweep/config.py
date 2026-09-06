@@ -32,16 +32,11 @@ CSV_FOR_KIND: dict[str, str] = {
 
 SELECTION_JSON = "autoattack_sweep_selection.json"
 
-# Small files always carried along when staging a model: the CSVs bring the existing eps_norm rows
-# so they get reused, and the selection json pins the same 1024 evaluation images.
-STAGE_ALWAYS_GLOBS: tuple[str, ...] = (
-    "autoattack_sweep_results*.csv",
-    "autoattack_sweep_selection.json",
-    "autoattack_eps_norm_scores.json",
-    "summary.csv",
-    "hydra_config.yaml",
-    "runtime_config.yaml",
-)
+# The two independent lanes. Which one a model belongs to is decided once, in plan.build_plan, and
+# the split is disjoint: a model with a directory on the BGU cluster is the cluster's, everything
+# else AIRCC finished is this machine's.
+SLURM_LANE = "slurm"
+BOTERO_LANE = "botero"
 
 # --- clusters --------------------------------------------------------------------------------
 SLURM_SSH_HOST = os.environ.get("AA_SWEEP_SLURM_HOST", "slurm")
@@ -51,34 +46,29 @@ SLURM_USER = os.environ.get("AA_SWEEP_SLURM_USER", "ashtomer")
 SBATCH_SCRIPT = os.environ.get("AA_SWEEP_SBATCH", "sbatches/aa_sweep_completion.sbatch")
 
 SLURM_MOUNT = Path(os.environ.get("AA_SWEEP_SLURM_MOUNT", HOME / "slurm_mount"))
-AIRCC_MOUNT = Path(os.environ.get("AA_SWEEP_AIRCC_MOUNT", HOME / "aircc_mount"))
 
 SJM_DB = Path(
     os.environ.get("AA_SWEEP_SJM_DB", SLURM_MOUNT / "projects/ares/slurm_job_manager/jobs.sqlite")
 )
-AIRCC_DB = Path(
-    os.environ.get(
-        "AA_SWEEP_AIRCC_DB",
-        AIRCC_MOUNT / "ashtomer/ares/aircc/aircc_job_manager/aircc_jobs.sqlite",
-    )
-)
-AIRCC_MODELS_ROOT = Path(
-    os.environ.get("AA_SWEEP_AIRCC_MODELS_ROOT", AIRCC_MOUNT / "ashtomer/ares/results/models")
-)
 
-# Local Botero archive of the AIRCC results tree, refreshed by the 03:00 backup cron. Staging reads
-# come from here when verified fresh (see mirror.py) -- local disk instead of ~3.4 MB/s sshfs.
-# Moved to /mnt/data4t in Aug 2026: the archive now keeps every checkpoint (~1.9TB) so it can
-# outlive the cluster-side deletion, which does not fit on /mnt/data.
-BACKUP_MIRROR = Path(
-    os.environ.get("AA_SWEEP_BACKUP_MIRROR", "/mnt/data4t/aircc_archive/models")
+# --- AIRCC: a frozen job DB, and nothing else -------------------------------------------------
+# The AIRCC allocation is finished and this machine no longer talks to it -- no `ssh aircc`, no
+# `~/aircc_mount` sshfs. All that survives of it here is the *list of models it finished*, read
+# from the frozen DB in the QNAP archive (127 finished of 323 rows, byte-for-byte the finished set
+# the live DB last reported).
+#
+# That list is the Botero lane's candidate pool. The checkpoints themselves are NOT read from the
+# archive: they are read from BOTERO_STORE_ROOT below, this machine's own local copy. Three of the
+# 127 (convnext_base_{l2_cont4to6,linf_cont4to6,linf_cont4to8}_init0) never produced a checkpoint at
+# all -- they sit under `models_failed/` -- so they simply never resolve to a local dir and are
+# skipped.
+AIRCC_ARCHIVE = Path(os.environ.get("AA_SWEEP_AIRCC_ARCHIVE", "/mnt/botero/aircc_archive"))
+AIRCC_DB = Path(
+    os.environ.get("AA_SWEEP_AIRCC_DB", AIRCC_ARCHIVE / "aircc_jobs_final_latest.sqlite")
 )
-BACKUP_LOG = Path(os.environ.get("AA_SWEEP_BACKUP_LOG", BACKUP_MIRROR / "backup.log"))
-USE_MIRROR = os.environ.get("AA_SWEEP_USE_MIRROR", "1") != "0"
 
 JOB_NAME_PREFIX = "aaswp"
 SSH_TIMEOUT_SECONDS = int(os.environ.get("AA_SWEEP_SSH_TIMEOUT", "60"))
-RSYNC_TIMEOUT_SECONDS = int(os.environ.get("AA_SWEEP_RSYNC_TIMEOUT", "7200"))
 
 
 def job_name(model_name: str, checkpoint_kind: str) -> str:
@@ -89,6 +79,21 @@ def job_name(model_name: str, checkpoint_kind: str) -> str:
     """
     slug = model_name.strip("/").replace("/", "__")
     return f"{JOB_NAME_PREFIX}_{slug}_{checkpoint_kind}"
+
+
+def own_job_names(model_name: str, checkpoint_kind: str) -> set[str]:
+    """Every name this unit's job can appear under in ``squeue``.
+
+    Two, not one, for a nested model. ``sbatches/aa_sweep_completion.sbatch`` renames the job to
+    ``aaswp_$(basename AA_MODEL_DIR)_<kind>`` once it starts running, so
+    ``vit_b_cvst/l2_cont4to6_init1`` is queued as ``aaswp_vit_b_cvst__l2_cont4to6_init1_best`` but
+    *runs* as ``aaswp_l2_cont4to6_init1_best``. Matching only the queued form would let the nightly
+    run submit a second job onto a CSV a running one already owns.
+    """
+    return {
+        job_name(model_name, checkpoint_kind),
+        job_name(model_name.rsplit("/", 1)[-1], checkpoint_kind),
+    }
 
 
 def parse_job_name(name: str) -> tuple[str, str] | None:
@@ -107,10 +112,10 @@ def parse_job_name(name: str) -> tuple[str, str] | None:
 
 
 # --- the Botero lane -------------------------------------------------------------------------
-# Botero's own RTX 4090 is a GPU slot for this sweep alongside the BGU cluster. It runs strictly
-# one job at a time (see botero_runner.py) against models that are already on local disk, and its
-# results stay local -- they are never pushed back to either cluster, so census.kind_status() reads
-# them as a third source.
+# Botero's own RTX 4090 is an independent sweep lane, not a helper for the cluster. It runs strictly
+# one job at a time (see botero_runner.py) against this machine's own local models, and writes its
+# results back into the same local dir. Nothing is copied to or from a cluster in either direction:
+# whatever propagation is wanted is the weekly rsync's business, not this package's.
 BOTERO_DB = Path(os.environ.get("AA_SWEEP_BOTERO_DB", Path(__file__).resolve().parent / "botero_queue.sqlite"))
 # Queue depth is a backlog, not a concurrency level -- the lane still runs exactly one job at a
 # time. It has to cover the gap between nightly top-ups: at the measured ~7.4 h per (model, kind)
@@ -119,21 +124,16 @@ BOTERO_DB = Path(os.environ.get("AA_SWEEP_BOTERO_DB", Path(__file__).resolve().p
 # have run sooner.
 BOTERO_SLOTS = int(os.environ.get("AA_SWEEP_BOTERO_SLOTS", "7"))
 
-# Searched in order; the first directory holding both the checkpoint and the selection json wins.
-# Local disk before the QNAP CIFS share. The two archives are NOT cleanly split by originating
-# cluster (convnext_base_v1_l2_2_init1 lives under aircc_archive on the QNAP but slurm_archive on
-# /mnt/data4t), so all four roots have to be searched.
-BOTERO_MODEL_ROOTS: tuple[Path, ...] = tuple(
-    Path(p) for p in os.environ.get(
-        "AA_SWEEP_BOTERO_ROOTS",
-        "/mnt/data4t/slurm_archive/models:/mnt/data4t/aircc_archive/models:"
-        "/mnt/botero/slurm_archive/models:/mnt/botero/aircc_archive/models",
-    ).split(":") if p
-)
-# Where the small artifacts are echoed after a local run. The QNAP mirror cron is currently
-# disabled, so the runner copies the KB-sized CSV/PNG across itself.
-BOTERO_QNAP_ROOT = Path(os.environ.get("AA_SWEEP_BOTERO_QNAP", "/mnt/botero"))
-BOTERO_LOCAL_ROOT = Path(os.environ.get("AA_SWEEP_BOTERO_LOCAL", "/mnt/data4t"))
+# This machine's own models: the model_store curated tree, laid out <arch>/<name>/ and holding
+# every keeper checkpoint plus the AutoAttack CSVs, selection json and plots. Local SATA, not CIFS.
+#
+# Model names from the AIRCC DB are flat (`convnext_base_baseline_init0`) while the tree is nested
+# one level under an architecture dir, so resolution indexes the tree by directory basename rather
+# than joining the name onto the root -- see botero.resolve_model_dir. Verified safe: 331 model dirs,
+# 331 distinct basenames, no collisions.
+BOTERO_STORE_ROOT = Path(os.environ.get("AA_SWEEP_BOTERO_STORE", "/mnt/data4t/models"))
+# Bookkeeping dirs of the store, not models.
+BOTERO_STORE_SKIP: frozenset[str] = frozenset({"_legacy", "_meta"})
 
 BOTERO_VAL_DIR = Path(os.environ.get("AA_SWEEP_BOTERO_VAL_DIR", "/mnt/data/datasets/imagenet/val"))
 BOTERO_PYTHON = os.environ.get("AA_SWEEP_BOTERO_PYTHON", str(HOME / "miniconda3/envs/ares/bin/python"))

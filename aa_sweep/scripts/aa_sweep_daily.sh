@@ -1,14 +1,12 @@
 #!/bin/bash
-# Daily AutoAttack full-sweep completion. Reads both job DBs read-only over the sshfs mounts,
-# finds finished models whose linf/l2/l1 x eps 1,2,4,6,8 grid is incomplete on best/last/advbest,
-# stages any missing AIRCC checkpoints onto the BGU cluster, and submits one sbatch per
-# (model, checkpoint kind) on the `main` partition. Quiet unless something breaks.
+# Daily AutoAttack full-sweep completion. Reads the sjm job DB read-only over the BGU sshfs mount
+# and the frozen AIRCC DB out of the Botero archive, finds finished models whose linf/l2/l1 x
+# eps 1,2,4,6,8 grid is incomplete on best/last/advbest, stages any missing AIRCC checkpoints onto
+# the BGU cluster out of that same archive, and submits one sbatch per (model, checkpoint kind) on
+# the `main` partition. Quiet unless something breaks. Nothing here contacts AIRCC.
 #
-# Install (Botero crontab -e) -- 21:30 is 18.5h after the 03:00 AIRCC backup, so even a full backup
-# pass has finished and the local mirror it fills is usable as the staging source (see
-# aa_sweep/mirror.py). This slot used to be 19:30, but a full pass takes ~16.5h (03:00 -> ~19:35 on
-# 2026-08-08) and the cron read the log five minutes too early, correctly rejected the in-progress
-# block, and fell back to the slower AIRCC mount for the night:
+# Install (Botero crontab -e). The time of day no longer matters -- it used to have to clear the
+# 03:00 AIRCC backup that filled the staging mirror, but the archive is now static:
 #   30 21 * * * /home/tomer_a/Documents/ares/aa_sweep/scripts/aa_sweep_daily.sh >> /home/tomer_a/Documents/ares/aa_sweep/logs/aa_sweep.log 2>&1
 #
 # Safe to run by hand; add --dry-run via AA_SWEEP_ARGS to see the plan without submitting:
@@ -62,8 +60,8 @@ PYEOF
 
 cd "$REPO_ROOT" || exit 1
 
-# submit.py emails on its own for the failures it can describe (mounts down, DB unreadable, rsync
-# or sbatch failing). This catches the case where it dies in a way it could not report.
+# submit.py emails on its own for the failures it can describe (a filesystem missing, a DB
+# unreadable, sbatch failing). This catches the case where it dies in a way it could not report.
 out="$(PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" "$PYTHON" -m aa_sweep.submit ${EXTRA_ARGS} 2>&1)"
 rc=$?
 echo "$out"
