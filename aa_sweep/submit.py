@@ -1,13 +1,16 @@
-"""Daily driver: complete the AutoAttack sweep grid for every finished model on both clusters.
+"""Daily driver: keep two independent AutoAttack sweep lanes fed.
 
     python -m aa_sweep.submit --dry-run     # show the plan, submit nothing
-    python -m aa_sweep.submit               # stage + submit
+    python -m aa_sweep.submit               # submit sbatch jobs + top up the local queue
 
-Run from a Botero cron via ``aa_sweep/scripts/aa_sweep_daily.sh``. Read-only against both job DBs;
-the only writes are the staging rsync onto the BGU cluster and the sbatch submissions.
+Run from a Botero cron via ``aa_sweep/scripts/aa_sweep_daily.sh``. Read-only against both job DBs
+and against the BGU cluster's filesystem; the only writes are the sbatch submissions and rows in
+this machine's own queue DB.
 
-Order matters: census first, stage second, submit third. Censusing before staging is what keeps
-already-complete models free -- they cost one directory listing and zero bytes.
+**No model is ever copied.** Each lane evaluates the copy of the model its own machine already
+holds -- the cluster from ``results/models``, this machine from ``config.BOTERO_STORE_ROOT`` -- and
+writes its results back beside it. Propagating those results between machines is the weekly rsync's
+job, not this package's.
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ import subprocess
 import sys
 from datetime import datetime
 
-from aa_sweep import botero as botero_mod, config, mirror, plan as plan_mod, stage as stage_mod
+from aa_sweep import botero as botero_mod, config, plan as plan_mod
 
 
 def _now() -> str:
@@ -29,16 +32,27 @@ def log(msg: str) -> None:
     print(f"[aa_sweep] {_now()} {msg}", flush=True)
 
 
-def check_mounts() -> list[str]:
-    """The sshfs mounts are known to drop silently; a missing one looks like 'no work to do'."""
+def check_paths() -> list[str]:
+    """A missing filesystem looks exactly like 'no work to do', so fail loudly instead.
+
+    Two things have to be there: the sshfs mount of the BGU cluster (for the sjm DB) and the QNAP
+    share (for the frozen AIRCC DB -- the model *list*, not the models). Plus the local store the
+    Botero lane evaluates from, which is ordinary local disk rather than a mount but is worth the
+    same check: an empty store would silently retire the whole local lane.
+    """
     problems = []
     try:
         mounts = subprocess.run(["mount"], capture_output=True, text=True, timeout=30).stdout
     except Exception as exc:  # pragma: no cover - environment failure
         return [f"could not run `mount`: {exc}"]
-    for label, path in (("slurm", config.SLURM_MOUNT), ("aircc", config.AIRCC_MOUNT)):
+    for label, path in (("slurm", config.SLURM_MOUNT), ("qnap", config.AIRCC_ARCHIVE.parent)):
         if f" {path} " not in mounts:
             problems.append(f"{label} mount is not mounted at {path}")
+    # Mounted is not the same as populated: a share that reconnected empty reads as "nothing to do".
+    if not config.AIRCC_DB.is_file():
+        problems.append(f"frozen aircc job DB is missing at {config.AIRCC_DB}")
+    if not config.BOTERO_STORE_ROOT.is_dir():
+        problems.append(f"local model store is missing at {config.BOTERO_STORE_ROOT}")
     return problems
 
 
@@ -73,23 +87,39 @@ def live_job_names(run=subprocess.run) -> set[str]:
 
 def conflicting_job(model_name: str, kind: str, live_names: set[str]) -> str | None:
     """Name of a live job that means this (model, kind) must not be submitted, else None."""
-    mine = config.job_name(model_name, kind)
-    if mine in live_names:
-        return mine
+    # Both forms this unit's own job can wear. A *nested* model is submitted as
+    # `aaswp_vit_b_cvst__l2_cont4to6_init1_best` but renames itself to
+    # `aaswp_l2_cont4to6_init1_best` the moment it starts running (the `scontrol update` in
+    # sbatches/aa_sweep_completion.sbatch), so checking only the submitted form would let a second
+    # job open a CSV a running one already owns.
+    for mine in config.own_job_names(model_name, kind):
+        if mine in live_names:
+            return mine
 
     # Our own three kinds may run concurrently -- they write three different CSVs. A job we did
     # NOT name but which mentions this model carries no such guarantee (a hand-launched eval, a
     # re-training run), so treat it as a conflict and let the next night pick the work up.
     #
-    # Match on token boundaries, not raw substring: a plain `in` test makes the model dir name
-    # `m` match `sjm-manager`, and short nested names like `linf_1_init1` would be similarly
-    # trigger-happy. Job names are `_`/`-` delimited, so requiring non-alphanumeric neighbours is
-    # enough.
-    ours = {config.job_name(model_name, k) for k in config.CHECKPOINT_KINDS}
+    # Any `aaswp_*` name is one of ours by construction, whichever model it belongs to, so the
+    # exact tests above are the only conflicts it can be -- decode and skip the rest. Doing this by
+    # name-shape rather than by comparing against this model's own names is what fixes the
+    # collision between a nested model and a flat one: `swin_b/linf_cont4to6_init1` reduces to the
+    # dir name `linf_cont4to6_init1`, which is a suffix of the *unrelated*
+    # `convnext_base_linf_cont4to6_init1` with a `_` on either side. Those blockers were jobs stuck
+    # PENDING behind QOSMaxGRESPerUser for weeks, so "next night" never came and the nested models
+    # were skipped every single run.
+    #
+    # For foreign names there is nothing to decode, so fall back to the dir name and match on token
+    # boundaries rather than raw substring: a plain `in` test makes the model dir name `m` match
+    # `sjm-manager`. Names are `_`/`-` delimited, so requiring non-alphanumeric neighbours is
+    # enough. Still deliberately broad -- against an unknown job, over-blocking beats two writers
+    # on one CSV.
     dir_name = model_name.rsplit("/", 1)[-1]
     token = re.compile(rf"(?<![0-9A-Za-z]){re.escape(dir_name)}(?![0-9A-Za-z])")
     for name in live_names:
-        if name not in ours and token.search(name):
+        if config.parse_job_name(name) is not None:
+            continue
+        if token.search(name):
             return name
     return None
 
@@ -150,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if not args.skip_mount_check:
-        problems = check_mounts()
+        problems = check_paths()
         if problems:
             msg = "; ".join(problems)
             log(f"ABORT: {msg}")
@@ -183,14 +213,17 @@ def main(argv: list[str] | None = None) -> int:
 
     works = plan_mod.build_plan(aircc_finished, sjm_finished, probe)
 
-    complete = [w for w in works if w.is_complete]
-    pending = [w for w in works if not w.is_complete]
-    log(f"complete (nothing to do, nothing staged): {len(complete)}")
-    log(f"needing work: {len(pending)} models, {sum(w.missing_cell_count for w in pending)} grid cells")
+    slurm_works = [w for w in works if w.lane == config.SLURM_LANE]
+    botero_works = [w for w in works if w.lane == config.BOTERO_LANE]
+    log(f"lanes: slurm={len(slurm_works)} models (own copy on the cluster), "
+        f"botero={len(botero_works)} models (own copy in {config.BOTERO_STORE_ROOT})")
 
-    for work in works:
-        for line in work.conflicts:
-            log(f"CONFLICT {work.model_name}: {line}")
+    pending = [w for w in slurm_works if not w.is_complete]
+    log(f"slurm lane: {len(slurm_works) - len(pending)} complete, {len(pending)} needing "
+        f"{sum(w.missing_cell_count for w in pending)} grid cells")
+    botero_pending = [w for w in botero_works if not w.is_complete]
+    log(f"botero lane: {len(botero_works) - len(botero_pending)} complete, {len(botero_pending)} "
+        f"needing {sum(w.missing_cell_count for w in botero_pending)} grid cells")
 
     try:
         running = live_job_names()
@@ -199,27 +232,21 @@ def main(argv: list[str] | None = None) -> int:
         notify("[aa_sweep] squeue check failed", str(exc), dedup_key="aa_sweep-squeue-failed")
         return 1
 
-    # One check per run, not per model: whether the nightly backup that fills the local mirror
-    # completed cleanly. If it did not, every model falls back to reading the AIRCC mount.
-    backup_ok, backup_message = mirror.backup_log_ok()
-    log(f"mirror source: {'usable' if backup_ok else 'NOT usable'} ({backup_message})")
-
     submitted: list[str] = []
     skipped_live = 0
-    staged_bytes = 0
     failures: list[str] = []
     moved: list[str] = []
 
     if args.botero_topup_only:
-        log("--botero-topup-only: staging nothing and submitting no sbatch")
+        log("--botero-topup-only: submitting no sbatch")
         try:
-            moved = botero_mod.topup(works, dry_run=args.dry_run, log=log)
+            moved = botero_mod.topup(botero_works, dry_run=args.dry_run, log=log)
         except Exception as exc:
             log(f"botero top-up failed: {exc}")
             notify("[aa_sweep] botero top-up failed", str(exc), dedup_key="aa_sweep-botero-topup-failed")
             return 1
-        verb = "would move" if args.dry_run else "moved"
-        log(f"summary: {verb} {len(moved)} unit(s) to the Botero lane")
+        verb = "would enqueue" if args.dry_run else "enqueued"
+        log(f"summary: {verb} {len(moved)} unit(s) in the Botero lane")
         return 0
 
     for work in pending:
@@ -233,23 +260,6 @@ def main(argv: list[str] | None = None) -> int:
                 log(f"{work.model_name}:{kind}: skipping, '{blocker}' is already queued/running")
         if not kinds:
             continue
-
-        if work.staging_files or work.aircc_dir is not None:
-            res = stage_mod.stage_model(
-                work, work.aircc_csvs, work.slurm_csvs, dry_run=args.dry_run,
-                backup_ok=backup_ok, backup_message=backup_message,
-            )
-            staged_bytes += res.bytes_planned
-            if not res.ok:
-                failures.append(f"{work.model_name}: {res.error}")
-                log(f"{work.model_name}: STAGING FAILED ({res.error}), not submitting")
-                continue
-            if res.files:
-                via = res.source + (f" [{res.source_reason}]" if res.source_reason else "")
-                log(f"{work.model_name}: staged {', '.join(res.files)} "
-                    f"({res.bytes_planned / 1e9:.1f} GB) via {via}")
-            if res.merged_csvs:
-                log(f"{work.model_name}: merged aircc-only rows into {', '.join(res.merged_csvs)} csv(s)")
 
         for kind in kinds:
             if args.limit is not None and len(submitted) >= args.limit:
@@ -271,20 +281,19 @@ def main(argv: list[str] | None = None) -> int:
         if args.limit is not None and len(submitted) >= args.limit:
             break
 
-    # Last, deliberately: the Botero lane prefers to *move* work already queued on Slurm, so it
-    # should see tonight's submissions as candidates too rather than a queue that is one day stale.
+    # The local lane is independent of the cluster submissions above -- it draws from a disjoint set
+    # of models -- so its failures are collected but never cost a submission that already succeeded.
     if not args.no_botero:
         try:
-            moved = botero_mod.topup(works, dry_run=args.dry_run, log=log)
+            moved = botero_mod.topup(botero_works, dry_run=args.dry_run, log=log)
         except Exception as exc:
-            # A local-lane problem must not cost the cluster submissions that already succeeded.
             failures.append(f"botero top-up: {exc}")
             log(f"botero top-up FAILED {exc}")
 
     verb = "would submit" if args.dry_run else "submitted"
     log(
-        f"summary: {verb} {len(submitted)} jobs; {skipped_live} already in flight; "
-        f"{staged_bytes / 1e9:.1f} GB staged; {len(moved)} moved to botero; {len(failures)} failures"
+        f"summary: {verb} {len(submitted)} sbatch jobs; {skipped_live} already in flight; "
+        f"{len(moved)} enqueued on botero; {len(failures)} failures"
     )
 
     if failures:

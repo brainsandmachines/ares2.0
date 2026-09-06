@@ -1,22 +1,22 @@
 """The Botero lane: a local, strictly serial GPU slot for the AutoAttack sweep.
 
 Botero has one RTX 4090 -- the same 24GB class ``sbatches/aa_sweep_completion.sbatch`` demands via
-``--constraint`` -- and local copies of every model from both clusters under
-``/mnt/data4t/{slurm,aircc}_archive/models`` (mirrored onto the QNAP at ``/mnt/botero``). The BGU
-lane is chronically jammed behind ``QOSMaxGRESPerUser``, so this module makes that GPU a real slot:
+``--constraint`` -- and its own copy of the models in the curated store at
+``config.BOTERO_STORE_ROOT``. That makes it a second, fully independent sweep lane:
 
     queue (this module)  ->  botero_runner.py  ->  data_analysis/autoattack_array_eval.py
 
 Design points that matter:
 
-* **Depth 5, serial.** The queue holds up to ``config.BOTERO_SLOTS`` units of work; the runner runs
-  exactly one at a time. Depth is a *backlog*, not a concurrency level.
-* **Results stay local.** A local run writes its CSV rows into the archive model dir it read the
-  checkpoint from, and nothing is ever pushed back to a cluster. That is why
-  ``census.kind_status`` grew a third source -- see ``plan.build_plan``.
-* **Moving beats adding.** Top-up prefers to *move* work that is already queued on Slurm (cancel it
-  there, run it here), taking from the back of the queue: those are the jobs Slurm would pick up
-  last. Only when there is nothing left to move does it enqueue brand-new work.
+* **Its own models, and only those.** This lane evaluates the models the BGU cluster does *not*
+  have a directory for -- 22 of the 127 AIRCC finished at last count. It never reads a cluster
+  filesystem, never copies a checkpoint, and never touches the cluster's queue. ``plan.build_plan``
+  makes the split, and it is disjoint by construction.
+* **Depth is a backlog, not concurrency.** The queue holds up to ``config.BOTERO_SLOTS`` units; the
+  runner runs exactly one at a time, serialised by the ``flock`` in the cron wrapper.
+* **Results stay where they are computed.** A run writes its CSV rows into the model's own dir in
+  the store. Nothing is pushed anywhere; propagating results between machines is the weekly rsync's
+  job, not this package's.
 """
 
 from __future__ import annotations
@@ -108,46 +108,61 @@ def _row_to_job(row: sqlite3.Row) -> Job:
     )
 
 
-# --- the local model archive ------------------------------------------------------------------
+# --- this machine's own models ------------------------------------------------------------------
+
+
+def store_index(root: Path | None = None) -> dict[str, Path]:
+    """``{directory basename: path}`` for every model dir in the curated store.
+
+    The store is nested one level under an architecture dir
+    (``/mnt/data4t/models/convnext_base/convnext_base_baseline_init0``) while the names in the job
+    DBs are either flat (AIRCC) or nested under a *different* prefix (sjm's
+    ``vit_b_cvst/l1_1_init1``). Indexing by basename resolves both without either side having to
+    know the store's layout. Checked before relying on it: 331 model dirs, 331 distinct basenames.
+    """
+    root = config.BOTERO_STORE_ROOT if root is None else root
+    index: dict[str, Path] = {}
+    try:
+        arch_dirs = sorted(root.iterdir())
+    except OSError:
+        # A missing or unreadable store must not take the whole run down; submit.check_paths
+        # reports it properly.
+        return index
+    for arch in arch_dirs:
+        if not arch.is_dir() or arch.name in config.BOTERO_STORE_SKIP:
+            continue
+        try:
+            for model_dir in arch.iterdir():
+                if model_dir.is_dir():
+                    index.setdefault(model_dir.name, model_dir)
+        except OSError:
+            continue
+    return index
 
 
 def resolve_model_dir(
-    model_name: str, ckpt_filename: str, roots: tuple[Path, ...] | None = None
+    model_name: str, ckpt_filename: str | None = None, index: dict[str, Path] | None = None
 ) -> Path | None:
-    """First archive root holding this model's checkpoint *and* its image selection.
+    """This model's dir in the local store, if it holds a usable checkpoint and its image selection.
 
-    The selection json is not optional: it is what pins the same 1024 images the cluster rows were
+    The selection json is not optional: it is what pins the same 1024 images every other row was
     computed on, and without it a local run would produce numbers that are not comparable.
+
+    ``ckpt_filename`` narrows the check to one kind; omitted, any of the three kinds qualifies the
+    dir (used when censusing a model before knowing which kinds it needs).
     """
-    for root in roots or config.BOTERO_MODEL_ROOTS:
-        candidate = Path(root) / model_name
-        try:
-            if (candidate / ckpt_filename).is_file() and (candidate / config.SELECTION_JSON).is_file():
-                return candidate
-        except OSError:
-            # A dropped CIFS/sshfs root must not take the whole run down; just try the next one.
-            continue
-    return None
-
-
-def qnap_counterpart(model_dir: Path, model_name: str) -> Path | None:
-    """Where on the QNAP this model's artifacts should be echoed, or None if it is not there.
-
-    Usually the straight ``/mnt/data4t`` -> ``/mnt/botero`` mirror of the path. But the two archives
-    are not consistently split by originating cluster -- ``convnext_base_v1_l2_2_init1`` lives under
-    ``slurm_archive`` locally and ``aircc_archive`` on the QNAP -- so fall back to whichever QNAP
-    root already holds the model rather than creating a second copy of it under the other one.
-    """
+    index = store_index() if index is None else index
+    model_dir = index.get(model_name.rsplit("/", 1)[-1])
+    if model_dir is None:
+        return None
+    wanted = [ckpt_filename] if ckpt_filename else list(config.CKPT_FILE_FOR_KIND.values())
     try:
-        mirrored = config.BOTERO_QNAP_ROOT / Path(model_dir).relative_to(config.BOTERO_LOCAL_ROOT)
-    except ValueError:
-        mirrored = None
-    if mirrored is not None and mirrored.is_dir():
-        return mirrored
-    for root in config.BOTERO_MODEL_ROOTS:
-        candidate = Path(root) / model_name
-        if config.BOTERO_QNAP_ROOT in Path(root).parents and candidate.is_dir():
-            return candidate
+        if not (model_dir / config.SELECTION_JSON).is_file():
+            return None
+        if any((model_dir / name).is_file() for name in wanted):
+            return model_dir
+    except OSError:
+        return None
     return None
 
 
@@ -270,65 +285,22 @@ def reap_stale(conn: sqlite3.Connection, alive=pid_alive) -> list[str]:
 # --- topping the queue back up to full ---------------------------------------------------------
 
 
-def pending_slurm_jobs(run=subprocess.run) -> list[tuple[int, str, str]]:
-    """``(jobid, model_name, kind)`` for every PENDING aaswp job, back of the queue first.
-
-    Descending job id is the point: those are the ones Slurm will start last, so they are the ones
-    worth taking. ``squeue -o '%j'`` is unwidthed for the same reason as in ``submit.py`` -- a
-    width would truncate long names and every decode would miss.
-    """
-    proc = run(
-        ["ssh", "-o", f"ConnectTimeout={config.SSH_TIMEOUT_SECONDS}", config.SLURM_SSH_HOST,
-         f"squeue -u {config.SLURM_USER} -h -t PD -o '%i|%j'"],
-        capture_output=True,
-        text=True,
-        timeout=config.SSH_TIMEOUT_SECONDS * 2,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"squeue -t PD failed rc={proc.returncode}: {proc.stderr.strip()}")
-    out: list[tuple[int, str, str]] = []
-    for line in proc.stdout.splitlines():
-        if "|" not in line:
-            continue
-        raw_id, raw_name = line.split("|", 1)
-        parsed = config.parse_job_name(raw_name.strip())
-        if parsed is None:
-            continue
-        try:
-            job_id = int(raw_id.strip().split("_")[0])
-        except ValueError:
-            continue
-        out.append((job_id, parsed[0], parsed[1]))
-    out.sort(key=lambda item: -item[0])
-    return out
-
-
-def scancel(job_id: int, run=subprocess.run) -> None:
-    proc = run(
-        ["ssh", "-o", f"ConnectTimeout={config.SSH_TIMEOUT_SECONDS}", config.SLURM_SSH_HOST,
-         f"scancel {job_id}"],
-        capture_output=True,
-        text=True,
-        timeout=config.SSH_TIMEOUT_SECONDS * 2,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"scancel {job_id} failed rc={proc.returncode}: {proc.stderr.strip()}")
-
-
 def topup(
     works,
     conn: sqlite3.Connection | None = None,
     dry_run: bool = False,
     slots: int | None = None,
-    pending=pending_slurm_jobs,
-    cancel=scancel,
     log=print,
 ) -> list[str]:
     """Refill the Botero queue to ``slots`` units. Returns one description per unit taken.
 
-    ``works`` is the ``plan.ModelWork`` list the nightly run already built, used both to know how
-    many cells a candidate still needs and -- for source B -- to find work that was never queued
-    anywhere.
+    ``works`` is the ``plan.ModelWork`` list the nightly run already built; only the Botero-lane
+    entries are considered, and ``plan.build_plan`` has already guaranteed those have no directory
+    on the cluster. This lane therefore never needs to look at, let alone cancel, anything on Slurm
+    -- it used to move work off the back of the Slurm queue, and that coupling is gone.
+
+    Fullest-first: a model with 14 missing cells is a model whose sweep has barely started, and
+    finishing one checkpoint completely is worth more than a cell each on three of them.
     """
     own = conn is None
     conn = conn or connect()
@@ -338,95 +310,46 @@ def topup(
         have = active_count(conn)
         need = slots - have
         if need <= 0:
-            log(f"botero: queue full ({have}/{slots}), nothing to move")
+            log(f"botero: queue full ({have}/{slots}), nothing to enqueue")
             return taken
 
-        by_name = {w.model_name: w for w in works}
         active = active_units(conn)
+        index = store_index()
 
-        def eligible(model_name: str, kind: str) -> tuple[Path, int] | None:
-            """Local dir + remaining cell count, or None with the reason logged."""
-            if (model_name, kind) in active:
-                return None
-            work = by_name.get(model_name)
-            status = work.kinds.get(kind) if work else None
-            if status is None:
-                log(f"botero: skip {model_name}:{kind}, not a finished model in this plan")
-                return None
-            if not status.missing:
-                log(f"botero: skip {model_name}:{kind}, no missing cells")
-                return None
-            model_dir = resolve_model_dir(model_name, config.CKPT_FILE_FOR_KIND[kind])
-            if model_dir is None:
-                log(f"botero: skip {model_name}:{kind}, no local archive dir with"
-                    f" {config.CKPT_FILE_FOR_KIND[kind]} + {config.SELECTION_JSON}")
-                return None
-            return model_dir, len(status.missing)
+        candidates: list[tuple[int, str, str, Path]] = []
+        for work in works:
+            if work.lane != config.BOTERO_LANE:
+                continue
+            for kind in config.CHECKPOINT_KINDS:
+                status = work.kinds.get(kind)
+                if status is None or not status.runnable:
+                    continue
+                if (work.model_name, kind) in active:
+                    continue
+                model_dir = resolve_model_dir(
+                    work.model_name, config.CKPT_FILE_FOR_KIND[kind], index=index
+                )
+                if model_dir is None:
+                    log(f"botero: skip {work.model_name}:{kind}, no local dir with"
+                        f" {config.CKPT_FILE_FOR_KIND[kind]} + {config.SELECTION_JSON}")
+                    continue
+                candidates.append((len(status.missing), work.model_name, kind, model_dir))
 
-        # --- source A: move work off the back of the Slurm queue ---------------------------
-        try:
-            candidates = pending()
-        except Exception as exc:
-            log(f"botero: cannot read the pending Slurm queue ({exc}); falling back to new work")
-            candidates = []
+        candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
 
-        for job_id, model_name, kind in candidates:
+        for cells, model_name, kind, model_dir in candidates:
             if len(taken) >= need:
                 break
-            hit = eligible(model_name, kind)
-            if hit is None:
-                continue
-            model_dir, cells = hit
             if dry_run:
-                log(f"botero: DRY-RUN would scancel {job_id} and enqueue {model_name}:{kind}"
+                log(f"botero: DRY-RUN would enqueue {model_name}:{kind}"
                     f" ({cells} cells) from {model_dir}")
-                taken.append(f"{model_name}:{kind}")
-                active.add((model_name, kind))
-                continue
-            try:
-                cancel(job_id)
-            except Exception as exc:
-                log(f"botero: scancel {job_id} failed ({exc}), leaving {model_name}:{kind} on Slurm")
-                continue
-            # Enqueue only after the cancel lands, so the unit is never queued in both lanes.
-            if enqueue(conn, model_name, kind, model_dir, origin=f"moved:{job_id}", cells=cells) is None:
+            elif enqueue(conn, model_name, kind, model_dir, origin="new", cells=cells) is None:
                 log(f"botero: {model_name}:{kind} became active concurrently, skipping")
                 continue
-            log(f"botero: moved {model_name}:{kind} ({cells} cells) from slurm job {job_id}")
+            else:
+                log(f"botero: enqueued {model_name}:{kind} ({cells} cells) from {model_dir}")
             taken.append(f"{model_name}:{kind}")
             active.add((model_name, kind))
-
-        # --- source B: nothing left to move, so take work that was never queued at all ------
-        #
-        # Anything still pending on Slurm is off limits here even though source A did not take it:
-        # a scancel that failed, or a unit past the `need` cut, is still queued over there, and
-        # enqueueing it locally too would run it in both lanes at once.
-        on_slurm = {(model_name, kind) for _, model_name, kind in candidates}
-        if len(taken) < need:
-            for work in works:
-                if len(taken) >= need:
-                    break
-                for kind in config.CHECKPOINT_KINDS:
-                    if len(taken) >= need:
-                        break
-                    status = work.kinds.get(kind)
-                    if status is None or not status.missing:
-                        continue
-                    if (work.model_name, kind) in on_slurm:
-                        continue
-                    hit = eligible(work.model_name, kind)
-                    if hit is None:
-                        continue
-                    model_dir, cells = hit
-                    if dry_run:
-                        log(f"botero: DRY-RUN would enqueue new {work.model_name}:{kind}"
-                            f" ({cells} cells) from {model_dir}")
-                    elif enqueue(conn, work.model_name, kind, model_dir, origin="new", cells=cells) is None:
-                        continue
-                    else:
-                        log(f"botero: enqueued new {work.model_name}:{kind} ({cells} cells)")
-                    taken.append(f"{work.model_name}:{kind}")
-                    active.add((work.model_name, kind))
 
         log(f"botero: queue {have + (0 if dry_run else len(taken))}/{slots}"
             f" after {'considering' if dry_run else 'taking'} {len(taken)} unit(s)")

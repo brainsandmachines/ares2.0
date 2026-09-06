@@ -56,100 +56,59 @@ def test_observed_cells_tolerates_missing_and_malformed_fields():
 def test_kind_status_eps_norm_row_leaves_14_missing():
     status = kind_status(
         kind="last", ckpt_filename="last.pth.tar", model_name="m", grid=GRID,
-        slurm_files={"last.pth.tar"},
-        slurm_csv_text=csv_text("m", "results/models/m/last.pth.tar", [("l2", 4.0)]),
-        aircc_files=set(), aircc_csv_text="",
+        files={"last.pth.tar"},
+        csv_text=csv_text("m", "results/models/m/last.pth.tar", [("l2", 4.0)]),
     )
     assert len(status.missing) == 14
     assert ("l2", 4.0) not in status.missing
-    assert status.runnable and not status.needs_staging
+    assert status.runnable
 
 
 def test_kind_status_full_sweep_is_complete_even_with_a_stale_eps_12_row():
     cells = [(n, e) for n in config.NORMS for e in config.EPS_INPUTS] + [("linf", 12.0)]
     status = kind_status(
         kind="last", ckpt_filename="last.pth.tar", model_name="m", grid=GRID,
-        slurm_files={"last.pth.tar"},
-        slurm_csv_text=csv_text("m", "/x/m/last.pth.tar", cells),
-        aircc_files=set(), aircc_csv_text="",
+        files={"last.pth.tar"},
+        csv_text=csv_text("m", "/x/m/last.pth.tar", cells),
     )
     assert status.missing == set()
     assert not status.runnable
 
 
-def test_kind_status_unions_both_clusters_before_deciding():
-    """A cell present only on AIRCC is one the staged BGU job will find -- not missing."""
+def test_kind_status_reads_only_this_machines_csv():
+    """One lane at a time: a row computed on the *other* machine is deliberately NOT counted.
+
+    The engine on this machine diffs its own CSV against the grid, so a cell it cannot see is a
+    cell it will recompute. Counting the other lane's row here would make the planner skip work
+    that then never happens. Safe only because the lanes own disjoint model sets.
+    """
     status = kind_status(
         kind="last", ckpt_filename="last.pth.tar", model_name="m", grid=GRID,
-        slurm_files={"last.pth.tar"},
-        slurm_csv_text=csv_text("m", "/x/m/last.pth.tar", [("l2", 1.0)]),
-        aircc_files={"last.pth.tar"},
-        aircc_csv_text=csv_text("m", "results/models/m/last.pth.tar", [("l2", 2.0)]),
+        files={"last.pth.tar"},
+        csv_text=csv_text("m", "/x/m/last.pth.tar", [("l2", 1.0)]),
     )
     assert ("l2", 1.0) not in status.missing
-    assert ("l2", 2.0) not in status.missing
-    assert len(status.missing) == 13
+    assert ("l2", 2.0) in status.missing        # only on the other machine -> still ours to do
+    assert len(status.missing) == 14
 
 
-def test_kind_status_needs_staging_only_when_checkpoint_absent_on_the_cluster():
-    aircc_only = kind_status(
-        kind="advbest", ckpt_filename="model_best_adv.pth.tar", model_name="m", grid=GRID,
-        slurm_files=set(), slurm_csv_text="",
-        aircc_files={"model_best_adv.pth.tar"}, aircc_csv_text="",
-    )
-    assert aircc_only.needs_staging and aircc_only.runnable
+def test_kind_status_without_a_checkpoint_here_is_not_runnable():
+    """Baselines have no model_best_adv.pth.tar -- no job should ever be submitted for them.
 
-    already_there = kind_status(
-        kind="advbest", ckpt_filename="model_best_adv.pth.tar", model_name="m", grid=GRID,
-        slurm_files={"model_best_adv.pth.tar"}, slurm_csv_text="",
-        aircc_files={"model_best_adv.pth.tar"}, aircc_csv_text="",
-    )
-    assert not already_there.needs_staging and already_there.runnable
-
-
-def test_kind_status_without_any_checkpoint_is_not_runnable():
-    """Baselines have no model_best_adv.pth.tar -- no job should ever be submitted for them."""
+    This is also what keeps a lane from being handed work it cannot do: `has_checkpoint` is about
+    *this* machine's filesystem, so a model only the other machine holds is never runnable here.
+    """
     status = kind_status(
         kind="advbest", ckpt_filename="model_best_adv.pth.tar", model_name="m", grid=GRID,
-        slurm_files=set(), slurm_csv_text="", aircc_files=set(), aircc_csv_text="",
+        files=set(), csv_text="",
     )
     assert status.missing == GRID
-    assert not status.runnable and not status.needs_staging
-
-
-def test_kind_status_counts_cells_computed_on_botero():
-    """The whole reason the Botero lane is safe to run: its results are never pushed to a cluster,
-    so if the census did not read them the nightly run would re-submit them to Slurm forever."""
-    status = kind_status(
-        kind="last", ckpt_filename="last.pth.tar", model_name="m", grid=GRID,
-        slurm_files={"last.pth.tar"},
-        slurm_csv_text=csv_text("m", "/x/m/last.pth.tar", [("l2", 1.0)]),
-        aircc_files=set(), aircc_csv_text="",
-        botero_files={"last.pth.tar"},
-        botero_csv_text=csv_text("m", "/mnt/data4t/slurm_archive/models/m/last.pth.tar",
-                                 [("l1", 6.0), ("linf", 8.0)]),
-    )
-    assert ("l1", 6.0) not in status.missing
-    assert ("linf", 8.0) not in status.missing
-    assert len(status.missing) == 12
-    assert status.ckpt_on_botero
-
-
-def test_a_checkpoint_only_on_botero_is_not_runnable_on_the_cluster():
-    """`runnable` gates sbatch submission; the local archive is not something Slurm can read."""
-    status = kind_status(
-        kind="advbest", ckpt_filename="model_best_adv.pth.tar", model_name="m", grid=GRID,
-        slurm_files=set(), slurm_csv_text="", aircc_files=set(), aircc_csv_text="",
-        botero_files={"model_best_adv.pth.tar"}, botero_csv_text="",
-    )
-    assert status.ckpt_on_botero
     assert not status.has_checkpoint and not status.runnable
 
 
-def test_botero_arguments_are_optional():
-    """Every pre-existing caller keeps its exact behaviour."""
-    without = kind_status(
-        kind="last", ckpt_filename="last.pth.tar", model_name="m", grid=GRID,
-        slurm_files={"last.pth.tar"}, slurm_csv_text="", aircc_files=set(), aircc_csv_text="",
+def test_kind_status_is_runnable_with_a_local_checkpoint_and_gaps():
+    status = kind_status(
+        kind="advbest", ckpt_filename="model_best_adv.pth.tar", model_name="m", grid=GRID,
+        files={"model_best_adv.pth.tar"}, csv_text="",
     )
-    assert without.missing == GRID and not without.ckpt_on_botero
+    assert status.has_checkpoint and status.runnable and status.missing == GRID

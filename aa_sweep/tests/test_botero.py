@@ -24,28 +24,28 @@ def conn(tmp_path):
 
 
 @pytest.fixture(autouse=True)
-def local_archive(tmp_path, monkeypatch):
-    """Resolve models out of tmp_path instead of the real /mnt archives, everywhere in this file."""
-    real = botero.resolve_model_dir
-    monkeypatch.setattr(
-        botero, "resolve_model_dir",
-        lambda name, ckpt, roots=None: real(name, ckpt, roots or (tmp_path / "a", tmp_path / "b")),
-    )
+def local_store(tmp_path, monkeypatch):
+    """Resolve models out of tmp_path instead of the real store, everywhere in this file."""
+    monkeypatch.setattr(config, "BOTERO_STORE_ROOT", tmp_path / "models")
 
 
-def work(name="m", missing_kinds=("best", "last", "advbest"), missing=3):
+def work(name="m", missing_kinds=("best", "last", "advbest"), missing=3, lane=config.BOTERO_LANE):
     """A ModelWork whose named kinds each still need `missing` cells."""
     kinds = {
-        k: KindStatus(kind=k, ckpt_on_slurm=True,
+        k: KindStatus(kind=k, has_checkpoint=True,
                       missing={("linf", float(i)) for i in range(missing)} if k in missing_kinds else set())
         for k in config.CHECKPOINT_KINDS
     }
-    return ModelWork(model_name=name, kinds=kinds)
+    return ModelWork(model_name=name, lane=lane, kinds=kinds)
 
 
-def archive(tmp_path, model_name, kinds=config.CHECKPOINT_KINDS, root="a"):
-    """A fake archive root holding one model's checkpoints and its selection json."""
-    model_dir = tmp_path / root / model_name
+def store(tmp_path, model_name, kinds=config.CHECKPOINT_KINDS, arch="convnext_base"):
+    """One model in a fake curated store: <root>/<arch>/<name>/ with checkpoints + selection json.
+
+    The store is keyed by directory basename, so a nested name is created under its basename --
+    exactly as model_store lays the real tree out.
+    """
+    model_dir = tmp_path / "models" / arch / model_name.rsplit("/", 1)[-1]
     model_dir.mkdir(parents=True, exist_ok=True)
     (model_dir / config.SELECTION_JSON).write_text("{}")
     for kind in kinds:
@@ -56,36 +56,62 @@ def archive(tmp_path, model_name, kinds=config.CHECKPOINT_KINDS, root="a"):
 # --- resolve_model_dir -------------------------------------------------------------------------
 
 
-def test_first_root_holding_both_the_checkpoint_and_the_selection_wins(tmp_path):
-    second = archive(tmp_path, "m", root="b")
-    roots = (tmp_path / "a", tmp_path / "b")
+def test_a_model_is_found_under_its_architecture_dir(tmp_path):
+    """Names are flat (AIRCC) or nested under a different prefix (sjm); the store nests them under
+    an architecture dir. Indexing by basename is what makes all three resolve."""
+    expected = store(tmp_path, "convnext_base_baseline_init0")
 
-    assert botero.resolve_model_dir("m", CKPT["best"], roots) == second
+    assert botero.resolve_model_dir("convnext_base_baseline_init0", CKPT["best"]) == expected
 
-    first = archive(tmp_path, "m", root="a")
-    assert botero.resolve_model_dir("m", CKPT["best"], roots) == first
+
+def test_a_nested_name_resolves_by_its_basename(tmp_path):
+    """`vit_b_cvst/l1_1_init1` lives at `<store>/vit_b_cvst/l1_1_init1` -- the same last segment,
+    but the store's own arch dir, not the one carried in the name."""
+    expected = store(tmp_path, "vit_b_cvst/l1_1_init1", arch="vit_b_cvst")
+
+    assert botero.resolve_model_dir("vit_b_cvst/l1_1_init1", CKPT["last"]) == expected
+
+
+def test_bookkeeping_dirs_of_the_store_are_not_models(tmp_path):
+    store(tmp_path, "m", arch="_legacy")
+
+    assert botero.resolve_model_dir("m", CKPT["best"]) is None
 
 
 def test_a_dir_without_the_selection_json_is_not_usable(tmp_path):
-    """Without it a local run would attack a different 1024 images than the cluster rows did."""
-    model_dir = archive(tmp_path, "m")
+    """Without it a local run would attack a different 1024 images than every other row did."""
+    model_dir = store(tmp_path, "m")
     (model_dir / config.SELECTION_JSON).unlink()
 
-    assert botero.resolve_model_dir("m", CKPT["best"], (tmp_path / "a",)) is None
+    assert botero.resolve_model_dir("m", CKPT["best"]) is None
 
 
 def test_the_kind_actually_asked_for_must_be_present(tmp_path):
-    archive(tmp_path, "m", kinds=("best",))
-    roots = (tmp_path / "a",)
+    store(tmp_path, "m", kinds=("best",))
 
-    assert botero.resolve_model_dir("m", CKPT["best"], roots) is not None
-    assert botero.resolve_model_dir("m", CKPT["advbest"], roots) is None
+    assert botero.resolve_model_dir("m", CKPT["best"]) is not None
+    assert botero.resolve_model_dir("m", CKPT["advbest"]) is None
 
 
-def test_nested_sjm_names_resolve_as_subdirectories(tmp_path):
-    nested = archive(tmp_path, "vit_b_cvst/linftrades_1_init1")
+def test_without_a_named_kind_any_checkpoint_qualifies_the_dir(tmp_path):
+    """The census path: resolve the dir first, work out which kinds it needs afterwards."""
+    expected = store(tmp_path, "m", kinds=("last",))
 
-    assert botero.resolve_model_dir("vit_b_cvst/linftrades_1_init1", CKPT["last"], (tmp_path / "a",)) == nested
+    assert botero.resolve_model_dir("m") == expected
+
+
+def test_a_model_absent_from_the_store_resolves_to_nothing(tmp_path):
+    store(tmp_path, "other")
+
+    assert botero.resolve_model_dir("m") is None
+
+
+def test_store_index_is_keyed_by_basename_and_skips_bookkeeping(tmp_path):
+    store(tmp_path, "convnext_base_baseline_init0")
+    store(tmp_path, "vit_b_cvst/l1_1_init1", arch="vit_b_cvst")
+    store(tmp_path, "junk", arch="_meta")
+
+    assert set(botero.store_index()) == {"convnext_base_baseline_init0", "l1_1_init1"}
 
 
 # --- queue -------------------------------------------------------------------------------------
@@ -153,141 +179,100 @@ def test_repeated_deaths_eventually_fail_the_job(conn, tmp_path):
 # --- top-up ------------------------------------------------------------------------------------
 
 
-def topup(conn, works, pending=(), slots=5, dry_run=False, cancelled=None, cancel=None):
-    """Run a top-up with the cluster stubbed out; `local_archive` supplies the model dirs."""
-    if cancel is None:
-        cancel = cancelled.append if cancelled is not None else (lambda job_id: None)
-    return botero.topup(
-        works, conn=conn, slots=slots, dry_run=dry_run,
-        pending=(pending if callable(pending) else (lambda: list(pending))),
-        cancel=cancel,
-        log=lambda msg: None,
-    )
+def topup(conn, works, slots=5, dry_run=False):
+    """Run a top-up; `local_store` supplies the model dirs. No cluster stubs needed any more --
+    this lane no longer reads or cancels anything on Slurm."""
+    return botero.topup(works, conn=conn, slots=slots, dry_run=dry_run, log=lambda msg: None)
 
 
 def test_topup_fills_exactly_the_free_slots(conn, tmp_path):
-    archive(tmp_path, "m")
-    pending = [(300, "m", "advbest"), (200, "m", "last"), (100, "m", "best")]
+    store(tmp_path, "m")
 
-    taken = topup(conn, [work()], pending=pending, slots=2)
+    taken = topup(conn, [work()], slots=2)
 
     assert len(taken) == 2
     assert botero.active_count(conn) == 2
 
 
 def test_topup_is_a_noop_when_the_queue_is_full(conn, tmp_path):
-    archive(tmp_path, "m")
+    store(tmp_path, "m")
     for kind in config.CHECKPOINT_KINDS:
         botero.enqueue(conn, "m", kind, tmp_path)
-    cancelled = []
 
-    taken = topup(conn, [work()], pending=[(1, "m", "best")], slots=3, cancelled=cancelled)
-
-    assert taken == [] and cancelled == []
+    assert topup(conn, [work()], slots=3) == []
 
 
-def test_topup_takes_from_the_back_of_the_slurm_queue_first(conn, tmp_path):
-    """Highest job id = what Slurm would start last = what is worth moving here."""
-    archive(tmp_path, "m")
-    pending = [(300, "m", "advbest"), (200, "m", "last"), (100, "m", "best")]
-    cancelled = []
+def test_topup_only_takes_botero_lane_models(conn, tmp_path):
+    """The disjointness guarantee enforced at the point of use: a model the cluster owns is never
+    enqueued here, even sitting in the same plan list."""
+    store(tmp_path, "mine")
+    store(tmp_path, "theirs")
 
-    taken = topup(conn, [work()], pending=pending, slots=1, cancelled=cancelled)
+    taken = topup(conn, [work("theirs", lane=config.SLURM_LANE), work("mine")], slots=5)
 
-    assert taken == ["m:advbest"]
-    assert cancelled == [300]
-
-
-def test_a_moved_unit_is_cancelled_on_slurm_before_it_is_queued_here(conn, tmp_path):
-    """Order matters: a crash between the two must never leave a unit queued in both lanes."""
-    archive(tmp_path, "m")
-    queued_when_cancelled = []
-
-    def cancel(job_id):
-        queued_when_cancelled.append(botero.active_count(conn))
-
-    botero.topup([work()], conn=conn, slots=1, pending=lambda: [(7, "m", "best")],
-                 cancel=cancel, log=lambda msg: None)
-
-    assert queued_when_cancelled == [0]
-    assert botero.active_count(conn) == 1
+    assert {t.split(":")[0] for t in taken} == {"mine"}
 
 
-def test_a_failed_scancel_leaves_the_unit_on_slurm(conn, tmp_path):
-    """And source B must not then re-enqueue it: that would run the unit in both lanes at once."""
-    archive(tmp_path, "m")
+def test_topup_prefers_the_emptiest_checkpoints(conn, tmp_path):
+    """Fullest-first: finishing one checkpoint completely beats a cell each on three of them."""
+    store(tmp_path, "few")
+    store(tmp_path, "many")
 
-    def cancel(job_id):
-        raise RuntimeError("slurm unreachable")
+    taken = topup(conn, [work("few", missing=2), work("many", missing=9)], slots=3)
 
-    taken = topup(conn, [work(missing_kinds=("best",))], pending=[(7, "m", "best")], cancel=cancel)
+    assert [t.split(":")[0] for t in taken] == ["many", "many", "many"]
 
-    assert taken == []
+
+def test_kinds_with_no_missing_cells_are_never_enqueued(conn, tmp_path):
+    store(tmp_path, "m")
+
+    taken = topup(conn, [work(missing_kinds=("best",))], slots=5)
+
+    assert taken == ["m:best"]
+
+
+def test_a_model_missing_from_the_local_store_is_skipped(conn, tmp_path):
+    """No local copy, no local run: this lane never fetches anything."""
+    taken = topup(conn, [work()], slots=5)
+
+    assert taken == [] and botero.active_count(conn) == 0
+
+
+def test_a_kind_whose_checkpoint_is_absent_locally_is_skipped(conn, tmp_path):
+    store(tmp_path, "m", kinds=("best", "last"))
+
+    taken = topup(conn, [work()], slots=5)
+
+    assert sorted(taken) == ["m:best", "m:last"]
+
+
+def test_an_already_active_unit_is_not_enqueued_twice(conn, tmp_path):
+    store(tmp_path, "m")
+    botero.enqueue(conn, "m", "best", tmp_path)
+
+    taken = topup(conn, [work()], slots=5)
+
+    assert "m:best" not in taken
+    assert sorted(taken) == ["m:advbest", "m:last"]
+
+
+def test_dry_run_queues_nothing(conn, tmp_path):
+    store(tmp_path, "m")
+
+    taken = topup(conn, [work()], slots=2, dry_run=True)
+
+    assert len(taken) == 2
     assert botero.active_count(conn) == 0
 
 
-def test_pending_slurm_units_past_the_cut_are_not_enqueued_as_new_work(conn, tmp_path):
-    """Source B fills the remaining slots, but never with something the cluster still holds."""
-    archive(tmp_path, "m")
-    cancelled = []
+def test_the_enqueued_row_points_at_the_local_store_dir(conn, tmp_path):
+    """What the runner hands the engine as --model-dir, and so where the results land."""
+    expected = store(tmp_path, "m")
 
-    taken = topup(conn, [work()], pending=[(7, "m", "best"), (8, "m", "last")],
-                  slots=5, cancelled=cancelled)
+    topup(conn, [work(missing_kinds=("best",))], slots=1)
 
-    assert sorted(taken) == ["m:advbest", "m:best", "m:last"]
-    assert sorted(cancelled) == [7, 8]
-    # m:advbest is the only one source B was allowed to add.
-    origins = dict(conn.execute("SELECT checkpoint_kind, origin FROM botero_jobs").fetchall())
-    assert origins == {"best": "moved:7", "last": "moved:8", "advbest": "new"}
-
-
-def test_units_with_no_missing_cells_are_never_moved(conn, tmp_path):
-    archive(tmp_path, "m")
-    cancelled = []
-
-    taken = topup(conn, [work(missing_kinds=("best",))], pending=[(1, "m", "last")], cancelled=cancelled)
-
-    assert "m:last" not in taken and 1 not in cancelled
-
-
-def test_a_model_missing_from_the_local_archive_is_skipped(conn, tmp_path):
-    (tmp_path / "a").mkdir()
-    cancelled = []
-
-    taken = topup(conn, [work()], pending=[(1, "m", "best")], cancelled=cancelled)
-
-    assert taken == [] and cancelled == []
-
-
-def test_new_work_is_enqueued_only_once_slurm_has_nothing_left_to_move(conn, tmp_path):
-    archive(tmp_path, "m")
-
-    taken = topup(conn, [work()], pending=[], slots=2)
-
-    assert taken == ["m:best", "m:last"]
-    assert conn.execute("SELECT origin FROM botero_jobs LIMIT 1").fetchone()["origin"] == "new"
-
-
-def test_dry_run_cancels_nothing_and_queues_nothing(conn, tmp_path):
-    archive(tmp_path, "m")
-    cancelled = []
-
-    taken = topup(conn, [work()], pending=[(1, "m", "best")], slots=1, dry_run=True,
-                  cancelled=cancelled)
-
-    assert taken == ["m:best"]
-    assert cancelled == [] and botero.active_count(conn) == 0
-
-
-def test_an_unreadable_slurm_queue_falls_back_to_new_work(conn, tmp_path):
-    archive(tmp_path, "m")
-
-    def explode():
-        raise RuntimeError("ssh down")
-
-    taken = topup(conn, [work()], pending=explode, slots=1)
-
-    assert taken == ["m:best"]
+    job = botero.claim(conn, pid=1)
+    assert Path(job.model_dir) == expected
 
 
 # --- the GPU gate ------------------------------------------------------------------------------
@@ -412,11 +397,9 @@ def test_unpark_returns_a_unit_to_the_queue(conn, tmp_path):
 
 
 def test_topup_does_not_refill_over_a_parked_unit(conn, tmp_path):
-    archive(tmp_path, "m")
+    """A parked unit still holds its slot, so a full-but-parked queue takes on nothing."""
+    store(tmp_path, "m")
     botero.enqueue(conn, "m", "best", tmp_path)
     conn.execute("UPDATE botero_jobs SET status='parked'")
-    cancelled = []
 
-    taken = topup(conn, [work()], pending=[(9, "m", "last")], slots=1, cancelled=cancelled)
-
-    assert taken == [] and cancelled == []
+    assert topup(conn, [work()], slots=1) == []
