@@ -12,25 +12,51 @@ stable dependency, not the focus of day-to-day work.
 
 The actual active project built on top of it is an **adversarial-training research + orchestration
 system**: a Hydra training entrypoint (`robust_training/`), evaluation/plotting scripts
-(`data_analysis/`), and two independent CSV-driven job-queue managers that keep GPU clusters busy
-running training campaigns (`slurm_job_manager/`, `aircc/aircc_job_manager/`).
+(`data_analysis/`), and a CSV-driven job-queue manager that keeps the Slurm cluster busy running
+training campaigns (`slurm_job_manager/`). A second manager, `aircc/aircc_job_manager/`, drove the
+now-finished AIRCC allocation; its queue is retired but its shared helpers are still live — see
+"AIRCC" below.
 
-## Three systems — always know which one you're targeting
+## Two systems — always know which one you're targeting
 
 1. **Botero** — this machine. Where all editing, git, and orchestration happens. Never edit code
-   through `~/slurm_mount` or `~/aircc_mount` (both are read-only sshfs mounts for inspecting
-   remote logs/checkpoints only).
+   through `~/slurm_mount` (a read-only sshfs mount, for inspecting remote logs/checkpoints only).
 2. **Slurm cluster** (`ssh slurm`, remote repo `/home/ashtomer/projects/ares`) — run via
    `slurm_job_manager/`. Partitions `rtx_pro_6000` (96GB) / `rtx6000`. One array task = one GPU =
    one model, single-process train→final_eval→plot.
-3. **AIRCC B200 allocation** (`ssh aircc`, remote repo `/shared/cycle2_bgu_golan_prj/ashtomer/ares`)
-   — run via `aircc/aircc_job_manager/`. 16 GPUs, 2 training lifecycles per GPU (memory-fraction
-   capped).
 
-Both job managers share the same philosophy: **the CSV is ground truth** (one column per Hydra
-override), the SQLite DB holds only operational state (claim status, progress, best checkpoint).
-`slurm_job_manager`'s DB schema is a superset of AIRCC's so `aircc_job_manager/progress.py`'s
-in-training hooks work unchanged against either (the only cross-package import between them).
+`slurm_job_manager` is the only live queue, and its philosophy is: **the CSV is ground truth** (one
+column per Hydra override), the SQLite DB holds only operational state (claim status, progress, best
+checkpoint).
+
+### AIRCC — a frozen archive and a shared library, not a system
+
+The AIRCC B200 allocation is **finished**. This machine no longer talks to it: there is no live DB
+and no job submission, so never propose an AIRCC run, requeue, `sbatch`, or `ssh aircc` command.
+Two things survive it, and both are load-bearing:
+
+- **The frozen archive** — `/mnt/botero/aircc_archive` on the QNAP, including
+  `aircc_jobs_final_latest.sqlite` (127 finished of 323 rows, byte-for-byte the set the live DB last
+  reported). `aa_sweep`'s Botero lane reads the finished-model *list* from it (`aa_sweep/config.py`);
+  the checkpoints themselves come from `/mnt/data4t/models`, never from the archive. See
+  `aa_sweep/README.md` § "The AIRCC side is a list of names, nothing more".
+- **Shared library code under `aircc/aircc_job_manager/`** — retired as a queue, live as a library:
+  - `notify.py` (`make_emailer`) is the repo-wide mailer, with seven callers outside `aircc/`:
+    `slurm_job_manager/notify.py`, `aa_sweep/submit.py` and its two cron scripts,
+    `scripts/mirror_archives_to_qnap.sh`, `data_analysis/catastrophic_overfitting_notifier.py`,
+    and `slurm_job_manager/scripts/{check_slurm_status,backup_slurm_models}.sh`. A daily
+    `python -m aircc.aircc_job_manager.digest` cron still mails the spooled alerts.
+  - `progress.py` is imported unconditionally by `ares/utils/train_loop.py` and
+    `robust_training/adversarial_training.py`. `slurm_job_manager`'s DB schema is a superset of
+    AIRCC's, so those in-training hooks work unchanged against either DB (the only cross-package
+    import between the two managers).
+  - `best_checkpoint.py` is what `model_store/build_experiments.py` uses to resolve the blessed
+    checkpoint per threat model.
+
+  So don't delete, rename, or "clean up" `aircc/aircc_job_manager/`: relocating those helpers is a
+  ten-call-site refactor, not a tidy-up. Its queue-driving parts (`job_manager.py`, `seed_db.py`,
+  `generate_csvs.py`, `daily_monitor.py`, `status.py`, `csv/`) are dead but harmless — treat them
+  like `archive/` below: reference only, don't extend.
 
 `archive/legacy_job_manager_2026-06-19/` and `archive/orchestrator_2026-07-10/` are retired
 predecessors — left for reference, not in use; don't resurrect or extend them.
@@ -62,10 +88,9 @@ exercise shell launcher logic directly (not via pytest).
 ```bash
 python -m slurm_job_manager.status --db slurm_job_manager/jobs.sqlite
 python -m slurm_job_manager.controller --db slurm_job_manager/jobs.sqlite --dry-run
-python -m aircc.aircc_job_manager.status
 ```
 Seeding/submitting new campaign rows or sbatch submissions are not side-effect-free — confirm with
-the user before running `seed.py`/`seed_db.py` writes or `sbatch`.
+the user before running `seed.py` writes or `sbatch`.
 
 ## Architecture
 
@@ -82,15 +107,17 @@ the user before running `seed.py`/`seed_db.py` writes or `sbatch`.
   model, optimizer/scheduler, distributed init, the epsilon schedule, continuation-checkpoint
   loading, the train loop, validation, final eval, and (via `aircc/aircc_job_manager/progress.py`)
   writes progress/heartbeat back to whichever job DB launched it — a no-op unless `AIRCC_DB`/
-  `AIRCC_MODEL_ID` env vars are set.
+  `AIRCC_MODEL_ID` env vars are set. Those env-var names are historical: `slurm_job_manager` sets
+  them to point at its *own* DB, so they say nothing about which cluster you are on.
 - **`robust_training/configs/`** — Hydra config groups (`model/`, `training/`, `dataset/`,
   `optimizer/`, `attacks/`, `epsilon_schedule/`, `continuation/`, `checkpointing/`, `machine/`,
   `lr_scheduler/`, `dist/`); `config.yaml` is the composing default.
-- **`slurm_job_manager/`** and **`aircc/aircc_job_manager/`** — parallel but independent CSV+SQLite
-  job queues (see each package's own README for its file-by-file breakdown: `db.py` atomic claim,
-  `lifecycle.py` command-building + subprocess run, `controller.py`/`job_manager.py` main loop,
-  `csv_spec.py` column schema, `status.py` dashboard, `seed.py`/`seed_db.py` to add jobs). Don't
-  assume behavior is shared between the two beyond the DB schema/progress-hook overlap noted above.
+- **`slurm_job_manager/`** — the live CSV+SQLite job queue (see its README for the file-by-file
+  breakdown: `db.py` atomic claim, `lifecycle.py` command-building + subprocess run, `controller.py`
+  main loop, `csv_spec.py` column schema, `status.py` dashboard, `seed.py` to add jobs).
+  **`aircc/aircc_job_manager/`** is its retired twin — same shape, kept for the shared helpers
+  described under "AIRCC" above. Don't assume behavior is shared between the two beyond the DB
+  schema/progress-hook overlap noted there.
 - **`data_analysis/`** — standalone eval/plotting scripts (`final_eval.py`, `autoattack_eval.py` and
   variants, `training_plots.py`, shape-bias analysis) generally run against already-trained
   checkpoints, independent of the job managers.
@@ -143,13 +170,15 @@ the user before running `seed.py`/`seed_db.py` writes or `sbatch`.
 
 ## Environment awareness & path portability (important)
 
-This repo runs in three different execution contexts — Botero, the Slurm cluster, and the AIRCC
-sandbox — and dataset/checkpoint/output paths differ between them. Never assume one fixed absolute
-path; before running or editing jobs, adapt paths to the current machine.
+This repo runs in two execution contexts — Botero and the Slurm cluster — and dataset/checkpoint/
+output paths differ between them. Never assume one fixed absolute path; before running or editing
+jobs, adapt paths to the current machine. (A third context, the AIRCC sandbox, is retired: paths
+under `/shared/cycle2_bgu_golan_prj/...` in older scripts and logs are dead.)
 
 **Detecting execution context:**
 - If `SLURM_JOB_ID`/`SLURM_PROCID` is present, assume a Slurm execution context.
-- Otherwise assume Botero (local) unless AIRCC-specific env vars (`AIRCC_DB`/`AIRCC_MODEL_ID`) are set.
+- Otherwise assume Botero (local). Note that `AIRCC_DB`/`AIRCC_MODEL_ID` do **not** indicate AIRCC —
+  `slurm_job_manager` sets them on every run to point at its own DB.
 
 **Path rules:**
 - Always verify and update these path categories before launching: dataset roots (`train_dir`,
@@ -196,7 +225,7 @@ The `/mnt/data4t/{aircc,slurm}_archive` trees are the *old* layout, superseded b
 - `data_analysis/FINAL_EVAL_README.md`
 
 **Recommended workflow before running jobs:**
-1. Detect environment (Botero / Slurm / AIRCC).
+1. Detect environment (Botero / Slurm).
 2. Confirm active dataset roots exist on this machine.
 3. Override dataset paths via CLI/Hydra instead of editing many files.
 4. Confirm output/checkpoint directories are writable.
