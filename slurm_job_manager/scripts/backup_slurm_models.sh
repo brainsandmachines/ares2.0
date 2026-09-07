@@ -1,20 +1,33 @@
 #!/bin/bash
-# Weekly archive of the Slurm cluster's results/models tree onto Botero (/mnt/data4t).
+# Weekly archive of the Slurm cluster's results/models tree onto the QNAP share
+# (/mnt/botero, //132.72.128.88/backup/botero).
 #
 # CURATED, not byte-for-byte: the remote tree is ~3.7TB, of which ~2.7TB is intermediate
 # checkpoint-N.pth.tar. Those are excluded, leaving ~0.9TB of the files that are actually
 # worth keeping -- last / model_best / model_best_adv / periodic/epoch_* plus every log,
-# hydra config, csv and plot. /mnt/data4t also carries the growing AIRCC archive, so the
-# full tree simply does not fit; the curated one does, twice over (here and on the QNAP).
+# hydra config, csv and plot.
 #
-# This job does NOT touch the QNAP. scripts/mirror_archives_to_qnap.sh runs daily and
-# picks up whatever this leaves on /mnt/data4t.
+# The pull lands DIRECTLY on the QNAP: /mnt/data4t no longer holds a slurm copy, and
+# scripts/mirror_archives_to_qnap.sh is no longer in the crontab for this archive. Two
+# consequences that shape the rest of this script:
+#   - the destination is a CIFS share, so it can silently be *not mounted* -- see the
+#     mount guard below, without which an unguarded rsync writes ~0.9TB into the root
+#     filesystem;
+#   - flock over CIFS is not dependable, so every control file (lock/stamp/attempt) and
+#     the cron log live on LOCAL disk in $STATE_DIR, not beside the archive.
 #
 # APPEND-ONLY: no --delete, ever. The group filesystem is 79% full and gets cleared; a
 # --delete pass after that would erase the only remaining copy.
 #
+# This is ROUTE 1 of two, and it ends at the QNAP. Getting those models onto local disk
+# is route 2's job -- model_store/scripts/ms_weekly_sync.sh, which runs the morning after
+# this one and syncs /mnt/botero/slurm_archive -> /mnt/data4t/models -> the experiment
+# symlinks. The two are deliberately independent: this script must not be marked failed
+# because an index rebuild failed, and route 2 must be re-runnable without re-pulling
+# ~0.9TB over ssh.
+#
 # Install (Botero crontab -e):
-#   0 9 * * 0 /home/tomer_a/Documents/ares/slurm_job_manager/scripts/backup_slurm_models.sh >> /mnt/data4t/slurm_archive/backup.log 2>&1
+#   0 9 * * 0 /home/tomer_a/Documents/ares/slurm_job_manager/scripts/backup_slurm_models.sh >> /home/tomer_a/Documents/ares/slurm_job_manager/logs/backup.log 2>&1
 #
 # Exit codes: 0 = backup ran and succeeded, 75 = nothing to do (not due yet, or another run
 # holds the lock), anything else = a real failure (already emailed).
@@ -26,16 +39,22 @@ SLURM_HOST="${SLURM_SSH_HOST:-slurm}"
 # The REAL path, not the results/models symlink in the repo: rsync's handling of a symlinked
 # source is a footgun, and this path is what the symlink resolves to anyway.
 REMOTE_ROOT="${SJM_REMOTE_RESULTS:-/groups/golan_neurogroup/bml_group/tomerash/advmodels/results}"
-DEST_ROOT="${SJM_BACKUP_DEST:-/mnt/data4t/slurm_archive}"
+# The CIFS share. MUST be a real mountpoint when DEST_ROOT lives under it -- see the guard below.
+QNAP_ROOT="${SJM_BACKUP_QNAP_ROOT:-/mnt/botero}"
+DEST_ROOT="${SJM_BACKUP_DEST:-$QNAP_ROOT/slurm_archive}"
 # Live job DB, read over ssh (immutable=1). Deliberately NOT via ~/slurm_mount -- that sshfs
 # mount is frequently not up, and this script already needs ssh to the login node.
 REMOTE_DB="${SJM_REMOTE_DB:-/home/ashtomer/projects/ares/slurm_job_manager/jobs.sqlite}"
 REPO_ROOT="${ARES_REPO:-/home/tomer_a/Documents/ares}"
-LOCK_FILE="${SJM_BACKUP_LOCK:-$DEST_ROOT/.backup.lock}"
-STAMP_FILE="${SJM_BACKUP_STAMP:-$DEST_ROOT/.backup.started}"
+# Control files on LOCAL disk, never on the CIFS destination: flock over CIFS is not
+# dependable, and a lock we cannot trust is worse than no lock. This dir is gitignored
+# (slurm_job_manager/.gitignore) and survives reboots, so the pacing clock below survives too.
+STATE_DIR="${SJM_BACKUP_STATE_DIR:-$REPO_ROOT/slurm_job_manager/logs}"
+LOCK_FILE="${SJM_BACKUP_LOCK:-$STATE_DIR/.backup.lock}"
+STAMP_FILE="${SJM_BACKUP_STAMP:-$STATE_DIR/.backup.started}"
 # Written when a run STARTS an rsync and never removed -- this paces the backup, so a failed or
 # killed pass waits its turn instead of retrying on the next cron tick.
-ATTEMPT_FILE="${SJM_BACKUP_ATTEMPT:-$DEST_ROOT/.backup.attempted}"
+ATTEMPT_FILE="${SJM_BACKUP_ATTEMPT:-$STATE_DIR/.backup.attempted}"
 # The cron is weekly; this guards a manual re-run or a doubled cron line, and is low enough that
 # a run killed early in the week can simply be started again by hand.
 MIN_INTERVAL_HOURS="${SJM_BACKUP_MIN_INTERVAL_HOURS:-120}"
@@ -43,7 +62,7 @@ MIN_INTERVAL_HOURS="${SJM_BACKUP_MIN_INTERVAL_HOURS:-120}"
 # next weekly tick.
 RSYNC_TIMEOUT="${SJM_BACKUP_RSYNC_TIMEOUT:-24h}"
 STALE_HOURS="${SJM_BACKUP_STALE_HOURS:-30}"
-# Refuse to start a ~0.9TB pull with less than this free on /mnt/data4t (shared with the AIRCC
+# Refuse to start a ~0.9TB pull with less than this free on the share (shared with the AIRCC
 # archive, which is still growing).
 MIN_FREE_GB="${SJM_BACKUP_MIN_FREE_GB:-200}"
 DRY_RUN=0
@@ -51,7 +70,7 @@ EXIT_SKIPPED=75
 
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=1
 
-mkdir -p -m 0755 "$DEST_ROOT"
+mkdir -p -m 0755 "$STATE_DIR"
 
 notify() {
     local subject="$1" body="$2"
@@ -68,6 +87,37 @@ else:
     emailer(subject, body, dedup_key=dedup or None, urgent=bool(urgent))
 PYEOF
 }
+
+# --- 0. mount guard (the important one) ---
+# If the CIFS share is not mounted, $QNAP_ROOT is an ordinary directory on / -- which has far
+# less free than this pull needs. An unguarded rsync (or even the mkdir below) would start
+# filling the root filesystem. Only applies when the destination actually lives on the share.
+if [[ "$DEST_ROOT" == "$QNAP_ROOT"/* ]]; then
+    if ! mountpoint -q "$QNAP_ROOT"; then
+        echo "[backup] $(date -Is) ERROR: $QNAP_ROOT is not a mountpoint -- refusing to sync" >&2
+        notify "[sjm] slurm archive aborted: $QNAP_ROOT not mounted" \
+"$QNAP_ROOT is not a mountpoint, so it is a plain directory on the root filesystem.
+Pulling ~0.9TB into it would fill /, so this run refused.
+
+Remount the QNAP share and the next run picks up where this one stopped." \
+            "sjm-backup-not-mounted" urgent
+        exit 1
+    fi
+    # A mountpoint test alone would pass on a stale or entirely different share, so also check a
+    # sentinel that only exists on this one: the AIRCC archive dir, made by hand and never removed.
+    SENTINEL="${SJM_BACKUP_SENTINEL:-$QNAP_ROOT/aircc_archive}"
+    if [[ ! -d "$SENTINEL" ]]; then
+        echo "[backup] $(date -Is) ERROR: sentinel $SENTINEL missing -- refusing to sync" >&2
+        notify "[sjm] slurm archive aborted: sentinel missing" \
+"$QNAP_ROOT is mounted but $SENTINEL does not exist.
+That usually means a different share is mounted there, or the archive dir was removed.
+Refusing to sync rather than writing ~0.9TB into the wrong place." \
+            "sjm-backup-no-sentinel" urgent
+        exit 1
+    fi
+fi
+
+mkdir -p -m 0755 "$DEST_ROOT"
 
 # --- 1. is a backup due? ---
 # Paced off the last ATTEMPT, not the last success (same rule as the AIRCC backup).
@@ -127,7 +177,7 @@ if [[ "${free_gb:-0}" -lt "$MIN_FREE_GB" ]]; then
     echo "[backup] ERROR: only ${free_gb}GB free on $DEST_ROOT (need ${MIN_FREE_GB}GB)" >&2
     notify "[sjm] slurm archive: not enough free space" \
 "$DEST_ROOT has ${free_gb}GB free, below the ${MIN_FREE_GB}GB floor.
-/mnt/data4t also carries the growing AIRCC archive. Refusing to start the pull." "" urgent
+The share also carries the growing AIRCC archive. Refusing to start the pull." "" urgent
     exit 1
 fi
 
@@ -171,9 +221,6 @@ common_args=(
     # never match model_best*/last/epoch_* .
     --exclude='checkpoint-[0-9]*.pth.tar'
     --exclude='tmp.pth.tar'
-    # Protect this script's own control files, which live in $DEST_ROOT rather than under $SRC.
-    --filter='protect /backup.log' --filter='protect /.backup.lock'
-    --filter='protect /.backup.started' --filter='protect /.backup.attempted'
 )
 [[ "$DRY_RUN" -eq 1 ]] && common_args+=(--dry-run --itemize-changes)
 
@@ -226,4 +273,9 @@ run_leg models models models \
 # 19GB, and no run writes into it while training, so no exclusions needed.
 run_leg models_failed models_failed models_failed || overall_rc=$?
 
+# The curated tree /mnt/data4t/models and the experiment symlink zoo are NOT refreshed
+# here. They are route 2's business (model_store/scripts/ms_weekly_sync.sh, Mondays):
+# an index rebuild that failed used to make a perfectly good ~0.9TB pull look like a
+# failed backup, and its zoo->QNAP leg could never succeed anyway -- /mnt/botero is CIFS
+# with nounix, so creating a symlink there returns EIO every single time.
 exit "$overall_rc"
