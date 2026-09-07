@@ -94,6 +94,35 @@ the user before running `seed.py`/`seed_db.py` writes or `sbatch`.
 - **`data_analysis/`** — standalone eval/plotting scripts (`final_eval.py`, `autoattack_eval.py` and
   variants, `training_plots.py`, shape-bias analysis) generally run against already-trained
   checkpoints, independent of the job managers.
+- **`aa_sweep/`** — nightly driver that completes the AutoAttack grid (3 norms × 5 eps × 3
+  checkpoint kinds) for every finished model. **Two independent lanes that never exchange models:**
+  the Slurm lane submits sbatch jobs against the cluster's own `results/models` copies, and the
+  Botero lane runs on this machine's RTX 4090 against `/mnt/data4t/models`. Each writes its result
+  CSVs back into the model dir it evaluated; the split is by cluster-directory presence and is
+  disjoint by construction (`plan.build_plan`). Nothing in the package copies a checkpoint or a
+  result between machines — propagation is the weekly rsync's job (see `model_store/` below). If a
+  change here seems to need an rsync/scp/`scancel`, it is the wrong change. Read
+  `aa_sweep/README.md` first.
+- **`model_store/`** — owns the curated model trees on Botero: `/mnt/data4t/models` (every model,
+  keeper checkpoints only) and `/mnt/data4t/models_for_experiments`
+  (`<arch>/<protocol>/<norm>/<name>.pth.tar` symlinks to the blessed checkpoint — the root
+  `epsilon_bounded_contstim` reads). The QNAP (`/mnt/botero/{aircc,slurm}_archive`) stays the
+  read-only master. Models reach Botero by **two independent weekly rsync routes**:
+  route 1 `slurm_job_manager/scripts/backup_slurm_models.sh` (Sun 09:00, slurm → QNAP) and
+  route 2 `model_store/scripts/ms_weekly_sync.sh` (Mon 09:00, QNAP → `/mnt/data4t/models` →
+  the experiment symlinks). Neither may be folded back into the other: route 1 must not be
+  marked failed by an index rebuild, and route 2 must be re-runnable without re-pulling
+  ~0.9 TB. Run individual passes via `model_store/scripts/ms_run.sh` (dry-run by default, one
+  tmux session each, logs in `slurm_job_manager/logs/reorg/`). Read `model_store/README.md`
+  before touching it — in particular: **mtime is unreliable here** (70 AIRCC
+  `model_best.pth.tar` files share a bulk-rewrite mtime, so content hash decides, and
+  checkpoints are chosen by epoch not time), **never add `--inplace`/`--append`** to an rsync
+  whose destination is under `models/` (it would write through a hardlink into the archive),
+  and **never mirror `models_for_experiments` to the QNAP** — CIFS `nounix` cannot create a
+  symlink and returns EIO on every one. `nlink == 1` identified a discard under the old
+  hardlink-only build; post-cutover models arrive as real copies, so that test now needs the
+  Step 3 caveat in the README. Nothing in the package deletes; removals are a `mv` into
+  `pending_deletion/<date>/`.
 - **`sbatches/`** (Slurm cluster paths) vs **`sbatches_botero/`** (Botero-local sbatch variants) —
   mirror the same jobs for the two clusters; check which one a script belongs to before editing.
 - **`.agents/skills/`** — repo-local agent skills (`submit-training-jobs`, `training-runtime-optimizer`)
@@ -133,6 +162,20 @@ path; before running or editing jobs, adapt paths to the current machine.
 - Many scripts in `sbatches/`, `sbatches_botero/`, and the job managers contain user-specific
   absolute paths under `/home/ashtomer/...`; adapt them per machine.
 - Preserve existing behavior unless the task explicitly asks for path refactoring.
+
+**Botero model/checkpoint roots (owned by `model_store/`, see its README):**
+
+| path | role |
+|---|---|
+| `/mnt/botero/{aircc,slurm}_archive` | QNAP master archive, append-only. **Read-only** — never write here outside the two backup scripts. |
+| `/mnt/data4t/models` | curated working copy: all models, keeper checkpoints only, no `checkpoint-N`. Hardlinked, so it consumes ~no space. |
+| `/mnt/data4t/models_for_experiments` | `<arch>/<protocol>/<norm>/<name>.pth.tar` symlinks to the blessed checkpoint; what `epsilon_bounded_contstim` loads. |
+| `/mnt/data4t/pending_deletion/<date>` | staged for the user to erase by hand. Never `rm` anything here on their behalf. |
+| `/mnt/data/models` | third-party `robustness`-library zoo (`resnet50_l2_eps*.ckpt`). **Not** ares output; leave alone. |
+
+The `/mnt/data4t/{aircc,slurm}_archive` trees are the *old* layout, superseded by
+`/mnt/data4t/models`; `/mnt/data/robustness_models` is the *old* promoted zoo, superseded by
+`models_for_experiments`.
 
 **Known dataset paths in this repo (verify which apply to the current machine):**
 - `/storage/test/bml_group/tomerash/datasets/imagenet/train/`
