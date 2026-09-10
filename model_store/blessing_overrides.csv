@@ -1,0 +1,8 @@
+model,checkpoint,publish_as,score,reason
+convnext_base_gradnorm_l1_2_init0,model_best_adv.pth.tar,,54.39453125,"AIRCC DB recorded last.pth.tar but with advbest's score; AA linf@2 sweep CSVs: advbest 54.39 > last 54.00 > best 53.61"
+convnext_base_dvd_b_l2trades_1_init1,model_best.pth.tar,,59.47265625,"trained 200/200 on AIRCC and blessed model_best (59.47), but the row ended 'failed' on a DB-write crash, so the zoo skipped it as untrained; AA l2@1: best 59.47 > last 59.08 > advbest 58.50"
+convnext_base_l1_cont4to6_lr1e4_pgd5_init0,,convnext_base_l1_cont4to6_init0,,"the pgd5 rerun is the l1 cont4to6 init0 model (the AIRCC DB row for convnext_base_l1_cont4to6_init0 points at it); the original run is not published"
+convnext_base_l1_cont4to8_pgd5_init0,,convnext_base_l1_cont4to8_init0,,"the pgd5 rerun is the l1 cont4to8 init0 model (the AIRCC DB row for convnext_base_l1_cont4to8_init0 points at it); the original run is not published"
+convnext_base_l2_cont4to6_lr1e4_pgd5_init0,,convnext_base_l2_cont4to6_init0,,"the pgd5 rerun is the l2 cont4to6 init0 model (the AIRCC DB row for convnext_base_l2_cont4to6_init0 points at it)"
+convnext_base_linf_cont4to6_pgd5_init0,,convnext_base_linf_cont4to6_init0,,"the pgd5 rerun is the linf cont4to6 init0 model (the AIRCC DB row for convnext_base_linf_cont4to6_init0 points at it)"
+convnext_base_linf_cont4to8_pgd5_init0,,convnext_base_linf_cont4to8_init0,,"the pgd5 rerun is the linf cont4to8 init0 model (the AIRCC DB row for convnext_base_linf_cont4to8_init0 points at it)"

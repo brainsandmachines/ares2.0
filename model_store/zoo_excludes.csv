@@ -1,0 +1,2 @@
+pattern,reason
+*_resetepoch.pth.tar,"DVD continuation resetepoch variants are not used in experiments (any protocol); the contepoch variants are published instead"

@@ -40,6 +40,17 @@ its own without re-pulling any of those bytes. They share only the archive, plus
 *relative* into `../models/` on `/mnt/data4t`; none points at the QNAP, and
 `ms_weekly_sync.sh` fails if one ever does.
 
+**A finished Slurm rerun replaces Botero's copy even at the same epoch.** Backfill
+normally replaces a local checkpoint only when the QNAP copy is at a *higher* epoch
+(mtime lies here — see below). But a run reset and retrained on Slurm ends at the
+same final epoch as the run it replaces, and its peak can land earlier, so its
+`last` (and sometimes `best`/`advbest`) would never arrive while its AA results
+would — leaving a dir whose scores describe checkpoints it no longer holds. For the
+`qnap-slurm` root only, an equal-or-lower-epoch checkpoint is pulled (reason
+`qnap-slurm-rerun`) when the sjm DB row is `finished`, the QNAP `last.pth.tar` is at
+least as far along as Botero's (so a part-way snapshot never replaces a complete
+run), and sha256 says the bytes differ. The AIRCC root keeps the strict rule.
+
 Two guards on route 2 worth knowing about, both about `--delete` in
 `build_experiments.sync_into_place`:
 
@@ -173,7 +184,32 @@ checkpoint.
 
 `build_experiments._resolve_kind`, and every entry records which rule fired:
 
-1. `jobs.best_checkpoint` — **basename only**. The column holds three different
+0. `model_store/blessing_overrides.csv` — a hand correction for a model whose DB
+   record is wrong. Because the Monday rebuild regenerates every link from the DBs, a
+   link fixed by hand would be reverted; an override row is checked in and re-applied
+   each run. A row sets either or both of:
+   - `checkpoint` (rule `override`) — link this keeper instead of the DB's choice. It
+     also publishes a model the pass would otherwise skip: one the DB never blessed,
+     or a run that finished but whose row ended `failed` (e.g. on a DB-write crash) —
+     `is_trained` sees only the frozen archive trees and `status == 'finished'`, and
+     such a run reached `models/` by backfill;
+   - `publish_as` — publish the model under another name. The checkpoint still comes
+     from the source model's own dir, and the model that already carried that name
+     is dropped (a `superseded` gap) — but only once the rename itself resolved.
+     Used for the AIRCC `cont*_init0` rows whose DB entry points at a `pgd5` rerun.
+
+   Every row needs a `reason` (written to the manifest's `note`); a malformed row
+   aborts the run, and an override matching no published model shows up as an
+   `override-unused` gap.
+
+   `model_store/zoo_excludes.csv` is the other half: `fnmatch` globs over the relpath
+   (`*` crosses `/`) that are never published, each with a reason — e.g.
+   `*_resetepoch.pth.tar`, since experiments use the DVD `contepoch` variants. Excluded
+   models are `excluded` gaps; a glob matching nothing is an `exclude-unused` gap.
+1. `jobs.best_checkpoint` — **basename only**. When a name has a row in both DBs
+   (AIRCC froze some runs as `running` that Slurm later finished), a blessed row beats
+   an unblessed one, and between two alike the live sjm DB beats the frozen AIRCC
+   snapshot (`census._row_beats`). The column holds three different
    cluster roots (`/home/ashtomer/projects/ares/results`,
    `/groups/golan_neurogroup/.../advmodels/results`,
    `/shared/cycle2_bgu_golan_prj/.../ares/results`), two of which no longer exist.

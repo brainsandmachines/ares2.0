@@ -299,6 +299,30 @@ def build(roots: Optional[Iterable[str]] = None) -> dict[str, ModelRecord]:
             records[key].collision_names = sorted(raws)
 
     # 2. DB rows -- may name a model that has no dir anywhere (the 3 AIRCC orphans)
+    apply_db_rows(records, db_rows, csv_meta)
+    return records
+
+
+def _row_beats(row: dict, rec: ModelRecord) -> bool:
+    """Should ``row`` replace the DB facts already on ``rec``?
+
+    One model name can have a row in both DBs: AIRCC froze some runs as ``running``
+    that Slurm then finished and blessed. Letting whichever row came last win hid
+    those blessings behind the stale AIRCC row, so the model never got a link. A
+    blessed row beats an unblessed one; between two alike, the live sjm DB beats the
+    frozen AIRCC snapshot.
+    """
+    new_blessed = bool(row.get("best_checkpoint"))
+    old_blessed = bool(rec.best_checkpoint)
+    if new_blessed != old_blessed:
+        return new_blessed
+    return row.get("_source") == "sjm"
+
+
+def apply_db_rows(
+    records: dict[str, ModelRecord], db_rows: list[dict], csv_meta: dict[str, dict],
+) -> None:
+    """Attach each DB row's facts to its record, resolving names both DBs carry."""
     for row in db_rows:
         name = (row.get("model_name") or "").strip()
         if not name:
@@ -309,13 +333,13 @@ def build(roots: Optional[Iterable[str]] = None) -> dict[str, ModelRecord]:
             ident = _decompose(name, canonical, None, csv_meta, "", csv_authoritative=True)
             rec = ModelRecord(identity=ident)
             records[canonical] = rec
+        if rec.db_source is not None and not _row_beats(row, rec):
+            continue
         rec.db_source = row["_source"]
         rec.db_model_name = name
         rec.db_status = row.get("status")
         rec.best_checkpoint = row.get("best_checkpoint")
         rec.best_score = row.get("best_score")
-
-    return records
 
 
 def _decompose(

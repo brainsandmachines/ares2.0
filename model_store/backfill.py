@@ -20,7 +20,9 @@ reports its exact size and refuses to start without headroom.
 
 Selection never overrides an approved merge decision. A file is pulled when it is
 absent locally; when it is a **checkpoint** whose QNAP copy records a *higher
-epoch*; or when it is **metadata** whose QNAP copy is newer. Size and mtime alone
+epoch*; when it is a checkpoint of a **finished Slurm rerun** at an equal or lower
+epoch whose bytes differ (see ``_completed_slurm_copy``); or when it is **metadata**
+whose QNAP copy is newer. Size and mtime alone
 are not enough for a checkpoint -- several QNAP-AIRCC copies are newer but far less
 trained (epoch 6 against 199), so a size/mtime rule would quietly undo the epoch
 decisions Step 2 gated on. ``-rt`` is preserved throughout so that mtime stays a
@@ -44,6 +46,7 @@ from typing import Optional
 from .census import ARCHIVE_ROOTS, QNAP_ROOT, STORE_ROOT, build
 from .dedupe_report import LOG_DIR, _now
 from .epochs import checkpoint_epoch
+from .hashes import HashCache, same_content
 from .naming import is_intermediate
 
 GIB = 1024 ** 3
@@ -76,14 +79,46 @@ class PullItem:
     dest: Path
     rel: str
     size: int
-    reason: str        # missing | qnap-higher-epoch | qnap-newer
+    reason: str        # missing | qnap-higher-epoch | qnap-slurm-rerun | qnap-newer
     local_epoch: Optional[int] = None
     qnap_epoch: Optional[int] = None
 
 
+def _completed_slurm_copy(rec, src_dir: Path, dest_dir: Path) -> bool:
+    """May a QNAP-Slurm checkpoint replace Botero's at an equal or LOWER epoch?
+
+    A run reset and retrained on Slurm ends at the same final epoch (149/199) as the
+    run it replaces, and its peak can land earlier -- so the higher-epoch rule never
+    lets that rerun's ``last`` (or an earlier-peaking ``best``/``advbest``) reach
+    Botero, while its AA results, being metadata, do. Two proofs are required that
+    the QNAP copy is the finished rerun and not a snapshot taken part-way:
+
+    * the live sjm DB says the model is ``finished`` (route 1 never copies a model
+      while it is ``running``); and
+    * the QNAP ``last.pth.tar`` got at least as far as Botero's, which catches a
+      rerun copied while requeued that only finished after the backup.
+
+    The frozen AIRCC root keeps the strict rule: its relaunches are the epoch-6
+    copies that rule exists for.
+    """
+    if rec.db_source != "sjm" or rec.db_status != "finished":
+        return False
+    src_last, dest_last = src_dir / "last.pth.tar", dest_dir / "last.pth.tar"
+    qe = checkpoint_epoch(src_last) if src_last.exists() else None
+    if qe is None:
+        return False
+    if not dest_last.exists():
+        return True
+    le = checkpoint_epoch(dest_last)
+    return le is not None and qe >= le
+
+
 def plan(records: dict, store_root: Path,
-         labels: tuple[str, ...] = QNAP_LABELS) -> list[PullItem]:
+         labels: tuple[str, ...] = QNAP_LABELS,
+         cache: Optional[HashCache] = None) -> list[PullItem]:
     items: list[PullItem] = []
+    caches: list[HashCache] = [cache] if cache is not None else []
+    completed: dict[tuple[Path, Path], bool] = {}
     for rec in sorted(records.values(), key=lambda r: r.identity.canonical):
         dest_dir = store_root / rec.identity.store_relpath
         for label in labels:
@@ -123,11 +158,32 @@ def plan(records: dict, store_root: Path,
                         # genuinely higher epoch replaces what is already there.
                         qe = checkpoint_epoch(src)
                         le = checkpoint_epoch(dest)
-                        if qe is None or le is None or qe <= le:
+                        if qe is None or le is None:
+                            continue
+                        if qe > le:
+                            items.append(PullItem(
+                                rec.identity.canonical, label, src, dest, rel,
+                                sst.st_size, "qnap-higher-epoch",
+                                local_epoch=le, qnap_epoch=qe))
+                            continue
+                        # Equal or lower epoch: only a finished Slurm rerun, and only
+                        # when the bytes really differ -- much of models/ is hardlinked
+                        # to the old archives, and re-copying identical content would
+                        # break those links for nothing.
+                        if label != "qnap-slurm":
+                            continue
+                        key = (src_dir, dest_dir)
+                        if key not in completed:
+                            completed[key] = _completed_slurm_copy(rec, src_dir, dest_dir)
+                        if not completed[key]:
+                            continue
+                        if not caches:
+                            caches.append(HashCache())
+                        if same_content(src, dest, caches[0]):
                             continue
                         items.append(PullItem(
                             rec.identity.canonical, label, src, dest, rel,
-                            sst.st_size, "qnap-higher-epoch",
+                            sst.st_size, "qnap-slurm-rerun",
                             local_epoch=le, qnap_epoch=qe))
                     elif sst.st_mtime > dst.st_mtime + 2:
                         # Metadata (logs, configs, AA results): newest wins, which
@@ -151,7 +207,7 @@ def apply_pull(items: list[PullItem], dry_run: bool) -> int:
         for _ in range(it.rel.count("/") + 1):
             dest_dir = dest_dir.parent
         legs[(src_dir, dest_dir)].append(it.rel)
-        if it.reason == "qnap-higher-epoch":
+        if it.reason in ("qnap-higher-epoch", "qnap-slurm-rerun"):
             epoch_legs.add((src_dir, dest_dir))
 
     rc = 0
@@ -171,7 +227,8 @@ def apply_pull(items: list[PullItem], dry_run: bool) -> int:
             # built from one stat() per file and applied minutes-to-hours later, and this
             # closes that window.
             #
-            # NOT on a leg that carries a qnap-higher-epoch item, because there --update
+            # NOT on a leg that carries a qnap-higher-epoch or qnap-slurm-rerun item
+            # (both decided on epoch and content, not time), because there --update
             # would silently undo the epoch decision. mtime lies in these trees -- 80
             # AIRCC files read as newer on the QNAP at *identical* epochs, all carrying
             # the 2026-08-10 11:12 bulk-rewrite mtime -- which is exactly why checkpoints

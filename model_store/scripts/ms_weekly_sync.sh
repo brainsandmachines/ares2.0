@@ -63,8 +63,10 @@ fi
 
 # --- 1. route 2's rsync: QNAP -> /mnt/data4t/models ------------------------
 # Update-only: backfill pulls a file when it is missing, when a checkpoint's QNAP copy is at a
-# HIGHER EPOCH, or when metadata is genuinely newer -- and passes rsync --update on every leg
-# that is not carrying an epoch decision. Intermediate checkpoint-N/tmp are never pulled.
+# HIGHER EPOCH, when it belongs to a finished Slurm rerun (sjm 'finished', QNAP last.pth.tar at
+# least as far along, bytes differ) at an equal or lower epoch, or when metadata is genuinely
+# newer -- and passes rsync --update on every leg that is not carrying an epoch decision.
+# Intermediate checkpoint-N/tmp are never pulled.
 if [[ "$DRY_RUN" -eq 1 ]]; then
     log "DRY RUN: planning the backfill (--roots $ROOTS)"
     "$RUN" backfill -- --roots $ROOTS
