@@ -259,33 +259,47 @@ class JobDB:
             ).fetchall()
         return [_row_to_job(r) for r in rows]
 
-    def requeue_dead(self, slurm_active: Callable[[int], bool]) -> int:
+    def requeue_dead(self, slurm_active: Callable[[int], bool],
+                     min_age_s: int = 300) -> int:
         """Release running rows whose owning Slurm job is no longer alive.
 
         ``slurm_active(job_id)`` returns True while the task is present in
         squeue/sacct-active. No heartbeat threshold is involved -- a legitimately
         slow, still-running task is never yanked because its Slurm job is alive.
+
+        A row claimed less than ``min_age_s`` ago is skipped: a job id that young
+        is not yet visible to squeue/sacct, so the probe would call a live
+        sibling task dead and hand its model to a second trainer.
         """
         n = 0
+        now = int(time.time())
         for job in self.running_owned():
             if job.slurm_job_id is None:
                 continue
+            if job.claimed_ts is not None and now - job.claimed_ts < min_age_s:
+                continue
             if not slurm_active(int(job.slurm_job_id)):
-                self.release(job.model_name)
+                self.release(job.model_name, owner=job.slurm_job_id)
                 n += 1
         return n
 
-    def release(self, model_name: str) -> int:
+    def release(self, model_name: str, owner: Optional[int] = None) -> int:
         """Return a row to the claimable pool (status->pending, clear owner).
 
         The SIGTERM-trap path (Slurm time-limit) and the dead-owner requeue path.
         Only touches an owned/running row so a concurrent finish/fail wins.
+
+        ``owner`` (a Slurm job id) makes the release conditional on still owning
+        the row: a task whose claim was taken over no-ops instead of freeing the
+        run that now holds it. ``None`` is the unguarded manual/admin path.
         """
-        return self._write(
-            "UPDATE jobs SET status='pending', slurm_job_id=NULL, claimed_ts=NULL, "
-            "requeued=requeued+1 WHERE model_name=? AND status IN ('running','pending')",
-            (model_name,),
-        )
+        sql = ("UPDATE jobs SET status='pending', slurm_job_id=NULL, claimed_ts=NULL, "
+               "requeued=requeued+1 WHERE model_name=? AND status IN ('running','pending')")
+        params: tuple = (model_name,)
+        if owner is not None:
+            sql += " AND slurm_job_id=?"
+            params += (int(owner),)
+        return self._write(sql, params)
 
     # ---- progress / lifecycle updates --------------------------------------
     def heartbeat(self, model_name: str) -> int:

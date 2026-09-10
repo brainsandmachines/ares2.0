@@ -61,6 +61,7 @@ def test_requeue_dead_runs_before_claim(db, monkeypatch):
     db.claim_next(111, {})            # owned by (soon-dead) job 111
     _run_with(monkeypatch, 0, "")
     monkeypatch.setattr(controller, "_default_slurm_active", lambda jid: jid != 111)
+    monkeypatch.setattr(controller, "REQUEUE_MIN_AGE_S", 0)
     controller.run_once(db, _rows("a"), {}, Path("/models"), 222)
     assert db.get("a").status == "finished"
 
@@ -69,3 +70,18 @@ def test_no_work_exits_zero(db, monkeypatch):
     _run_with(monkeypatch, 0, "")
     monkeypatch.setattr(controller, "_default_slurm_active", lambda jid: True)
     assert controller.run_once(db, {}, {}, Path("/models"), 1) == 0
+
+
+def test_liveness_fails_open_when_both_probes_error(monkeypatch):
+    # A squeue/sacct timeout must never read as "the owner is dead".
+    monkeypatch.setattr(controller, "_in_squeue", lambda jid: None)
+    monkeypatch.setattr(controller, "_sacct_active", lambda jid: None)
+    assert controller._default_slurm_active(1) is True
+    # An answered "not active" still releases.
+    monkeypatch.setattr(controller, "_in_squeue", lambda jid: False)
+    monkeypatch.setattr(controller, "_sacct_active", lambda jid: False)
+    assert controller._default_slurm_active(1) is False
+    # squeue unreachable but sacct says active -> alive.
+    monkeypatch.setattr(controller, "_in_squeue", lambda jid: None)
+    monkeypatch.setattr(controller, "_sacct_active", lambda jid: True)
+    assert controller._default_slurm_active(1) is True

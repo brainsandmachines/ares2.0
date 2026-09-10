@@ -67,12 +67,36 @@ def test_release_returns_to_pending_and_bumps_requeued(db):
     assert db.release("a") == 0
 
 
+def test_release_is_a_no_op_for_a_non_owner(db):
+    # The collision bug: a task whose claim was taken over must not free the row
+    # that the new owner is training.
+    _seed(db, "a")
+    db.claim_next(1001, {})
+    assert db.release("a", owner=1002) == 0
+    j = db.get("a")
+    assert j.status == "running" and j.slurm_job_id == 1001 and j.requeued == 0
+    # ...while the real owner still can.
+    assert db.release("a", owner=1001) == 1
+    assert db.get("a").status == "pending"
+
+
+def test_requeue_dead_skips_freshly_claimed_rows(db):
+    # A job id seconds old is not in squeue yet; releasing it hands the model to
+    # a second trainer.
+    _seed(db, "a")
+    db.claim_next(111, {})
+    assert db.requeue_dead(lambda jid: False, min_age_s=300) == 0
+    assert db.get("a").status == "running"
+    assert db.requeue_dead(lambda jid: False, min_age_s=0) == 1
+    assert db.get("a").status == "pending"
+
+
 def test_requeue_dead_only_frees_dead_owners(db):
     _seed(db, "alive", priority=1)
     _seed(db, "dead", priority=2)
     db.claim_next(111, {})   # alive
     db.claim_next(222, {})   # dead
-    freed = db.requeue_dead(lambda jid: jid == 111)  # only 111 is alive
+    freed = db.requeue_dead(lambda jid: jid == 111, min_age_s=0)  # only 111 alive
     assert freed == 1
     assert db.get("dead").status == "pending"
     assert db.get("alive").status == "running"

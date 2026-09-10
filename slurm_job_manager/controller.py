@@ -22,6 +22,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 from .classify import ACTION_REQUEUE, classify, error_hash
 from .csv_spec import CSV_DIR, deps_map, load_all_rows, row_map
@@ -32,33 +33,53 @@ logger = logging.getLogger("sjm.controller")
 
 _ACTIVE_SLURM_STATES = {"RUNNING", "PENDING", "CONFIGURING", "COMPLETING", "RESIZING"}
 
+# A row claimed more recently than this is exempt from the dead-owner check: a
+# job id that young is not yet visible to squeue/sacct.
+REQUEUE_MIN_AGE_S = 300
 
-def _in_squeue(slurm_job_id: int) -> bool:
+
+def _in_squeue(slurm_job_id: int) -> Optional[bool]:
+    """True/False if squeue answered, None if the query itself failed."""
     try:
         out = subprocess.run(
             ["squeue", "-j", str(slurm_job_id), "-h", "-o", "%i"],
             capture_output=True, text=True, timeout=60,
         ).stdout
     except Exception:
-        return False
+        return None
     return bool(out.strip())
 
 
-def _sacct_active(slurm_job_id: int) -> bool:
+def _sacct_active(slurm_job_id: int) -> Optional[bool]:
+    """True/False if sacct answered, None if the query itself failed."""
     try:
         out = subprocess.run(
             ["sacct", "-j", str(slurm_job_id), "-n", "-X", "-o", "State"],
             capture_output=True, text=True, timeout=60,
         ).stdout
     except Exception:
-        return False
+        return None
     states = [s.strip().split()[0] for s in out.splitlines() if s.strip()]
     return any(s.upper() in _ACTIVE_SLURM_STATES for s in states)
 
 
 def _default_slurm_active(slurm_job_id: int) -> bool:
-    """True if the owning Slurm job is still alive (present in squeue or sacct)."""
-    return _in_squeue(slurm_job_id) or _sacct_active(slurm_job_id)
+    """True if the owning Slurm job is alive -- or if we could not find out.
+
+    Fails open on purpose: a squeue/sacct timeout or slurmctld hiccup must never
+    read as "the owner is dead", or a healthy run loses its row to a second
+    trainer. Only an answered probe that says "not active" releases a row.
+    """
+    in_queue = _in_squeue(slurm_job_id)
+    if in_queue is True:
+        return True
+    accounted = _sacct_active(slurm_job_id)
+    if accounted is True:
+        return True
+    if in_queue is None and accounted is None:
+        logger.warning("liveness probe failed for job %s; assuming alive", slurm_job_id)
+        return True
+    return False
 
 
 def _write_trap_file(model_name: str) -> None:
@@ -74,7 +95,7 @@ def _write_trap_file(model_name: str) -> None:
 def run_once(db: JobDB, rows: dict, deps: dict, models_root: Path,
              slurm_job_id: int) -> int:
     """Do one requeue+claim+run cycle. Returns a process exit code."""
-    freed = db.requeue_dead(_default_slurm_active)
+    freed = db.requeue_dead(_default_slurm_active, min_age_s=REQUEUE_MIN_AGE_S)
     if freed:
         logger.info("released %d dead-owner row(s)", freed)
 
@@ -107,7 +128,7 @@ def run_once(db: JobDB, rows: dict, deps: dict, models_root: Path,
         return rc
     action = classify(tail)
     if action == ACTION_REQUEUE:
-        db.release(job.model_name)
+        db.release(job.model_name, owner=slurm_job_id)
         logger.warning("%s transient (rc=%s) -> requeued", job.model_name, rc)
         return rc
     ehash = error_hash(tail)
