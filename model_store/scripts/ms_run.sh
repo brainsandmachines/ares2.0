@@ -21,6 +21,8 @@
 #                        what the Monday ms_weekly_sync.sh cron passes
 #   zoo          Step 6  plan the symlink zoo                       (dry run)
 #   zoo-apply    Step 6  build models_for_experiments               (WRITES)
+#   hf                   plan the Hugging Face EMA export           (read-only)
+#   hf-apply             export EMA weights to the mirror + upload  (WRITES, uploads)
 #   stage-data4t Step 7  plan the pending_deletion staging          (dry run)
 #   stage-data4t-apply   mv the leftovers into pending_deletion     (MOVES)
 #   stage-data   Step 8  plan the /mnt/data staging                 (dry run)
@@ -69,7 +71,7 @@ shift || true
 [[ "${1:-}" == "--" ]] && shift
 
 if [[ -z "$PASS" ]]; then
-    sed -n '10,25p' "$0" | sed 's/^# \?//' >&2
+    sed -n '10,31p' "$0" | sed 's/^# \?//' >&2
     echo "usage: $0 <pass> [-- args...]" >&2
     exit 2
 fi
@@ -180,6 +182,21 @@ case "$PASS" in
         require_data4t
         CMD=("$MS_PYTHON" -m model_store.build_experiments)
         [[ "$PASS" == "zoo-apply" ]] && CMD+=(--apply)
+        ;;
+    hf|hf-apply)
+        # Reads only /mnt/data4t (the zoo manifest and the checkpoints under models/), so
+        # no QNAP guard. Test the zoo-apply lock and drop it at once, the way
+        # ms_weekly_sync.sh tests route 1's: exporting while build_experiments swaps a new
+        # tree into place would read a half-rewritten manifest, but holding the lock through
+        # an hours-long upload would make the Monday rebuild skip.
+        require_data4t
+        ZOO_LOCK="$LOG_DIR/.zoo-apply.lock"
+        if [[ -e "$ZOO_LOCK" ]] && ! flock -n "$ZOO_LOCK" true; then
+            log "SKIP: zoo-apply holds $ZOO_LOCK -- the zoo is being rebuilt"
+            exit "$EXIT_SKIPPED"
+        fi
+        CMD=("$MS_PYTHON" -m model_store.hf_export)
+        [[ "$PASS" == "hf-apply" ]] && CMD+=(--apply --upload)
         ;;
     stage-data4t|stage-data4t-apply)
         require_data4t

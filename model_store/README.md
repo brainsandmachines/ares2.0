@@ -222,6 +222,46 @@ checkpoint.
    `ms_run.sh` uses the `ares` conda env rather than base python.
 4. `model_best.pth.tar`, labelled `fallback` so it is never mistaken for a score.
 
+## Publishing to Hugging Face
+
+`model_store.hf_export` publishes the zoo's **EMA weights** to the private repo
+`BrainsAndMachinesLab/robustness_models`. It is a manual pass — no cron:
+
+```bash
+tmux new -s ms_hf 'model_store/scripts/ms_run.sh hf; read'        # plan: new / changed / unchanged / orphans
+tmux new -s ms_hf 'model_store/scripts/ms_run.sh hf-apply; read'  # export into the mirror, then upload
+```
+
+It works on a local mirror of the repo, `/mnt/data4t/hf_robustness_models` (not under
+`models/`), which is exactly what the Hub holds:
+
+```
+README.md, manifest.csv                                   regenerated on every apply
+<arch>/<protocol>/[<norm>/]<name>/model.safetensors       state_dict_ema only (~350 MB)
+<arch>/<protocol>/[<norm>/]<name>/metadata.json           builder arch, preprocessing, attack, provenance
+```
+
+- **What** is published is `models_for_experiments/manifest.csv`, so run it after a zoo
+  rebuild. The pass skips if `zoo-apply` is running.
+- **Only `state_dict_ema`**: blessing and every AutoAttack score are measured on the EMA
+  weights. A checkpoint without them fails the run; there is no fallback to `state_dict`.
+- **Incremental**: `metadata.json` records the source's `hashes.file_key`. Only new or
+  replaced checkpoints are re-exported, and `upload_large_folder` sends only what the Hub
+  lacks. It is resumable. Its state lives in `<mirror>/.cache/huggingface/`, so leave that
+  directory alone.
+- **Any failed model blocks the upload** (rc 1, emailed by `ms_run.sh`). Fix it and re-run.
+- **Nothing deletes.** A model that left the zoo is reported as `ORPHAN` and stays, both in
+  the mirror and on the Hub. To remove one by hand:
+  `HfApi().delete_folder(path_in_repo="<repo_path>", repo_id="BrainsAndMachinesLab/robustness_models")`.
+- **Quota**: a free org gets 100 GB of private storage, and each model is ~0.35 GB. A
+  re-exported model keeps its old version in the repo history, and that counts too. Making
+  the repo public removes the cap.
+
+One-time setup:
+1. An org admin gives you the **write** role in `BrainsAndMachinesLab`.
+2. Create a token with write access to that org's repos.
+3. Run `hf auth login` on Botero.
+
 ## Tests
 
 ```bash
