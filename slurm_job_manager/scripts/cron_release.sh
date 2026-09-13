@@ -46,7 +46,10 @@ else:
 PYEOF
 }
 
-remote_cmd="cd $CLUSTER_REPO && SJM_DB=$CLUSTER_REPO/slurm_job_manager/jobs.sqlite PYTHONPATH=$CLUSTER_REPO python3 -m slurm_job_manager.cron_release$(printf ' %q' "$@")"
+remote_args=""
+# Guarded: with no arguments, `printf ' %q'` still emits one empty '' argument.
+[[ $# -gt 0 ]] && remote_args="$(printf ' %q' "$@")"
+remote_cmd="cd $CLUSTER_REPO && SJM_DB=$CLUSTER_REPO/slurm_job_manager/jobs.sqlite PYTHONPATH=$CLUSTER_REPO python3 -m slurm_job_manager.cron_release$remote_args"
 
 run_remote() {
     ssh -o BatchMode=yes -o ConnectTimeout=30 -o ServerAliveInterval=30 "$SSH_HOST" "$remote_cmd" 2>&1
