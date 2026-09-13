@@ -10,9 +10,14 @@ the SQLite DB holds operational state only — but simplified to Botero's rules:
   `final_eval` AutoAttack → plot, all in one process), then exits. If a model
   isn't finished at the Slurm time-limit, the row goes back to `pending` and the
   next task resumes it from `last.pth.tar`.
-- **No heartbeat-based requeue.** A SIGTERM trap in the sbatch releases the row on
+- **No heartbeat-based release.** A SIGTERM trap in the sbatch releases the row on
   time-limit; a fallback releases `running` rows whose owning Slurm job is dead
-  (`squeue`/`sacct`). Heartbeat is display-only.
+  (`squeue`/`sacct`) at each task start. An hourly Botero cron
+  (`scripts/cron_release.sh` → `cron_release.py`) also frees rows whose owner is not
+  training — gone, `CANCELLED`, `COMPLETING`, `PENDING` after a `NODE_FAIL` requeue
+  (same job id), or restarted after the claim — and `scancel`s an owner whose
+  heartbeat is >6h stale; the row is then freed by the next sweep. It never cancels
+  a row in `final_eval`, and cancels none when >2 stall at once (a shared cause).
 - **Test lane.** Rows flagged `is_test` are claimed *before* production rows.
 - **One model per GPU** — no MPS / memory fractions. Clean single-GPU runs.
 - **Batch size** = the CSV's `training.batch_size` (the full 96 GB rtx_pro_6000
@@ -34,6 +39,7 @@ the SQLite DB holds operational state only — but simplified to Botero's rules:
 | `monitor.py` | Botero pass: escalate new failure signatures to codex (DB-driven, no ssh). |
 | `seed.py` | Upsert / `--reconcile` rows from a CSV (the "add a job" flow). |
 | `release.py` | SIGTERM-trap entrypoint: return a row to `pending`. |
+| `cron_release.py` / `scripts/cron_release.sh` | Hourly Botero cron sweep (over ssh on the login node): release rows no live task owns, scancel stalled owners. `cron_release.sh --dry-run` previews. |
 | `status.py` | Read-only dashboard. |
 | `slurm/manager_<partition>.sbatch` | Per-partition array + env select + SIGTERM-trap release. |
 

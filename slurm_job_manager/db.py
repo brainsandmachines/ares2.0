@@ -15,8 +15,9 @@ which side created the base table first.
 
 Ownership invariant: ``slurm_job_id IS NULL`` <=> the row is claimable; a
 non-NULL ``slurm_job_id`` means a (possibly dead) array task owns it. Unlike the
-aircc manager we do **not** requeue on heartbeat staleness -- requeue is driven
-by Slurm liveness (``requeue_dead``) and the SIGTERM-trap ``release``.
+aircc manager a stale heartbeat never releases a row -- requeue is driven by
+Slurm liveness (``requeue_dead`` at task start, ``cron_release`` hourly) and the
+SIGTERM-trap ``release``; ``cron_release`` only scancels a long-stalled owner.
 
 All writes run inside one ``BEGIN IMMEDIATE`` transaction with a bounded retry
 loop, which is safe over NFS and guarantees two tasks never claim the same row.
@@ -28,13 +29,17 @@ import os
 import sqlite3
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Iterator, Mapping, Optional
 
 STATUS_PENDING = "pending"
 STATUS_RUNNING = "running"
 STATUS_FAILED = "failed"
 STATUS_FINISHED = "finished"
+
+# Owner states whose processes may still be training; ``cron_release`` frees rows
+# owned by anything else. SUSPENDED resumes in place, so it keeps its row.
+_OWNER_LIVE_STATES = frozenset({"RUNNING", "SUSPENDED"})
 
 _BUSY_TIMEOUT_MS = 30_000
 _MAX_RETRIES = 8
@@ -97,6 +102,15 @@ class Job:
 
 
 _JOB_FIELDS = set(Job.__annotations__)
+
+
+@dataclass
+class CronReleaseReport:
+    released: list = field(default_factory=list)   # (model_name, slurm_job_id, reason)
+    stalled: list = field(default_factory=list)    # (model_name, slurm_job_id, heartbeat_age_s)
+    cancelled: list = field(default_factory=list)  # (model_name, slurm_job_id, heartbeat_age_s)
+    unknown: list = field(default_factory=list)    # (model_name, slurm_job_id): probe failed
+    breaker_tripped: bool = False
 
 
 def _row_to_job(row: sqlite3.Row) -> Job:
@@ -283,7 +297,8 @@ class JobDB:
                 n += 1
         return n
 
-    def release(self, model_name: str, owner: Optional[int] = None) -> int:
+    def release(self, model_name: str, owner: Optional[int] = None,
+                claimed_ts: Optional[int] = None) -> int:
         """Return a row to the claimable pool (status->pending, clear owner).
 
         The SIGTERM-trap path (Slurm time-limit) and the dead-owner requeue path.
@@ -292,6 +307,7 @@ class JobDB:
         ``owner`` (a Slurm job id) makes the release conditional on still owning
         the row: a task whose claim was taken over no-ops instead of freeing the
         run that now holds it. ``None`` is the unguarded manual/admin path.
+        ``claimed_ts`` also pins the claim, since a requeued Slurm id keeps its number.
         """
         sql = ("UPDATE jobs SET status='pending', slurm_job_id=NULL, claimed_ts=NULL, "
                "requeued=requeued+1 WHERE model_name=? AND status IN ('running','pending')")
@@ -299,7 +315,57 @@ class JobDB:
         if owner is not None:
             sql += " AND slurm_job_id=?"
             params += (int(owner),)
+        if claimed_ts is not None:
+            sql += " AND claimed_ts=?"
+            params += (int(claimed_ts),)
         return self._write(sql, params)
+
+    def cron_release(self, owner_state: Callable[[int], Optional[tuple]],
+                     cancel: Callable[[int], bool], stall_s: int, max_stalled: int,
+                     min_age_s: int = 300, skew_s: int = 120, dry_run: bool = False,
+                     now: Optional[int] = None) -> CronReleaseReport:
+        """Release rows no live trainer owns; scancel owners whose heartbeat stalled.
+
+        ``owner_state(job_id)`` -> ``(slurm_state, start_ts)``, state ``""`` once Slurm
+        has forgotten the id, or ``None`` if the probe failed (row left untouched).
+        """
+        now = int(time.time()) if now is None else int(now)
+        report = CronReleaseReport()
+        for job in self.running_owned():
+            if now - job.claimed_ts < min_age_s:
+                continue
+            probe = owner_state(int(job.slurm_job_id))
+            if probe is None:
+                report.unknown.append((job.model_name, job.slurm_job_id))
+                continue
+            state, start_ts = probe
+            reason = None
+            if state not in _OWNER_LIVE_STATES:
+                # Includes PENDING: a NODE_FAIL auto-requeue keeps the id but trains nothing.
+                reason = state or "GONE"
+            elif start_ts is not None and start_ts > job.claimed_ts + skew_s:
+                # The id restarted after this claim; its new controller claimed another row.
+                reason = "RESTARTED"
+            if reason is not None:
+                if dry_run or self.release(job.model_name, owner=job.slurm_job_id,
+                                           claimed_ts=job.claimed_ts):
+                    report.released.append((job.model_name, job.slurm_job_id, reason))
+                continue
+            # current_epoch == total_epochs is final_eval, which writes no heartbeat.
+            age = now - job.heartbeat_ts
+            if job.current_epoch < job.total_epochs and age > stall_s:
+                report.stalled.append((job.model_name, job.slurm_job_id, age))
+
+        # Many stalls at once is a shared cause (e.g. an NFS lock freezing heartbeat
+        # writes on healthy runs), not many hung jobs.
+        if len(report.stalled) > max_stalled:
+            report.breaker_tripped = True
+            return report
+        for name, job_id, age in report.stalled:
+            # scancel, never release: a hung trainer that wakes would write beside a new one.
+            if dry_run or cancel(int(job_id)):
+                report.cancelled.append((name, job_id, age))
+        return report
 
     # ---- progress / lifecycle updates --------------------------------------
     def heartbeat(self, model_name: str) -> int:
