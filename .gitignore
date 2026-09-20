@@ -26,3 +26,7 @@ aa_sweep/botero_queue.sqlite*
 data_analysis/logs/catastrophic_notifier_state.json
 data_analysis/logs/catastrophic_notifier_state.json.lock
 *.html
+.env
+.env.*
+*.env
+*.env.*
