@@ -67,6 +67,21 @@ AIRCC_DB = Path(
     os.environ.get("AA_SWEEP_AIRCC_DB", AIRCC_ARCHIVE / "aircc_jobs_final_latest.sqlite")
 )
 
+# --- the cluster queue -----------------------------------------------------------------------
+# The Slurm lane no longer sbatches one job per unit. The nightly driver feeds the units into this
+# DB (on the cluster's own disk, written only from the login node and the array tasks), and two
+# job arrays -- one per partition, `--array=1-200%8` each -- claim them one at a time. See
+# cluster_queue.py.
+CLUSTER_QUEUE_DB = os.environ.get("AA_SWEEP_QUEUE_DB", f"{SLURM_REPO}/aa_sweep/aa_queue.sqlite")
+# lane -> (sbatch script relative to SLURM_REPO, array job name). The name is what `launch` looks
+# for in squeue, and deliberately not `aaswp_*`: parse_job_name must not decode it as a unit.
+QUEUE_ARRAYS: dict[str, tuple[str, str]] = {
+    "main": ("sbatches/aa_sweep_queue_main.sbatch", "aaq-main"),
+    "rtx6000": ("sbatches/aa_sweep_queue_rtx6000.sbatch", "aaq-rtx6000"),
+}
+# A unit that fails (or ends with cells still missing) this many times is parked as failed.
+QUEUE_MAX_ATTEMPTS = int(os.environ.get("AA_SWEEP_QUEUE_MAX_ATTEMPTS", "3"))
+
 JOB_NAME_PREFIX = "aaswp"
 SSH_TIMEOUT_SECONDS = int(os.environ.get("AA_SWEEP_SSH_TIMEOUT", "60"))
 

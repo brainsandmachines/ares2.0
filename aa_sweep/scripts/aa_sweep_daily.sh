@@ -1,15 +1,15 @@
 #!/bin/bash
 # Daily AutoAttack full-sweep completion. Reads the sjm job DB read-only over the BGU sshfs mount
 # and the frozen AIRCC DB out of the Botero archive, finds finished models whose linf/l2/l1 x
-# eps 1,2,4,6,8 grid is incomplete on best/last/advbest, stages any missing AIRCC checkpoints onto
-# the BGU cluster out of that same archive, and submits one sbatch per (model, checkpoint kind) on
-# the `main` partition. Quiet unless something breaks. Nothing here contacts AIRCC.
+# eps 1,2,4,6,8 grid is incomplete on best/last/advbest, feeds the cluster's units into the queue
+# DB (aa_sweep/cluster_queue.py, one ssh) -- which submits the `main` / `rtx6000` arrays when they
+# are due -- and tops up the Botero lane's local queue. Quiet unless something breaks.
 #
 # Install (Botero crontab -e). The time of day no longer matters -- it used to have to clear the
 # 03:00 AIRCC backup that filled the staging mirror, but the archive is now static:
 #   30 21 * * * /home/tomer_a/Documents/ares/aa_sweep/scripts/aa_sweep_daily.sh >> /home/tomer_a/Documents/ares/aa_sweep/logs/aa_sweep.log 2>&1
 #
-# Safe to run by hand; add --dry-run via AA_SWEEP_ARGS to see the plan without submitting:
+# Safe to run by hand; add --dry-run via AA_SWEEP_ARGS to see the plan without writing anything:
 #   AA_SWEEP_ARGS=--dry-run aa_sweep/scripts/aa_sweep_daily.sh
 
 set -u -o pipefail
@@ -35,7 +35,7 @@ if [[ -f "$HOLD_FILE" ]]; then
     rm -f "$HOLD_FILE"
 fi
 
-# A sweep run can take minutes (staging GBs); never let two overlap.
+# Never let two runs overlap.
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
     echo "[aa_sweep] $(date -Is) SKIP: another run already holds $LOCK_FILE" >&2

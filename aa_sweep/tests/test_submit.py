@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -41,11 +42,14 @@ def _install_fakes(monkeypatch, probe, live_names=(), aircc_finished=(), sjm_fin
     # The Botero lane has its own suite; here it must not reach ssh or the real local queue.
     monkeypatch.setattr(submit_mod.botero_mod, "topup", lambda works, **kw: [])
 
-    def fake_submit(model_dir, model_name, kind, run=subprocess.run):
-        submitted.append((model_name, kind))
-        return "12345"
+    def fake_feed(units, dry_run=False, run=subprocess.run):
+        # Only real feeds count as "submitted"; complete (missing=0) units are fed too, but they
+        # only close rows on the cluster side and never become work.
+        if not dry_run:
+            submitted.extend((u["model_name"], u["kind"]) for u in units if u["missing"])
+        return "[aa_queue] summary pending=0"
 
-    monkeypatch.setattr(submit_mod, "submit_job", fake_submit)
+    monkeypatch.setattr(submit_mod, "feed_queue", fake_feed)
     return submitted
 
 
@@ -228,8 +232,8 @@ def test_dry_run_submits_nothing(monkeypatch, capsys):
 
     assert submitted == []
     out = capsys.readouterr().out
-    assert "DRY-RUN would submit aaswp_m_best" in out
-    assert "would submit 3 sbatch jobs" in out
+    assert "DRY-RUN feed m:best (15 cells)" in out
+    assert "would feed 3 runnable unit(s)" in out
 
 
 def test_limit_caps_submissions(monkeypatch):
@@ -253,32 +257,58 @@ def test_missing_mount_aborts_before_touching_the_cluster(monkeypatch, capsys):
     assert "ABORT" in capsys.readouterr().out
 
 
-def test_submit_failure_is_reported_and_exits_nonzero(monkeypatch):
+def test_feed_failure_is_reported_and_exits_nonzero(monkeypatch):
     _install_fakes(monkeypatch, _empty_probe(), sjm_finished=["m"])
     notified = []
     monkeypatch.setattr(submit_mod, "notify", lambda subject, body, **kw: notified.append(subject))
 
-    def failing_submit(*a, **k):
-        raise RuntimeError("sbatch: Invalid partition")
+    def failing_feed(*a, **k):
+        raise RuntimeError("queue feed failed rc=1: launch main: sbatch rc=1: Invalid partition")
 
-    monkeypatch.setattr(submit_mod, "submit_job", failing_submit)
+    monkeypatch.setattr(submit_mod, "feed_queue", failing_feed)
 
     assert submit_mod.main(["--skip-mount-check"]) == 1
     assert notified and "failure" in notified[0]
 
 
-def test_submit_job_builds_the_expected_sbatch_command():
+def test_complete_units_are_fed_so_the_queue_can_close_them(monkeypatch):
+    """A unit finished by some other job must reach the queue with missing=0, or a stale pending
+    row for it would be claimed and burn a GPU on a no-op."""
+    _install_fakes(monkeypatch, _complete_probe(), sjm_finished=["m"])
+    seen = []
+    monkeypatch.setattr(submit_mod, "feed_queue", lambda units, **kw: seen.extend(units) or "")
+
+    assert submit_mod.main(["--skip-mount-check"]) == 0
+
+    assert sorted((u["kind"], u["missing"]) for u in seen) == [("advbest", 0), ("best", 0), ("last", 0)]
+
+
+def test_a_unit_held_by_a_standalone_job_never_reaches_the_queue(monkeypatch):
+    """The pre-queue aaswp_* jobs still running at cutover own their CSVs until they end."""
+    live = {config.job_name("m", "best")}
+    _install_fakes(monkeypatch, _empty_probe(), live_names=live, sjm_finished=["m"])
+    seen = []
+    monkeypatch.setattr(submit_mod, "feed_queue", lambda units, **kw: seen.extend(units) or "")
+
+    assert submit_mod.main(["--skip-mount-check"]) == 0
+
+    assert sorted(u["kind"] for u in seen) == ["advbest", "last"]
+
+
+def test_feed_queue_pipes_json_to_the_cluster_cli():
     captured = {}
 
     def fake_run(cmd, **kwargs):
         captured["cmd"] = cmd
-        return subprocess.CompletedProcess(cmd, 0, stdout="998877;cluster\n", stderr="")
+        captured["input"] = kwargs.get("input")
+        return subprocess.CompletedProcess(cmd, 0, stdout="[aa_queue] summary pending=1\n", stderr="")
 
-    job_id = submit_mod.submit_job("/models/m", "m", "advbest", run=fake_run)
+    unit = {"model_name": "m", "kind": "advbest", "model_dir": "/models/m", "missing": 14}
+    out = submit_mod.feed_queue([unit], run=fake_run)
 
-    assert job_id == "998877"
+    assert out == "[aa_queue] summary pending=1"
     remote = captured["cmd"][-1]
-    assert f"cd {config.SLURM_REPO} && sbatch --parsable" in remote
-    assert "--job-name=aaswp_m_advbest" in remote
-    assert "AA_MODEL_DIR=/models/m,AA_CHECKPOINT_KIND=advbest" in remote
-    assert remote.endswith(config.SBATCH_SCRIPT)
+    assert f"cd {config.SLURM_REPO} && PYTHONPATH={config.SLURM_REPO} python3 -m aa_sweep.cluster_queue feed --launch" == remote
+    assert json.loads(captured["input"]) == [unit]
+    submit_mod.feed_queue([unit], dry_run=True, run=fake_run)
+    assert captured["cmd"][-1].endswith("feed --dry-run")

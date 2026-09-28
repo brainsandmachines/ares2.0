@@ -8,7 +8,8 @@ linf | l2 | l1   ×   eps 1, 2, 4, 6, 8   ×   best | last | advbest      = 45 c
 
 Since `final_eval_aatype` defaults to `eps_norm` (commit `8fc067c4`), a finished training run only
 gets AutoAttack at the single norm/eps it was *trained* on. This package finds the rest and runs it
-on the BGU cluster's shared `main` partition. eps 12 is deliberately **not** part of the grid;
+on the BGU cluster (a DB-driven queue drained by two job arrays, `main` and `rtx6000`) and on
+Botero's own 4090. eps 12 is deliberately **not** part of the grid;
 existing eps-12 rows are left alone but never required.
 
 ## Flow
@@ -20,8 +21,64 @@ crontab ──▶ scripts/aa_sweep_daily.sh ──▶ python -m aa_sweep.submit
    2. read DBs    frozen aircc_jobs (QNAP) + jobs.sqlite, read-only (immutable=1), 'finished'
    3. SPLIT       one batched ssh probe of the BGU dirs decides the lane per model
    4. CENSUS      each lane against its OWN machine's csvs: missing = grid − that machine's cells
-   5. dedupe      squeue + the local queue: skip any (model, kind) already pending/running
-   6. dispatch    slurm lane → sbatch;  botero lane → rows in the local queue
+   5. dedupe      squeue + the local queue: skip any (model, kind) a standalone job still holds
+   6. dispatch    slurm lane → rows in the cluster queue (+ launch the arrays);
+                  botero lane → rows in the local queue
+```
+
+## The Slurm lane: one queue, two arrays
+
+```
+21:30 cron ──▶ aa_sweep.submit ──ssh──▶ cluster_queue feed --launch     (login node, python3)
+                                          │  upsert units into aa_sweep/aa_queue.sqlite
+                                          │  release rows whose owning task is dead
+                                          └─ per lane: pending work AND no pending task of its
+                                             array → sbatch --dependency=singleton <lane>.sbatch
+aaq-main     sbatches/aa_sweep_queue_main.sbatch      main,    --array=1-200%8
+aaq-rtx6000  sbatches/aa_sweep_queue_rtx6000.sbatch   rtx6000, --array=1-200%8, --qos=golan-neuro
+   each task (scripts/aa_queue_task.sh): GPU check → claim ONE unit → engine → finish
+```
+
+* **One task = one (model, kind) unit.** `claim` runs on the stock `python3` before conda loads.
+* **The CSV decides, not the exit code.** `finish` re-censuses the model dir with the same
+  `census.kind_status` the planner uses: nothing missing → `finished`; otherwise the attempt counts
+  and the unit goes back to `pending`, parking as `failed` after `QUEUE_MAX_ATTEMPTS` (3).
+* **Nothing pending → nothing running.** A task that finds nothing to claim cancels its array's
+  remaining PENDING tasks and exits; the feed submits no array while nothing is claimable.
+* **`--dependency=singleton`** makes a new array of a lane wait for that lane's previous array to
+  end, so a lane never exceeds its `%8`. A lane is only resubmitted when its array has no task still
+  waiting to start.
+* **Time limit / scancel** (`--signal=B:TERM@120`): the task kills the engine first (never two
+  writers on one CSV), then `release`s the unit without counting an attempt. The engine flushes
+  after every cell, so the next claimant resumes exactly there. A task that dies without the trap
+  firing is caught by `requeue_dead` (squeue → sacct, fails open, 5-min grace) at the next claim
+  or feed.
+* **Standalone jobs still win.** Units a hand-submitted eval (or a pre-queue `aaswp_*` sbatch)
+  still holds are not fed until that job leaves squeue.
+
+### Operating it (on the cluster, from the repo root)
+
+```bash
+python3 -m aa_sweep.cluster_queue status [--all]     # counts, running, failed, next up
+python3 -m aa_sweep.cluster_queue reset <id>         # re-arm a failed unit
+python3 -m aa_sweep.cluster_queue drop <id>          # delete a unit
+echo '[]' | python3 -m aa_sweep.cluster_queue feed --launch   # launch due arrays, feed nothing
+scancel -n aaq-rtx6000                               # stop a lane (rows are released on next claim/feed)
+```
+
+From Botero: `ssh slurm "cd /home/ashtomer/projects/ares && python3 -m aa_sweep.cluster_queue status"`.
+Per-task logs: `outs/aa_sweep/<array>_<task>.out`.
+
+### Cutover from per-unit sbatch (2026-09-28)
+
+The old driver submitted one `aaswp_<model>_<kind>` sbatch per unit on `main`. At cutover the
+PENDING ones were cancelled and re-fed into the queue; RUNNING ones were left to finish (the feed
+skips their units while they are in squeue, and closes them once their CSV is complete):
+
+```bash
+ssh slurm "squeue -u ashtomer -h -t PENDING -o '%i %j' | awk '\$2 ~ /^aaswp_/ {print \$1}' | xargs -r scancel"
+AA_SWEEP_ARGS=--dry-run aa_sweep/scripts/aa_sweep_daily.sh     # preview the feed + launch
+aa_sweep/scripts/aa_sweep_daily.sh                             # feed + launch both arrays
 ```
 
 ## Two lanes, no transfers
@@ -40,8 +97,8 @@ Propagating results between the machines is **not this package's job**. The week
 whatever is in a model dir, sweep CSVs included; nothing here copies a model, and nothing here
 pushes a result.
 
-The only things that still cross the network are read-only: one batched ssh probe of the cluster's
-model dirs, `squeue`, and `sbatch`.
+The only things that still cross the network: one batched read-only ssh probe of the cluster's
+model dirs, `squeue`, and one ssh `feed` into the cluster queue.
 
 ### Which lane owns a model
 
@@ -117,9 +174,9 @@ Per-job logs are `aa_sweep/logs/botero/<model>__<kind>.log`; the cron's own log 
 
 ```bash
 python -m aa_sweep.submit --dry-run          # print the plan, touch nothing
-python -m aa_sweep.submit                    # submit sbatch + top up the local queue
+python -m aa_sweep.submit                    # feed the cluster queue + top up the local queue
 python -m aa_sweep.submit --model convnext_base_linftrades_2_init0   # one model (debugging)
-python -m aa_sweep.submit --limit 3          # cap submissions (debugging)
+python -m aa_sweep.submit --limit 3          # feed at most 3 runnable units (debugging)
 ```
 
 Install the cron (see the header of `scripts/aa_sweep_daily.sh`):
@@ -129,7 +186,7 @@ Install the cron (see the header of `scripts/aa_sweep_daily.sh`):
 ```
 
 Quiet unless something breaks; emails via `aircc.aircc_job_manager.notify.make_emailer` on a
-missing filesystem, an unreadable DB, or a failed sbatch.
+missing filesystem, an unreadable DB, or a failed queue feed / array sbatch.
 
 ## Files
 
@@ -138,14 +195,17 @@ missing filesystem, an unreadable DB, or a failed sbatch.
 | `config.py` | Paths, ssh hosts, the grid, checkpoint↔CSV mapping. All env-overridable. |
 | `census.py` | Pure: one machine's CSV text → which `(norm, eps)` cells its checkpoint still needs. |
 | `plan.py` | Both DBs + one batched ssh probe → the lane split, one `ModelWork` per model. |
-| `submit.py` | Entrypoint: preflight → plan → dedupe → sbatch + local top-up. |
+| `submit.py` | Entrypoint: preflight → plan → dedupe → cluster-queue feed + local top-up. |
+| `cluster_queue.py` | The cluster queue (runs on the cluster, stdlib only): feed/claim/finish/release, array launch, `status`. |
+| `scripts/aa_queue_task.sh` | Body of one array task; sourced by both `sbatches/aa_sweep_queue_*.sbatch`. |
 | `scripts/aa_sweep_daily.sh` | Cron wrapper: `flock`, notify-on-crash. |
 | `botero.py` | The local lane: queue DB, store resolution, top-up, `status`/`enqueue` CLI. |
 | `botero_runner.py` | The local worker: GPU gate, claim, run the engine. |
 | `scripts/aa_sweep_botero_runner.sh` | Cron wrapper for the worker: `flock`, hold file, quiet ticks. |
 
-Cluster side: `sbatches/aa_sweep_completion.sbatch` runs
-`data_analysis/autoattack_array_eval.py --model-dir … --checkpoint-kinds <one kind>`.
+Cluster side: each array task runs `data_analysis/autoattack_array_eval.py --model-dir …
+--checkpoint-kinds <one kind>`. `sbatches/aa_sweep_completion.sbatch` is the same command as a
+standalone job, kept for one-off manual runs (its `aaswp_*` name keeps the feed off that unit).
 
 ## Things that are easy to get wrong
 
@@ -155,7 +215,7 @@ Cluster side: `sbatches/aa_sweep_completion.sbatch` runs
 - **1024 images, always.** The sbatch uses `--batch-size 32 --num-batches 32` (= 1024) to match the
   older `128 × 8` sweeps, and `autoattack_sweep_selection.json` is reused, so new rows are attacking
   the *same* images as the old ones and are directly comparable.
-- **One job per kind, never per norm.** The three kinds write three different CSVs and cannot race.
+- **One unit per kind, never per norm.** The three kinds write three different CSVs and cannot race.
   Splitting further (per norm) would put three jobs on one CSV and would need a lock.
 - **CSV rows key off the directory basename.** sjm names are nested (`vit_b_cvst/linf_1_init1`) but
   `model_name` in the CSV is `linf_1_init1`. Job names flatten `/` to `__` so they survive

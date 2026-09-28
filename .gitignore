@@ -22,6 +22,7 @@ outputs/
 aa_sweep/logs/
 # The Botero lane's queue: runtime state for this one machine, like the logs above.
 aa_sweep/botero_queue.sqlite*
+aa_sweep/aa_queue.sqlite*
 # Catastrophic-overfitting notifier operational state (machine-local)
 data_analysis/logs/catastrophic_notifier_state.json
 data_analysis/logs/catastrophic_notifier_state.json.lock

@@ -1,11 +1,12 @@
 """Daily driver: keep two independent AutoAttack sweep lanes fed.
 
-    python -m aa_sweep.submit --dry-run     # show the plan, submit nothing
-    python -m aa_sweep.submit               # submit sbatch jobs + top up the local queue
+    python -m aa_sweep.submit --dry-run     # show the plan, write and submit nothing
+    python -m aa_sweep.submit               # feed the cluster queue + top up the local queue
 
 Run from a Botero cron via ``aa_sweep/scripts/aa_sweep_daily.sh``. Read-only against both job DBs
-and against the BGU cluster's filesystem; the only writes are the sbatch submissions and rows in
-this machine's own queue DB.
+and against the BGU cluster's filesystem; the only writes are rows in the two queue DBs -- the
+cluster's (``cluster_queue.py``, over one ssh, which also submits a partition's array when it is
+due) and this machine's own.
 
 **No model is ever copied.** Each lane evaluates the copy of the model its own machine already
 holds -- the cluster from ``results/models``, this machine from ``config.BOTERO_STORE_ROOT`` -- and
@@ -16,6 +17,7 @@ job, not this package's.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -124,22 +126,28 @@ def conflicting_job(model_name: str, kind: str, live_names: set[str]) -> str | N
     return None
 
 
-def submit_job(model_dir: str, model_name: str, kind: str, run=subprocess.run) -> str:
-    remote = (
-        f"cd {config.SLURM_REPO} && sbatch --parsable "
-        f"--job-name={config.job_name(model_name, kind)} "
-        f"--export=ALL,AA_MODEL_DIR={model_dir},AA_CHECKPOINT_KIND={kind} "
-        f"{config.SBATCH_SCRIPT}"
-    )
+def feed_queue(units: list[dict], dry_run: bool = False, run=subprocess.run) -> str:
+    """Hand the Slurm lane's census to the cluster queue in one ssh round trip.
+
+    Runs ``python3 -m aa_sweep.cluster_queue feed --launch`` on the login node with the units as
+    JSON on stdin: that upserts them into the queue DB and submits each partition's array if it is
+    due (see cluster_queue.launch). Returns the remote output; raises on a non-zero exit, which
+    covers both a failed DB write and a failed array sbatch.
+    """
+    flag = "--dry-run" if dry_run else "--launch"
+    remote = (f"cd {config.SLURM_REPO} && PYTHONPATH={config.SLURM_REPO} "
+              f"python3 -m aa_sweep.cluster_queue feed {flag}")
     proc = run(
         ["ssh", "-o", f"ConnectTimeout={config.SSH_TIMEOUT_SECONDS}", config.SLURM_SSH_HOST, remote],
+        input=json.dumps(units),
         capture_output=True,
         text=True,
-        timeout=config.SSH_TIMEOUT_SECONDS * 2,
+        timeout=config.SSH_TIMEOUT_SECONDS * 4,
     )
+    out = (proc.stdout or "").strip()
     if proc.returncode != 0:
-        raise RuntimeError(f"sbatch failed rc={proc.returncode}: {proc.stderr.strip()}")
-    return proc.stdout.strip().split(";")[0]
+        raise RuntimeError(f"queue feed failed rc={proc.returncode}: {out}\n{proc.stderr.strip()}")
+    return out
 
 
 def notify(subject: str, body: str, dedup_key: str | None = None) -> None:
@@ -165,7 +173,7 @@ def notify(subject: str, body: str, dedup_key: str | None = None) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="Print the plan; stage and submit nothing.")
-    parser.add_argument("--limit", type=int, default=None, help="Debugging knob: submit at most N jobs.")
+    parser.add_argument("--limit", type=int, default=None, help="Debugging knob: feed at most N runnable units.")
     parser.add_argument("--model", action="append", default=None,
                         help="Restrict to this model name (repeatable). Debugging knob.")
     parser.add_argument("--skip-mount-check", action="store_true", help="For testing on a host without the mounts.")
@@ -232,7 +240,8 @@ def main(argv: list[str] | None = None) -> int:
         notify("[aa_sweep] squeue check failed", str(exc), dedup_key="aa_sweep-squeue-failed")
         return 1
 
-    submitted: list[str] = []
+    fed: list[dict] = []
+    runnable: list[dict] = []
     skipped_live = 0
     failures: list[str] = []
     moved: list[str] = []
@@ -249,37 +258,39 @@ def main(argv: list[str] | None = None) -> int:
         log(f"summary: {verb} {len(moved)} unit(s) in the Botero lane")
         return 0
 
-    for work in pending:
-        kinds = []
-        for kind in work.runnable_kinds:
-            blocker = conflicting_job(work.model_name, kind, running)
-            if blocker is None:
-                kinds.append(kind)
-            else:
-                skipped_live += 1
-                log(f"{work.model_name}:{kind}: skipping, '{blocker}' is already queued/running")
-        if not kinds:
-            continue
+    # Every Slurm-lane unit with a checkpoint goes to the queue, complete ones included (missing=0):
+    # that is how the queue closes a pending row some other job already finished. The only units
+    # held back are those a *standalone* job is still working on -- a hand-submitted eval or a
+    # pre-queue `aaswp_*` sbatch -- so the arrays never put a second writer on that CSV.
+    for work in slurm_works:
+        for kind in config.CHECKPOINT_KINDS:
+            status = work.kinds.get(kind)
+            if status is None or not status.has_checkpoint:
+                continue
+            if status.missing:
+                blocker = conflicting_job(work.model_name, kind, running)
+                if blocker is not None:
+                    skipped_live += 1
+                    log(f"{work.model_name}:{kind}: skipping, '{blocker}' is already queued/running")
+                    continue
+            fed.append({"model_name": work.model_name, "kind": kind,
+                        "model_dir": work.slurm_dir, "missing": len(status.missing)})
 
-        for kind in kinds:
-            if args.limit is not None and len(submitted) >= args.limit:
-                log(f"--limit {args.limit} reached, stopping")
-                break
-            missing = len(work.kinds[kind].missing)
-            if args.dry_run:
-                log(f"DRY-RUN would submit {config.job_name(work.model_name, kind)} ({missing} cells)")
-                submitted.append(f"{work.model_name}:{kind}")
-                continue
-            try:
-                job_id = submit_job(work.slurm_dir, work.model_name, kind)
-            except Exception as exc:
-                failures.append(f"{work.model_name}:{kind}: {exc}")
-                log(f"{work.model_name}:{kind}: SUBMIT FAILED {exc}")
-                continue
-            log(f"submitted {config.job_name(work.model_name, kind)} job={job_id} ({missing} cells)")
-            submitted.append(f"{work.model_name}:{kind}")
-        if args.limit is not None and len(submitted) >= args.limit:
-            break
+    runnable = [u for u in fed if u["missing"]]
+    if args.limit is not None and len(runnable) > args.limit:
+        log(f"--limit {args.limit}: feeding {args.limit} of {len(runnable)} runnable unit(s)")
+        runnable = runnable[: args.limit]
+        fed = [u for u in fed if not u["missing"]] + runnable
+    for unit in runnable:
+        log(f"{'DRY-RUN ' if args.dry_run else ''}feed {unit['model_name']}:{unit['kind']} "
+            f"({unit['missing']} cells)")
+    if fed:
+        try:
+            for line in feed_queue(fed, dry_run=args.dry_run).splitlines():
+                log(f"cluster: {line}")
+        except Exception as exc:
+            failures.append(f"queue feed: {exc}")
+            log(f"queue feed FAILED {exc}")
 
     # The local lane is independent of the cluster submissions above -- it draws from a disjoint set
     # of models -- so its failures are collected but never cost a submission that already succeeded.
@@ -290,9 +301,10 @@ def main(argv: list[str] | None = None) -> int:
             failures.append(f"botero top-up: {exc}")
             log(f"botero top-up FAILED {exc}")
 
-    verb = "would submit" if args.dry_run else "submitted"
+    verb = "would feed" if args.dry_run else "fed"
     log(
-        f"summary: {verb} {len(submitted)} sbatch jobs; {skipped_live} already in flight; "
+        f"summary: {verb} {len(runnable)} runnable unit(s) to the cluster queue "
+        f"({len(fed)} censused); {skipped_live} held by a standalone job; "
         f"{len(moved)} enqueued on botero; {len(failures)} failures"
     )
 
