@@ -40,6 +40,10 @@ aaq-rtx6000  sbatches/aa_sweep_queue_rtx6000.sbatch   rtx6000, --array=1-200%8, 
 ```
 
 * **One task = one (model, kind) unit.** `claim` runs on the stock `python3` before conda loads.
+* **Batch size is per partition, the image count is not.** `rtx6000` (48GB cards) runs 128 × 8,
+  everything else 32 × 32 (`main` hands out 24GB cards, where 128 OOMs — see `config.py`). Both
+  are the same 1024 images in the same order. An OOM at 128 reruns the rest at 32 in the same task
+  rather than counting an attempt.
 * **The CSV decides, not the exit code.** `finish` re-censuses the model dir with the same
   `census.kind_status` the planner uses: nothing missing → `finished`; otherwise the attempt counts
   and the unit goes back to `pending`, parking as `failed` after `QUEUE_MAX_ATTEMPTS` (3).
