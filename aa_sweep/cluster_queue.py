@@ -376,8 +376,8 @@ def launch(claimable: int, dry_run: bool = False, run=subprocess.run) -> tuple:
 
 
 # ---- CLI --------------------------------------------------------------------------------------
-def _say(msg: str) -> None:
-    print(f"[aa_queue] {msg}", flush=True)
+def _say(msg: str, err: bool = False) -> None:
+    print(f"[aa_queue] {msg}", file=sys.stderr if err else sys.stdout, flush=True)
 
 
 def _env_owner() -> Optional[int]:
@@ -451,11 +451,12 @@ def main(argv: Optional[list] = None) -> int:
     if args.cmd == "claim":
         owner = _env_owner()
         if owner is None:
-            _say("claim needs $SLURM_JOB_ID (run it from an array task)")
+            _say("claim needs $SLURM_JOB_ID (run it from an array task)", err=True)
             return 2
+        # stdout is the machine-read unit line (aa_queue_task.sh parses it); notes go to stderr.
         released = db.requeue_dead()
         if released:
-            _say(f"released dead-owner unit(s) {released}")
+            _say(f"released dead-owner unit(s) {released}", err=True)
         unit = db.claim(owner, os.environ.get("SLURM_JOB_PARTITION", ""), args.log)
         if unit is not None:
             print(f"{unit['id']}\t{unit['kind']}\t{unit['model_dir']}")

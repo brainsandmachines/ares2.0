@@ -176,3 +176,17 @@ def test_launch_dry_run_submits_nothing():
     slurm = _FakeSlurm()
     messages, _ = q.launch(5, dry_run=True, run=slurm)
     assert slurm.sbatched == [] and all("DRY-RUN" in m for m in messages)
+
+
+def test_claim_stdout_is_only_the_unit_line_even_when_it_releases_dead_owners(tmp_path, monkeypatch, capsys):
+    """aa_queue_task.sh reads the claim's stdout as `<id>\\t<kind>\\t<dir>`; a release note there
+    once became the unit id, crashed the engine and left the unit stuck `running`."""
+    db_path = str(tmp_path / "q.sqlite")
+    q.QueueDB(db_path).feed([_unit()])
+    monkeypatch.setattr(q.QueueDB, "requeue_dead", lambda self, *a, **k: [6])
+    monkeypatch.setenv("SLURM_JOB_ID", "111")
+    monkeypatch.setenv("SLURM_JOB_PARTITION", "main")
+    assert q.main(["--db", db_path, "claim"]) == 0
+    out, err = capsys.readouterr()
+    assert out.splitlines() == ["1\tbest\t/models/m"]
+    assert "released dead-owner unit(s) [6]" in err

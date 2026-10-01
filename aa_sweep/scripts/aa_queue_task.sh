@@ -57,7 +57,9 @@ if [[ ! -d "${VAL_DIR}" ]]; then
   exit 1
 fi
 
-line="$(queue claim --log "${LOG_PATH}")" || { echo "[ERROR] claim failed" >&2; exit 1; }
+claim_out="$(queue claim --log "${LOG_PATH}")" || { echo "[ERROR] claim failed" >&2; exit 1; }
+# Only an "<id>\t<kind>\t<dir>" line is a claim; any other stdout is a note, never the unit id.
+line="$(printf '%s\n' "${claim_out}" | grep -E $'^[0-9]+\t[^\t]+\t' | tail -n 1 || true)"
 if [[ -z "${line}" ]]; then
   echo "[aa_queue] nothing pending: cancelling this array's remaining pending tasks"
   [[ -n "${SLURM_ARRAY_JOB_ID:-}" ]] && scancel --state=PENDING "${SLURM_ARRAY_JOB_ID}" || true
