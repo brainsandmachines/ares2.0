@@ -5,10 +5,14 @@
 # --qos=golan-neuro is required (the partition has DenyQos=normal). It is the same QOS the sjm
 # training arrays run under, so this array shares the account's GPU cap with training.
 #
-# Batch size: the task body sees SLURM_JOB_PARTITION=rtx6000 and runs 128 x 8 (48GB cards) instead
-# of main's 32 x 32 -- same 1024 images either way; an OOM at 128 falls back to 32 in-task.
+# Batch size and conda env are picked by the task body from the card it lands on (48GB here, so
+# 128 x 8 on tomer_advtrain) -- same 1024 images either way; an OOM at 128 falls back to 32 in-task.
 #
 #   sbatch --dependency=singleton sbatches/aa_sweep_queue_rtx6000.sbatch
+#
+# One-off array on the 96GB rtx_pro_6000 partition (same QOS; the body switches to
+# tomer_advtrain_pro by card size). Not a feed-managed lane: nothing resubmits it.
+#   sbatch --partition=rtx_pro_6000 --job-name=aaq-pro sbatches/aa_sweep_queue_rtx6000.sbatch
 #
 #SBATCH --job-name=aaq-rtx6000
 #SBATCH --partition=rtx6000

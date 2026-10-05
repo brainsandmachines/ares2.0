@@ -40,10 +40,12 @@ aaq-rtx6000  sbatches/aa_sweep_queue_rtx6000.sbatch   rtx6000, --array=1-200%8, 
 ```
 
 * **One task = one (model, kind) unit.** `claim` runs on the stock `python3` before conda loads.
-* **Batch size is per partition, the image count is not.** `rtx6000` (48GB cards) runs 128 × 8,
-  everything else 32 × 32 (`main` hands out 24GB cards, where 128 OOMs — see `config.py`). Both
-  are the same 1024 images in the same order. An OOM at 128 reruns the rest at 32 in the same task
-  rather than counting an attempt.
+* **Batch size is per card, the image count is not.** A card of ≥ 48GB (`rtx6000`, and `main`'s
+  `rtx_6000`/`rtx_pro_6000` nodes) runs 128 × 8; a 24GB card runs 32 × 32 (128 OOMs there — see
+  `config.py`). Both are the same 1024 images in the same order. An OOM at 128 reruns the rest at 32
+  in the same task rather than counting an attempt.
+* **Conda env is per card too.** `select_train_env` (`sbatches/train_launcher_lib.sh`, the training
+  launchers' rule): 96GB `rtx_pro_6000` cards → `tomer_advtrain_pro`, everything else → `tomer_advtrain`.
 * **The CSV decides, not the exit code.** `finish` re-censuses the model dir with the same
   `census.kind_status` the planner uses: nothing missing → `finished`; otherwise the attempt counts
   and the unit goes back to `pending`, parking as `failed` after `QUEUE_MAX_ATTEMPTS` (3).
@@ -68,6 +70,8 @@ python3 -m aa_sweep.cluster_queue reset <id>         # re-arm a failed unit
 python3 -m aa_sweep.cluster_queue drop <id>          # delete a unit
 echo '[]' | python3 -m aa_sweep.cluster_queue feed --launch   # launch due arrays, feed nothing
 scancel -n aaq-rtx6000                               # stop a lane (rows are released on next claim/feed)
+sbatch --partition=rtx_pro_6000 --job-name=aaq-pro sbatches/aa_sweep_queue_rtx6000.sbatch
+                                                     # one-off extra array on rtx_pro_6000 (not resubmitted by the feed)
 ```
 
 From Botero: `ssh slurm "cd /home/ashtomer/projects/ares && python3 -m aa_sweep.cluster_queue status"`.

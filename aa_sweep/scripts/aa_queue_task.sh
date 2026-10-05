@@ -1,5 +1,5 @@
 #!/bin/bash
-# Body of one aa_sweep queue array task. Sourced by sbatches/aa_sweep_queue_{main,rtx6000}.sbatch;
+# Body of one aa_sweep queue array task. Sourced by sbatches/aa_sweep_queue_*.sbatch;
 # one task = one GPU = one (model, checkpoint kind) unit:
 #
 #   GPU check -> claim one unit (stock python3, no conda) -> engine -> finish (CSV census decides)
@@ -18,20 +18,11 @@ VAL_DIR="${VAL_DIR:-/groups/golan_neurogroup/bml_group/datasets/imagenet/val}"
 
 # 1024 images, always, with the reused autoattack_sweep_selection.json: the same images in the same
 # order as every older sweep row, so new cells are directly comparable. Only the grouping changes:
-# the batch size is chosen per partition and num_batches is derived, so the product can't drift.
-#   rtx6000 (48GB cards): 128 x 8   -- the older sweeps' own geometry
-#   everything else     :  32 x 32  -- `main` hands out 24GB cards, where 128 OOMs (config.py)
+# the batch size is chosen from the card the task landed on (below, after the GPU check) and
+# num_batches is derived, so the product can't drift.
 AA_TOTAL_IMAGES=1024
 AA_FALLBACK_BATCH_SIZE=32
-if [[ "${SLURM_JOB_PARTITION:-}" == "rtx6000" ]]; then
-  AA_BATCH_SIZE="${AA_BATCH_SIZE:-128}"
-else
-  AA_BATCH_SIZE="${AA_BATCH_SIZE:-${AA_FALLBACK_BATCH_SIZE}}"
-fi
-if (( AA_TOTAL_IMAGES % AA_BATCH_SIZE != 0 )); then
-  echo "[ERROR] AA_BATCH_SIZE=${AA_BATCH_SIZE} does not divide ${AA_TOTAL_IMAGES}" >&2
-  exit 2
-fi
+AA_BIG_BATCH_MIN_GPU_MB="${AA_BIG_BATCH_MIN_GPU_MB:-45000}"
 AA_NUM_WORKERS="${AA_NUM_WORKERS:-6}"
 AA_SEED="${AA_SEED:-0}"
 AA_NORMS="${AA_NORMS:-linf,l2,l1}"
@@ -51,6 +42,19 @@ GPU_TOTAL="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits |
 if [[ -z "${GPU_TOTAL}" || "${GPU_TOTAL}" -lt "${MIN_GPU_MB}" ]]; then
   echo "[ERROR] GPU on $(hostname) has ${GPU_TOTAL:-unknown} MB < ${MIN_GPU_MB} MB required" >&2
   exit 1
+fi
+
+# By card, not partition: `main` hands out 24GB, 48GB and 96GB cards alike.
+#   >=48GB (rtx6000, rtx_6000, rtx_pro_6000): 128 x 8   -- the older sweeps' own geometry
+#   24GB                                    :  32 x 32  -- 128 OOMs there (config.py)
+if (( GPU_TOTAL >= AA_BIG_BATCH_MIN_GPU_MB )); then
+  AA_BATCH_SIZE="${AA_BATCH_SIZE:-128}"
+else
+  AA_BATCH_SIZE="${AA_BATCH_SIZE:-${AA_FALLBACK_BATCH_SIZE}}"
+fi
+if (( AA_TOTAL_IMAGES % AA_BATCH_SIZE != 0 )); then
+  echo "[ERROR] AA_BATCH_SIZE=${AA_BATCH_SIZE} does not divide ${AA_TOTAL_IMAGES}" >&2
+  exit 2
 fi
 if [[ ! -d "${VAL_DIR}" ]]; then
   echo "[ERROR] ImageNet val dir is not available on host $(hostname): ${VAL_DIR}" >&2
@@ -79,9 +83,13 @@ release_and_exit() {
 }
 trap release_and_exit TERM
 
-# `main` spans 24GB and 96GB cards; tomer_advtrain works on all of them.
+# Same rule as the training launchers: the 96GB rtx_pro_6000 cards need tomer_advtrain_pro, the rest
+# tomer_advtrain. By card, so a `main` task that lands on a pro node gets the right env too.
+source "${REPO_ROOT}/sbatches/train_launcher_lib.sh"
+CONDA_ENV="$(select_train_env "${GPU_TOTAL}")"
 module load anaconda
-source activate tomer_advtrain
+source activate "${CONDA_ENV}"
+echo "[aa_queue] conda env=${CONDA_ENV} bsz=${AA_BATCH_SIZE}"
 
 # No --force: the engine diffs the CSV's (norm, eps) rows against the grid and attacks only what
 # is missing, so it resumes a released unit and reuses the eps_norm row from training.
