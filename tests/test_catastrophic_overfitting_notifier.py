@@ -261,7 +261,7 @@ def test_successful_email_records_event_and_deduplicates_next_run(tmp_path):
         return _snapshot("bad_model", summary)
 
     def factory():
-        return lambda subject, body: emails.append((subject, body))
+        return lambda subject, body, **_: emails.append((subject, body))
 
     assert notifier.run(args, collector=collector, emailer_factory=factory) == 0
     assert notifier.run(args, collector=collector, emailer_factory=factory) == 0

@@ -550,7 +550,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--cluster",
         action="append",
         choices=("aircc", "slurm"),
-        help="Cluster to inspect; repeat for both. Defaults to both.",
+        help="Cluster to inspect; repeat for both. Defaults to slurm (AIRCC is retired).",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print findings; do not email or write state.")
     parser.add_argument("--state-file", type=Path, default=DEFAULT_STATE_PATH)
@@ -569,7 +569,7 @@ def run(
     emailer_factory: Callable[[], Optional[Callable[[str, str], None]]] = _make_emailer,
 ) -> int:
     configs = default_clusters()
-    selected = args.cluster or ["aircc", "slurm"]
+    selected = args.cluster or ["slurm"]
     clusters = [configs[name] for name in selected]
     detector = DetectorConfig(
         close_gap=args.close_gap,
