@@ -193,7 +193,31 @@ Any `epsilon_bounded_contstim` results that loaded the two ❌ links measured a 
 2. ~~**Fix the store**~~ *(done, see above)* (route 2 will not do it: equal epoch, AIRCC root, no sjm row). Replace the stale keepers listed in the group A table with the QNAP files, as real copies. Move the displaced files into `/mnt/data4t/pending_deletion/<date>/` per `model_store` convention rather than deleting them. Restore the QNAP CSVs and selection, **except** `dvd_b_l1_1_init1`'s best/advbest CSVs, which are valid. Never write through the existing hardlinks (no `--inplace`).
 3. *(done, see above)* ~~**Rebuild the zoo**~~ (`ms_run.sh zoo-apply`). The link targets do not change, but the manifest's `target sha256` will. **Re-export `dvd_b_l1_1_init1` and `dvd_b_linf_1_init1` to HF** (`ms_run.sh hf` should report them as *changed* through `file_key`).
 4. *(done 2026-10-07: the sweep-CSV half, as `backfill._guard_results`, see `model_store/README.md`. The AIRCC equal-epoch half was dropped, because AIRCC is retired and route 2 reads `qnap-slurm` only.)* ~~**Consider a code fix**~~ so this cannot recur. Extend the equal-epoch rerun rule in `backfill.plan` to the `qnap-aircc` root, keyed on the frozen AIRCC DB row being `finished` and the bytes differing. Also consider making the metadata rule refuse a sweep CSV whose `epoch` column disagrees with the store checkpoint beside it.
-5. Flag any downstream results (plots, papers, `epsilon_bounded_contstim` runs) that used the cluster or store AA grids for these 5 models, or the two ❌ zoo links.
+5. *(done 2026-10-07, see "Step 5: downstream results" below)* ~~Flag any downstream results (plots, papers, `epsilon_bounded_contstim` runs) that used the cluster or store AA grids for these 5 models, or the two ❌ zoo links.~~
+
+## Step 5: downstream results (2026-10-07)
+
+**Method.** I searched every text file in `~/Documents/{ares, epsilon_bounded_contstim, shape-bias-analysis,
+KDE-analysis-on-imagenet, vonenet}` for the 5 model names, using a Python walk (`grep -F` silently missed
+two files, so grep wasn't trusted). For each hit I traced which checkpoint or which AA numbers it actually
+used. Checkpoints were compared by tensor-CRC fingerprint, and HF uploads by recorded file key.
+
+**Result: no published or analysed result is contaminated.**
+
+| consumer | models involved | what it used | verdict |
+|---|---|---|---|
+| `epsilon_bounded_contstim`: human pilot analyses (`full_experiments_pilot/analysis/exp1…exp5`), in-silico transfer, pair selection (Botero 2026-09-20 and Slurm job 21487455), `contstim_results` | `convnext_base_l2_4_init1` only (65 files besides the July planning lists, incl. tests and configs) | the zoo link → `last.pth.tar`. On Botero that is the store's `last`, which has been the AIRCC **rerun** since the Step-3 build (not touched by step 2). On Slurm it is the cluster zoo mirror's copy, the same fingerprint `840212d186` | ✅ correct weights |
+| `epsilon_bounded_contstim/utils/experiment_partition/convnext_base/*` (2026-07-15) | all 5 | the planning lists of candidate models and pairs only | ✅ no run used them |
+| `epsilon_bounded_contstim/job_manager/csv/{exp4_leastlikely,exp5_pairs}.csv` | `dvd_b_linf_2_init0` | planned rows; the zoo link → `last` = rerun ✅. It is not in the cluster zoo mirror | ✅ (and its outputs would come from the correct weights) |
+| `epsilon_bounded_contstim/experiments/superclass_allow_disallow/` | `l2_4_init1` | excluded it as "best_score 0.0" (the failed attempt's score in the live AIRCC DB at the time) and used init0 | ℹ️ stale reason in a comment; no contamination |
+| The two ❌ zoo links (`dvd_b_l1_1_init1`, `dvd_b_linf_1_init1` → collapsed `last`) | — | **no experiment in any repo ever referenced these models** | ✅ no exposure (fixed in step 2) |
+| Hugging Face `BrainsAndMachinesLab/robustness_models` | the 9 stale uploads | private repo, **0 downloads** since it was created on 2026-09-10 | ✅ no exposure (re-exported in step 3). The other three group-A models were uploaded from the correct rerun files (file keys checked) |
+| `ares/training_status.html` and other `data_analysis` outputs | — | no file mentions the 5 models | ✅ |
+| `ares/data_analysis/logs/catastrophic_notifier_state.json` | `dvd_b_linf_2_init1:78`, `l2_4_init1:35` | AIRCC training-time CO detections **of the failed attempts themselves** | ✅ genuine, not a reading of the bad grids |
+| **`ares/co_rerun_plan.md`** (written 2026-10-07 by another session) | `dvd_b_linf_2_init0` | the starting-point row "last, ep199, clean **78.6**, AA 0.10" is the **failed first attempt's** cluster number. The DB-blessed attempt 2's `last` has clean **72.9**, AA 0.10. The plan's own footnote already flags the cluster copies as suspect | ⚠️ **update the row**. Its continuation `convnext_base_dvd_b_linf_cont2to2_init0_contepoch` is not seeded yet (no sjm row, no CSV row), so when launched it will start from the cluster's `last.pth.tar`, which since step 1 is attempt 2 |
+
+**Side note on step 1.** `aa_sweep/sweep_excludes.csv` (also added 2026-10-07) excludes `convnext_base_dvd_b_linf_2_init0`
+as a collapsed model. Its 3 re-queued AA units will therefore not be fed; the other 4 models' 12 units will.
 
 ---
 *Raw data: one metadata pass over 127 models × 4 trees, ~50 s. Collector and analysis scripts are in this session's scratchpad. Re-running them is safe: they open every DB with `?immutable=1` and only `stat`/read files.*

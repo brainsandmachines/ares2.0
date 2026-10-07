@@ -60,7 +60,7 @@ why cont4to8 collapsed. The fix lands in code before Task 1 and recipe A run.
 | swin_b/l2trades_4_init1 (l2 4) | model_best | 82 | 77.0 | 0.88 | swin_b/l2_4_init1: 70.5 / 38.2 |
 | vit_b_cvst/linftrades_4_init1 (linf 4) | model_best_adv | 142 | 74.3 | 0.39 | vit_b_cvst/linf_4_init1: 70.3 / 40.8 |
 | vit_b_cvst/l2trades_4_init1 (l2 4) | model_best | 113 | 72.2 | 12.01 | vit_b_cvst/l2trades_6: 17.4 at ε6 (ε4 should be higher) |
-| convnext_base_dvd_b_linf_2_init0 (linf 2) | last | 199 | 78.6 | 0.10 | dvd_b_linf_2_init1: 68.8 / 47.9 † |
+| convnext_base_dvd_b_linf_2_init0 (linf 2) | last | 199 | 72.9 ‡ | 0.10 | dvd_b_linf_2_init1: 68.8 / 47.9 † |
 | convnext_base_dvd_b_l2_2_init0 (l2 2) | last | 199 | 68.3 | 0.20 | dvd_b_l2_2_init1: 70.8 / 50.6 |
 | convnext_base_dvd_b_l2_4_init1 (l2 4) | last | 199 | 58.1 | 8.79 | dvd_b_l2_4_init0 (last): 57.2 / 26.3 |
 | convnext_base_dvd_b_l1_4_init0 (l1 4) | model_best | 199 | 69.7 | 4.98 | dvd_b_l1_4_init1: 74.0 / 13.8 |
@@ -73,6 +73,13 @@ its DB score.
 † The cluster copy of `dvd_b_linf_2_init1` is a stale, collapsed earlier attempt; the good one lives
 on the QNAP. A separate audit (`aircc_copy_audit.md`) is checking every AIRCC model for the same
 problem. Read its result before relying on any convnext cluster copy.
+
+‡ Corrected 2026-10-07 (`aircc_copy_audit.md`, step 5). The row first said clean 78.6, which belongs to
+the cluster copy of the *failed first attempt*. The DB-blessed run is attempt 2 on the QNAP, whose
+`last` (ep199) has clean 72.9 and AA 0.10 (both attempts collapsed, so the AA matched by coincidence).
+Since step 1 of the audit, the cluster's `results/models/convnext_base_dvd_b_linf_2_init0/` holds
+attempt 2. The `dvd_b_linf_cont2to2_init0_contepoch` continuation below therefore starts from the
+blessed checkpoint, and attempt 1 is in `results/models_failed/…__gradient_collapse_20260806_slurmcopy`.
 
 ## 2. The recipe: "+40 epochs, same ε, PGD 7"
 
