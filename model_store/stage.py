@@ -257,7 +257,8 @@ def _explained_unlinked(
     if backfill_csv.exists():
         with backfill_csv.open(newline="") as fh:
             for row in _csv.DictReader(fh):
-                if row.get("reason") == "missing":
+                # 'missing' replaced nothing; a held-back AA result was never pulled.
+                if row.get("reason") in ("missing", "skip-result-other-checkpoint"):
                     continue
                 src = source_of.get(row["dest"])
                 if src and Path(row["dest"]).is_file():

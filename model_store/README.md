@@ -51,6 +51,18 @@ would — leaving a dir whose scores describe checkpoints it no longer holds. Fo
 least as far along as Botero's (so a part-way snapshot never replaces a complete
 run), and sha256 says the bytes differ. The AIRCC root keeps the strict rule.
 
+**AA results travel only with their checkpoint.** Backfill decides each file on its
+own: checkpoints on epoch, metadata on mtime. Without a guard, a source dir's newer
+sweep CSVs could land beside a *different* checkpoint of the same kind. That is how a
+failed first attempt's 0.0-robust grids ended up next to the AIRCC rerun's checkpoints
+in five store dirs (`aircc_copy_audit.md`, 2026-10-07), and how they came back every
+Monday. So the three `autoattack_sweep_results*.csv`, `autoattack_eps_norm_scores.json`
+and the comparison `.png` are pulled only when the source dir's checkpoint(s) match
+what the destination will hold after the pass. "Match" means same size and mtime, else
+the same sha256. A source that lacks the checkpoint cannot vouch for the
+destination's. Held-back files appear in `04_backfill_plan.csv` as
+`skip-result-other-checkpoint`, with the reason in `detail`, and are never pulled.
+
 Two guards on route 2 worth knowing about, both about `--delete` in
 `build_experiments.sync_into_place`:
 

@@ -27,6 +27,12 @@ are not enough for a checkpoint -- several QNAP-AIRCC copies are newer but far l
 trained (epoch 6 against 199), so a size/mtime rule would quietly undo the epoch
 decisions Step 2 gated on. ``-rt`` is preserved throughout so that mtime stays a
 usable signal for every other consumer of these trees.
+
+AutoAttack results (the three sweep CSVs, ``autoattack_eps_norm_scores.json``, the
+comparison plot) are the one kind of metadata that describes a specific checkpoint,
+so they travel only with it: one is pulled only when its source dir's checkpoint is
+byte-identical to the one the destination will hold after this pass. Anything else is
+reported as ``skip-result-other-checkpoint`` and never pulled (``_guard_results``).
 """
 
 from __future__ import annotations
@@ -82,6 +88,78 @@ class PullItem:
     reason: str        # missing | qnap-higher-epoch | qnap-slurm-rerun | qnap-newer
     local_epoch: Optional[int] = None
     qnap_epoch: Optional[int] = None
+    detail: str = ""
+
+
+# AutoAttack results describe the checkpoint(s) they were computed on, so they may only
+# travel with them. Must stay in step with aa_sweep.config.CKPT_FILE_FOR_KIND / CSV_FOR_KIND.
+KEEPER_CKPTS = ("model_best.pth.tar", "last.pth.tar", "model_best_adv.pth.tar")
+RESULT_CKPTS = {
+    "autoattack_sweep_results.csv": ("model_best.pth.tar",),
+    "autoattack_sweep_results_last.csv": ("last.pth.tar",),
+    "autoattack_sweep_results_advbest.csv": ("model_best_adv.pth.tar",),
+    "autoattack_eps_norm_scores.json": KEEPER_CKPTS,
+}
+SKIP_OTHER_CHECKPOINT = "skip-result-other-checkpoint"
+
+
+def _result_ckpts(rel: str) -> tuple[str, ...]:
+    """The checkpoints a top-level AA result file describes; () if it is not one."""
+    if "/" in rel:
+        return ()
+    if rel.startswith("autoattack_eval_comparation_") and rel.endswith(".png"):
+        return KEEPER_CKPTS
+    return RESULT_CKPTS.get(rel, ())
+
+
+def _same_checkpoint(a: Path, b: Path, cache: HashCache) -> bool:
+    """Byte-identical? Size, then the size+mtime pair the planner already trusts as
+    'same file' (both routes copy with ``-t``), then sha256 -- which settles the
+    bulk-rewrite case where identical bytes carry different mtimes."""
+    sa, sb = a.stat(), b.stat()
+    if sa.st_size != sb.st_size:
+        return False
+    if abs(sa.st_mtime - sb.st_mtime) < 2:
+        return True
+    return same_content(a, b, cache)
+
+
+def _guard_results(items: list[PullItem], get_cache) -> tuple[list[PullItem], list[PullItem]]:
+    """Drop every AA result pull whose source dir holds a different checkpoint than the
+    one the destination will hold once this pass is applied.
+
+    Each file is otherwise decided on its own: checkpoints on epoch, metadata on mtime.
+    That let a Slurm dir's sweep CSVs -- computed on a failed first attempt -- land beside
+    the AIRCC rerun's checkpoints in five store dirs (aircc_copy_audit.md, 2026-10-07),
+    and re-arrive every Monday. A result whose source has no checkpoint to compare is
+    dropped too when the destination holds one: it cannot be shown to describe it.
+    """
+    final: dict[Path, Path] = {}          # dest checkpoint -> file it will hold
+    for it in items:
+        if it.rel in KEEPER_CKPTS:
+            final[it.dest] = it.source
+    kept, skipped = [], []
+    for it in items:
+        ckpts = _result_ckpts(it.rel)
+        mismatch = None
+        for name in ckpts:
+            src_ckpt = it.source.parent / name
+            dest_ckpt = it.dest.parent / name
+            will_hold = final.get(dest_ckpt, dest_ckpt if dest_ckpt.exists() else None)
+            if will_hold is None or will_hold == src_ckpt:
+                continue
+            if not src_ckpt.exists():
+                mismatch = f"source has no {name} to match the destination's"
+                break
+            if not _same_checkpoint(src_ckpt, will_hold, get_cache()):
+                mismatch = f"source {name} differs from the destination's"
+                break
+        if mismatch:
+            it.reason, it.detail = SKIP_OTHER_CHECKPOINT, mismatch
+            skipped.append(it)
+        else:
+            kept.append(it)
+    return kept, skipped
 
 
 def _completed_slurm_copy(rec, src_dir: Path, dest_dir: Path) -> bool:
@@ -115,7 +193,10 @@ def _completed_slurm_copy(rec, src_dir: Path, dest_dir: Path) -> bool:
 
 def plan(records: dict, store_root: Path,
          labels: tuple[str, ...] = QNAP_LABELS,
-         cache: Optional[HashCache] = None) -> list[PullItem]:
+         cache: Optional[HashCache] = None,
+         skipped: Optional[list[PullItem]] = None) -> list[PullItem]:
+    """The pulls to make. AA results held back by ``_guard_results`` are appended to
+    ``skipped`` (when given) so they can be reported, and never pulled."""
     items: list[PullItem] = []
     caches: list[HashCache] = [cache] if cache is not None else []
     completed: dict[tuple[Path, Path], bool] = {}
@@ -191,7 +272,16 @@ def plan(records: dict, store_root: Path,
                         items.append(PullItem(
                             rec.identity.canonical, label, src, dest, rel,
                             sst.st_size, "qnap-newer"))
-    return items
+
+    def get_cache() -> HashCache:
+        if not caches:
+            caches.append(HashCache())
+        return caches[0]
+
+    kept, held = _guard_results(items, get_cache)
+    if skipped is not None:
+        skipped.extend(held)
+    return kept
 
 
 def apply_pull(items: list[PullItem], dry_run: bool) -> int:
@@ -278,7 +368,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"[backfill] {_now()} walking {', '.join(roots)} (this takes a few minutes "
           f"over CIFS)", flush=True)
     records = build(roots=roots)
-    items = plan(records, args.store, labels=roots)
+    held: list[PullItem] = []
+    items = plan(records, args.store, labels=roots, skipped=held)
 
     by_reason: dict[str, tuple[int, int]] = defaultdict(lambda: (0, 0))
     for it in items:
@@ -291,6 +382,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     for reason, (n, b) in sorted(by_reason.items(), key=lambda kv: -kv[1][1]):
         print(f"[backfill]   {n:6d} files  {b / GIB:9.1f} GiB  {reason}")
     print(f"[backfill]   {len(items):6d} files  {total / GIB:9.1f} GiB  TOTAL to copy")
+    if held:
+        print(f"[backfill]   {len(held):6d} AA result files NOT pulled ({SKIP_OTHER_CHECKPOINT}): "
+              f"their source holds a different checkpoint than the destination will")
+        for it in sorted(held, key=lambda i: (i.canonical, i.rel))[:20]:
+            print(f"[backfill]     {it.canonical}/{it.rel} [{it.source_label}]: {it.detail}")
+        if len(held) > 20:
+            print(f"[backfill]     ... and {len(held) - 20} more (see the plan CSV)")
     # 55 MB/s measured on this share (qnap_mirror.log: 52-55 MB/s sustained).
     eta_min = total / (55 * 1e6) / 60 if total else 0
     print(f"[backfill]   ETA at ~55 MB/s: {eta_min / 60:.1f} h ({eta_min:.0f} min)")
@@ -310,12 +408,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     with plan_csv.open("w", newline="") as fh:
         w = _csv.writer(fh)
         w.writerow(["model", "source_label", "source", "dest", "size", "reason",
-                    "local_epoch", "qnap_epoch"])
-        for it in sorted(items, key=lambda i: (i.canonical, i.rel)):
+                    "local_epoch", "qnap_epoch", "detail"])
+        for it in sorted(items + held, key=lambda i: (i.canonical, i.rel)):
             w.writerow([it.canonical, it.source_label, it.source, it.dest,
                         it.size, it.reason,
                         "" if it.local_epoch is None else it.local_epoch,
-                        "" if it.qnap_epoch is None else it.qnap_epoch])
+                        "" if it.qnap_epoch is None else it.qnap_epoch,
+                        it.detail])
     print(f"[backfill] wrote {plan_csv}")
 
     if not args.apply:
