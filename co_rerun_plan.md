@@ -10,6 +10,11 @@ recipe as the existing cont4to6/cont4to8 runs, except the target ε equals the s
 models not using this approach are `convnext_base_linftrades_cont4to8_init{0,1}` (Task 1, unchanged).
 `vit_b_cvst/l2trades_4_init1` joins the list.
 
+**Revision 2 (2026-10-07): no PGD step warmup in continuation runs** (§2, "Code change before any
+continuation run"). A continuation restarts its epoch counter at 0, so the from-scratch step warmup
+`attack_step * min(epoch, 5) / 5` trains a robust model on clean images for a whole epoch. That is
+why cont4to8 collapsed. The fix lands in code before Task 1 and recipe A run.
+
 ## 0. Done 2026-10-07: these models are out of the AA sweep
 
 - `aa_sweep/sweep_excludes.csv` lists the 12 original models in §1 (11, plus `vit_b_cvst/l2trades_4_init1`). `aa_sweep.submit` drops them before
@@ -82,6 +87,57 @@ Use the existing cont convention with target = source:
 - `convnext_base_dvd_b_l2_cont2to2_init0_contepoch`
 - and so on (full list in §3).
 
+### Code change before any continuation run: skip the PGD step warmup when `continuation.enabled`
+
+**Finding.** [train_loop.py:49](ares/utils/train_loop.py:49) sets
+`att_step = attacks.attack_step * min(epoch, 5) / 5`. From scratch that is a sensible warmup. A
+`continuation` run, though, restarts at epoch 0. Its training attack then works out as:
+- **epoch 0: step 0.** The images are clean, apart from TRADES's tiny random start. This is a whole
+  epoch of clean training on a robust model.
+- **epochs 1-4:** the attack can reach only ε × epoch/5 (20%…80% of the ball). Training against an
+  attack that weak is what produces gradient masking.
+
+The convnext cont4to8 runs show it directly. The LR during epoch 0 was only 3.5e-6, yet over that
+one epoch:
+
+| | AA linf ε4 | AA linf ε8 | clean |
+|---|---|---|---|
+| init0: parent (`model_best_adv`, ep102) | 28.6 | 6.7 | 77.5 |
+| init0: cont at ep0 | 8.6 | 0.68 | 79.8 |
+| init1: parent (`last`, ep149) | 37.4 | 7.3 | 77.2 |
+| init1: cont at ep1 | 7.5 | 0.29 | 78.2 |
+
+By epoch 1, PGD-val reads an impossible 65% at ε4.
+[validate.py:83](ares/utils/validate.py:83) applies the same warmup to PGD-val, so the PGD-val of
+continuation epochs 1-4 is understated too. Its adversarial eval is also skipped entirely at epoch 0.
+
+**Change (option 1, chosen 2026-10-07).**
+- `ares/utils/train_loop.py`: use the full `attack_step` (or `v1_attack_step`) from epoch 0 when
+  `cfg.continuation.enabled` is true. Also honour the existing `attacks.disable_attack_step_warmup`
+  flag, which today only `validate.py` reads.
+- `ares/utils/validate.py`: apply the same rule to the PGD-val step. For continuations, also run the
+  adversarial eval at epoch 0, so each curve starts from the parent's real robustness.
+- **Scope:** only runs with `continuation.enabled=true` and epoch < 5.
+  - Unaffected: scratch runs, and `resume`/contepoch runs, whose epoch is ≥ 200 so the warmup is
+    already over.
+  - Unaffected: the three sjm continuations in flight (swin_b l2trades_cont4to8 at ep19, and
+    l1trades_cont4to6 / l1trades_cont4to8, both at ep33). They are past epoch 5, so a restart after
+    the change behaves identically.
+  - `.agents/skills/training-runtime-optimizer/scripts/run_candidate_benchmark.py` has its own copy of
+    the warmup (benchmark only). Leave it, and mention it in the skill if it matters.
+- **Tests:**
+  - A unit test that `train_one_epoch` passes the full step at epoch 0 when
+    `continuation.enabled`, and the warmed-up step otherwise.
+  - A short Botero smoke run (a few hundred steps of one recipe-A row on the ImageNet sample).
+    Confirm from the log that the training attack's step equals `attack_step` at epoch 0, and that
+    epoch-0 PGD-val is close to the parent's.
+- **Protocol record:** every continuation trained before this change ran with the warmup. That
+  covers all cont4to6/cont4to8 runs and the DVD `_resetepoch` runs. Record the change, dated, in
+  `aircc_convnext_base_summary.md` and in `co_postmortem.csv` (a `step_warmup` column), so old and
+  new continuation results are never compared without that note.
+- **Order:** commit, push and `git pull` on the cluster **before** seeding any Task 1 or recipe-A row.
+  Recipe B doesn't depend on it.
+
 ### Row recipe A: swin_b / vit_b_cvst
 Copy the existing `vit_b_cvst/linftrades_cont4to6_init1` row into
 `slurm_job_manager/csv/vit-b-cvst_swin-b.csv`, then change it:
@@ -136,11 +192,12 @@ build should show:
 
 ## 3. Tasks
 
-### Task 1: `convnext_base_linftrades_cont4to8_init{0,1}`: rerun with 7 PGD steps (unchanged)
-- **Cause:** it collapsed at once with `attack_it=5`. Robustness fell **within the first epoch**:
-  its epoch-0/1 checkpoints get AA 0.68 / 0.29 at ε=8, against the parents' 6.6 / 6.8. So the
-  continuation start (EMA handover, optimizer and LR restart) may be part of the problem, not just
-  the step count.
+### Task 1: `convnext_base_linftrades_cont4to8_init{0,1}`: rerun with 7 PGD steps, without the step warmup
+- **Cause:** robustness fell **within the first epoch**. Its epoch-0/1 checkpoints get AA
+  0.68 / 0.29 at ε=8, against the parents' 6.7 / 7.3. Epoch 0 trained with PGD step 0 (§2, "Code
+  change before any continuation run"). Training at 5 steps with a weakened step (epochs 1-4) then
+  locked in the masking. `attack_it=7` alone would not have fixed epoch 0.
+- **Requires:** the step-warmup code change, landed on the cluster.
 - **Parents:** `convnext_base_linftrades_4_init{0,1}` are healthy (AA 28.3 / 36.1 at ε=4).
 - **Steps:**
   1. Retire the two collapsed dirs:
@@ -173,7 +230,10 @@ build should show:
 - **For:** swin_b/l2trades_cont4to6 started from the masked swin l2trades_4 (AA 0.88) and reached
   **21.0**. The vit linftrades conts reached 15.5 / 9.9 from a parent at 0.39.
 - **Against:** the convnext cont4to8 runs lost robustness within one epoch of starting (Task 1).
-  Watch the first epochs of these runs as well.
+  The cause was the PGD step warmup, which recipe A now skips (§2). Still, check epoch 0-1 PGD-val
+  against the parent's AA.
+- All existing conts above trained *with* the warmup, so they are not a like-for-like baseline for
+  the new runs.
 
 **If a run comes back still collapsed,** the fallback is the earlier option: resume the *original*
 from its last healthy saved epoch (Appendix), or escalate with one of these:
@@ -223,12 +283,14 @@ the collapsed original. That is a separate decision.
 ## 5. Suggested order
 1. Read the copy-audit report.
 2. Add the `model_store` exclusion for the collapsed originals.
-3. Dry-build one recipe-A and one recipe-B command on Botero.
-4. Insert the anchor rows for the AIRCC parents (DVD ×5, linftrades_4 ×2).
-5. Seed the Task 2 rows and the Task 1 rows (retire the cont4to8 dirs first). Recipe-A runs are
+3. Make the step-warmup code change (§2), with its unit test and Botero smoke run. Commit, push and
+   pull it on the cluster.
+4. Dry-build one recipe-A and one recipe-B command on Botero.
+5. Insert the anchor rows for the AIRCC parents (DVD ×5, linftrades_4 ×2).
+6. Seed the Task 2 rows and the Task 1 rows (retire the cont4to8 dirs first). Recipe-A runs are
    40-epoch jobs; recipe-B runs are 40 epochs of convnext at batch 512.
-6. The AA sweep covers each new run automatically once `finished`. Fill in `co_postmortem.csv`.
-7. Decide on the downstream runs.
+7. The AA sweep covers each new run automatically once `finished`. Fill in `co_postmortem.csv`.
+8. Decide on the downstream runs.
 
 ## Appendix: fallback resume points (from the PGD-val gap; confirm with an AA probe first)
 Use these only if a "+40" run fails. "periodic N" is `periodic/epoch_00NN.pth.tar`, the full saver
