@@ -18,6 +18,7 @@ two: whatever propagation is wanted between machines is the weekly rsync's busin
 from __future__ import annotations
 
 import base64
+import csv
 import json
 import sqlite3
 import subprocess
@@ -99,6 +100,26 @@ def finished_models(db_path: Path) -> list[str]:
         return [row[0] for row in conn.execute("SELECT model_name FROM jobs WHERE status='finished'")]
     finally:
         conn.close()
+
+
+def load_excludes(path: Path) -> dict[str, str]:
+    """model_name -> reason, from ``config.EXCLUDES_CSV``. A missing file excludes nothing; a row
+    without a reason, or a duplicate, is an error -- the sweep should stop rather than guess."""
+    if not path.exists():
+        return {}
+    out: dict[str, str] = {}
+    with path.open(newline="") as fh:
+        for n, row in enumerate(csv.DictReader(fh), start=2):
+            name = (row.get("model_name") or "").strip()
+            if not name:
+                continue
+            reason = (row.get("reason") or "").strip()
+            if not reason:
+                raise ValueError(f"{path}:{n}: exclude {name!r} has no reason")
+            if name in out:
+                raise ValueError(f"{path}:{n}: duplicate exclude {name!r}")
+            out[name] = reason
+    return out
 
 
 def _read_local_dir(model_dir: Path) -> tuple[dict[str, int], dict[str, str]]:

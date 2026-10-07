@@ -1,0 +1,13 @@
+model_name,reason
+swin_b/linftrades_4_init1,"2026-10-07 catastrophic overfitting (AA 0.00, clean 79); parent of a +40ep PGD-7 same-eps continuation -- see co_rerun_plan.md"
+swin_b/linftrades_2_init1,"2026-10-07 catastrophic overfitting (AA 0.20); parent of a +40ep PGD-7 same-eps continuation"
+swin_b/l2trades_4_init1,"2026-10-07 gradient masking (AA 0.88 vs PGD-val 62); parent of a +40ep PGD-7 same-eps continuation"
+vit_b_cvst/linftrades_4_init1,"2026-10-07 catastrophic overfitting, 2nd time (AA 0.39); parent of a +40ep PGD-7 same-eps continuation"
+convnext_base_dvd_b_linf_2_init0,"2026-10-07 catastrophic overfitting (AA 0.10); parent of a +40ep PGD-7 same-eps continuation"
+convnext_base_dvd_b_l2_2_init0,"2026-10-07 catastrophic overfitting (AA 0.20); parent of a +40ep PGD-7 same-eps continuation"
+convnext_base_dvd_b_l2_4_init1,"2026-10-07 collapse/divergence ~ep 76-90 (AA 8.79); parent of a +40ep PGD-7 same-eps continuation"
+convnext_base_dvd_b_l1_4_init0,"2026-10-07 catastrophic overfitting (AA 4.98); parent of a +40ep PGD-7 same-eps continuation"
+convnext_base_linftrades_cont4to8_init0,"2026-10-07 collapsed at continuation start (AA 1.86); rerun with attack_it=7"
+convnext_base_linftrades_cont4to8_init1,"2026-10-07 collapsed at continuation start (AA 4.49); rerun with attack_it=7"
+convnext_base_dvd_b_l2_cont4to6_init1_contepoch,"2026-10-07 collapsed (AA 0.10); parent of a +40ep PGD-7 same-eps continuation"
+vit_b_cvst/l2trades_4_init1,"2026-10-07 gradient masking (AA 12.01, ep113; eps6 cont scores 17.4); parent of a +40ep PGD-7 same-eps continuation"

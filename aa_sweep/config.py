@@ -82,6 +82,12 @@ QUEUE_ARRAYS: dict[str, tuple[str, str]] = {
 # A unit that fails (or ends with cells still missing) this many times is parked as failed.
 QUEUE_MAX_ATTEMPTS = int(os.environ.get("AA_SWEEP_QUEUE_MAX_ATTEMPTS", "3"))
 
+# Finished models the sweep must not touch: `model_name,reason`, exact DB names (no globs -- a
+# nested sjm name and a flat convnext name can end the same way, see the README). Used for runs that
+# collapsed and are queued for a rerun: the frozen AIRCC DB reports them `finished` forever, so
+# without this the sweep would keep attacking the collapsed copy, or a rerun's half-trained dir.
+EXCLUDES_CSV = Path(os.environ.get("AA_SWEEP_EXCLUDES", Path(__file__).resolve().parent / "sweep_excludes.csv"))
+
 JOB_NAME_PREFIX = "aaswp"
 SSH_TIMEOUT_SECONDS = int(os.environ.get("AA_SWEEP_SSH_TIMEOUT", "60"))
 

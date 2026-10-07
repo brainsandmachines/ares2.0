@@ -31,6 +31,8 @@ def _install_fakes(monkeypatch, probe, live_names=(), aircc_finished=(), sjm_fin
     submitted = []
 
     monkeypatch.setattr(submit_mod, "check_paths", lambda: [])
+    # The real checked-in excludes list must not leak into fixtures.
+    monkeypatch.setattr(config, "EXCLUDES_CSV", Path("/nonexistent/sweep_excludes.csv"))
     monkeypatch.setattr(
         plan_mod, "finished_models",
         lambda db: list(aircc_finished) if db == config.AIRCC_DB else list(sjm_finished),
@@ -312,3 +314,31 @@ def test_feed_queue_pipes_json_to_the_cluster_cli():
     assert json.loads(captured["input"]) == [unit]
     submit_mod.feed_queue([unit], dry_run=True, run=fake_run)
     assert captured["cmd"][-1].endswith("feed --dry-run")
+
+
+def test_an_excluded_model_is_never_fed(monkeypatch, tmp_path, capsys):
+    probe = {**_empty_probe("m"), **_empty_probe("bad")}
+    submitted = _install_fakes(monkeypatch, probe, sjm_finished=["m"], aircc_finished=["bad"])
+    excludes = tmp_path / "sweep_excludes.csv"
+    excludes.write_text('model_name,reason\nbad,"collapsed; rerun pending"\n')
+    monkeypatch.setattr(config, "EXCLUDES_CSV", excludes)
+
+    assert submit_mod.main(["--skip-mount-check"]) == 0
+
+    assert {name for name, _ in submitted} == {"m"}
+    assert "excluded bad: collapsed; rerun pending" in capsys.readouterr().out
+
+
+def test_an_exclude_without_a_reason_aborts(monkeypatch, tmp_path):
+    submitted = _install_fakes(monkeypatch, _empty_probe(), sjm_finished=["m"])
+    excludes = tmp_path / "sweep_excludes.csv"
+    excludes.write_text("model_name,reason\nm,\n")
+    monkeypatch.setattr(config, "EXCLUDES_CSV", excludes)
+    monkeypatch.setattr(submit_mod, "notify", lambda subject, body, **kw: None)
+
+    assert submit_mod.main(["--skip-mount-check"]) == 1
+    assert submitted == []
+
+
+def test_the_checked_in_excludes_list_parses():
+    assert plan_mod.load_excludes(Path(config.__file__).with_name("sweep_excludes.csv"))

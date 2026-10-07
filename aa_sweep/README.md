@@ -215,6 +215,14 @@ Cluster side: each array task runs `data_analysis/autoattack_array_eval.py --mod
 --checkpoint-kinds <one kind>`. `sbatches/aa_sweep_completion.sbatch` is the same command as a
 standalone job, kept for one-off manual runs (its `aaswp_*` name keeps the feed off that unit).
 
+## Excluding a model
+
+`sweep_excludes.csv` (`model_name,reason`, exact DB names) keeps a finished model out of both lanes,
+e.g. a collapsed run waiting for a rerun (the frozen AIRCC DB says `finished` forever, so the sweep
+would otherwise attack the collapsed copy, or the rerun's half-trained dir). The feed only upserts,
+so units already in a queue must also be dropped by hand (`cluster_queue drop <id>` /
+`botero drop <id>`). Remove the line once the rerun is `finished`.
+
 ## Things that are easy to get wrong
 
 - **Nothing is ever recomputed.** `--force` is never passed. The engine diffs the CSV's existing

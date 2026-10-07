@@ -204,10 +204,25 @@ def main(argv: list[str] | None = None) -> int:
         notify("[aa_sweep] job DB read failed", str(exc), dedup_key="aa_sweep-db-read-failed")
         return 1
 
+    try:
+        excludes = plan_mod.load_excludes(config.EXCLUDES_CSV)
+    except Exception as exc:
+        log(f"ABORT: reading the excludes list failed: {exc}")
+        notify("[aa_sweep] excludes list unreadable", str(exc), dedup_key="aa_sweep-excludes-failed")
+        return 1
+
     if args.model:
         wanted = set(args.model)
         aircc_finished = [m for m in aircc_finished if m in wanted]
         sjm_finished = [m for m in sjm_finished if m in wanted]
+
+    # Excluded models are never fed, so they can never be claimed. Rows already in a queue are not
+    # touched here -- the feed only upserts -- and have to be dropped by hand.
+    excluded = sorted((set(aircc_finished) | set(sjm_finished)) & set(excludes))
+    for name in excluded:
+        log(f"excluded {name}: {excludes[name]}")
+    aircc_finished = [m for m in aircc_finished if m not in excludes]
+    sjm_finished = [m for m in sjm_finished if m not in excludes]
 
     candidates = sorted(set(aircc_finished) | set(sjm_finished))
     log(f"finished models: aircc={len(aircc_finished)} sjm={len(sjm_finished)} total={len(candidates)}")
