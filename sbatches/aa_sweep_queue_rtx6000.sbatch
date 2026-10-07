@@ -14,10 +14,14 @@
 # tomer_advtrain_pro by card size). Not a feed-managed lane: nothing resubmits it.
 #   sbatch --partition=rtx_pro_6000 --job-name=aaq-pro sbatches/aa_sweep_queue_rtx6000.sbatch
 #
+# ise-6000-01 has no /groups mount: every task there dies in <1s on the ImageNet val-dir check, and
+# that burned 156 of array 21719559's 200 tasks (2026-10-07).
+#
 #SBATCH --job-name=aaq-rtx6000
 #SBATCH --partition=rtx6000
 #SBATCH --qos=golan-neuro
 #SBATCH --gres=gpu:1
+#SBATCH --exclude=ise-6000-01
 #SBATCH --array=1-200%8
 #SBATCH --time=7-00:00:00
 #SBATCH --signal=B:TERM@120

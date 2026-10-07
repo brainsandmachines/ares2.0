@@ -12,7 +12,7 @@
 #SBATCH --partition=main
 #SBATCH --gpus=1
 #SBATCH --constraint="rtx_3090|rtx_4090|rtx_6000|rtx_pro_6000"
-#SBATCH --exclude=cs-pheno-[01-12],ise-pheno-[01-12]
+#SBATCH --exclude=cs-pheno-[01-12],ise-pheno-[01-12],dt-3090-01
 #SBATCH --array=1-200%8
 #SBATCH --time=7-00:00:00
 #SBATCH --signal=B:TERM@120
@@ -22,5 +22,7 @@
 
 # --constraint/--exclude as in aa_sweep_completion.sbatch: >=24GB cards only, and never the
 # *-pheno-* nodes whose second card is an 11GB gtx_1080 that --gpus=1 may hand out.
+# dt-3090-01 has no /groups mount: every task there dies in <1s on the ImageNet val-dir check, and
+# that burned 191 of array 22156585's 200 tasks (2026-10-07).
 
 source /home/ashtomer/projects/ares/aa_sweep/scripts/aa_queue_task.sh
