@@ -46,16 +46,22 @@ def train_one_epoch(
     dvd_state = build_dvd_state(cfg, len(loader))
     
     attack_domain = attacks.get('attack_domain', 'pixel')
+    # PGD step warmup over the first 5 epochs. A continuation restarts at epoch 0, so
+    # it sets disable_attack_step_warmup to attack with the full step from the start.
+    step_ramp = 1.0 if attacks.get('disable_attack_step_warmup', False) else min(epoch, 5) / 5
     if attack_domain == 'pixel':
-        att_step = attacks.attack_step * min(epoch, 5) / 5
+        att_step = attacks.attack_step * step_ramp
         att_eps = attacks.attack_eps
         att_it = attacks.attack_it
     elif attack_domain == 'v1_feature':
-        att_step = attacks.v1_attack_step * min(epoch, 5) / 5
+        att_step = attacks.v1_attack_step * step_ramp
         att_eps = attacks.v1_attack_eps
         att_it = attacks.v1_attack_it
     else:
         raise ValueError(f"Unsupported attack_domain: {attack_domain}")
+    if attacks.advtrain and _logger is not None and dist.rank == 0:
+        _logger.info(f"Train attack epoch={epoch}: eps={att_eps} step={att_step} it={att_it} "
+                     f"step_ramp={step_ramp:g}")
 
     for batch_idx, (input, target) in enumerate(loader):
         if runtime_probe is not None:

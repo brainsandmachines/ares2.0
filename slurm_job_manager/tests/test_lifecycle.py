@@ -74,6 +74,23 @@ def test_batch_divisor_applies_to_shift_managed_rows(db, monkeypatch, tmp_path):
     assert _val(cmd, "training.epochs") == "158"
 
 
+def test_step_warmup_flag_is_passed_through_for_continuations(db, tmp_path):
+    db.upsert_pending("dep", 150, 1)
+    db.set_best_checkpoint("dep", "/ckpt/dep/model_best_adv.pth.tar", 28.6)
+    row = _row(init_mode="continuation", dependency_model_name="dep",
+               **{"attacks.attack_it": "7", "attacks.disable_attack_step_warmup": "true"})
+    cmd = lifecycle.build_command(row, tmp_path, db, python_exe="py")
+    assert _val(cmd, "attacks.disable_attack_step_warmup") == "true"
+    assert _val(cmd, "attacks.attack_it") == "7"
+    assert _val(cmd, "continuation.checkpoint_path") == "/ckpt/dep/model_best_adv.pth.tar"
+    assert _count(cmd, "attacks.disable_attack_step_warmup") == 1
+
+
+def test_step_warmup_flag_is_omitted_when_blank(db, tmp_path):
+    cmd = lifecycle.build_command(_row(), tmp_path, db, python_exe="py")
+    assert _count(cmd, "attacks.disable_attack_step_warmup") == 0
+
+
 # --------------------------------------------------------------------------
 # resume shift
 # --------------------------------------------------------------------------

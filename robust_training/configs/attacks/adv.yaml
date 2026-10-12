@@ -9,6 +9,9 @@ attack_step: null
 attack_it: 3
 attack_random_start: True # only used for validation
 attack_use_best: True
+# True = full PGD step from epoch 0 in training and validation (no 5-epoch step ramp).
+# Set on continuation runs, which restart at epoch 0 from an already-robust model.
+disable_attack_step_warmup: False
 bce_loss: False
 
 v1_attack_eps: 1.0

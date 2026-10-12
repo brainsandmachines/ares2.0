@@ -63,7 +63,9 @@ def validate(model, loader, loss_fn, cfg, amp_autocast=None, log_suffix='', _log
 
         # adv eval process
         if attacks.advtrain or attacks.gradnorm:
-            if epoch > 0:
+            # Epoch 0 trains at step 0 under the warmup, so its adv eval is skipped; without
+            # the warmup (e.g. a continuation) epoch 0 is evaluated like any other epoch.
+            if epoch > 0 or attacks.get("disable_attack_step_warmup", False):
                 # Keep training-time warmup by default; allow eval callers to opt out.
                 if attack_domain == 'pixel':
                     base_attack_step = attacks.attack_step
