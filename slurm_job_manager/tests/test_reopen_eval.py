@@ -109,3 +109,72 @@ def test_cli_skips_sweep_excludes(db, tmp_path, monkeypatch, capsys):
     assert reopen_eval.main(base + ["--apply", "--all"]) == 0
     assert "0 model(s)" in capsys.readouterr().out
     assert db.get("bad").status == "finished"
+
+
+def _aa_queue(path, rows):
+    import sqlite3
+
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE units (model_name TEXT, kind TEXT, status TEXT)")
+    conn.executemany("INSERT INTO units VALUES (?,?,?)", rows)
+    conn.commit()
+    conn.close()
+
+
+def test_cli_skips_models_with_live_aa_queue_units(db, tmp_path, capsys):
+    models = tmp_path / "models"
+    for name in ("busy", "done_in_queue"):
+        _finish(db, name)
+        _write_model(models, name, [("l2", 4)])
+    queue = tmp_path / "aa_queue.sqlite"
+    _aa_queue(queue, [("busy", "best", "running"), ("done_in_queue", "best", "finished")])
+
+    base = ["--db", str(tmp_path / "jobs.sqlite"), "--models-root", str(models),
+            "--aa-queue-db", str(queue)]
+    assert reopen_eval.main(base + ["--apply", "--all"]) == 0
+    out = capsys.readouterr().out
+    assert "summary incomplete=1 reopened=1 capped=0 aa_queue_busy=1" in out
+    assert db.get("busy").status == "finished"
+    assert db.get("done_in_queue").status == "pending"
+
+
+def test_cli_caps_repeated_reopens_unless_named(db, tmp_path, capsys):
+    models = tmp_path / "models"
+    _finish(db, "flaky")
+    _write_model(models, "flaky", [("l2", 4)])
+    base = ["--db", str(tmp_path / "jobs.sqlite"), "--models-root", str(models),
+            "--aa-queue-db", str(tmp_path / "absent.sqlite"), "--max-reopens", "2"]
+
+    for _ in range(2):   # re-open, the eval-only rerun "fails" again, finished again
+        assert reopen_eval.main(base + ["--apply", "--all"]) == 0
+        assert db.get("flaky").status == "pending"
+        db.claim_next(9, {})
+        db.mark_finished("flaky")
+    capsys.readouterr()
+
+    assert reopen_eval.main(base + ["--apply", "--all"]) == 0
+    assert "summary incomplete=0 reopened=0 capped=1" in capsys.readouterr().out
+    assert db.get("flaky").status == "finished"
+
+    # Naming the model explicitly overrides the cap.
+    assert reopen_eval.main(base + ["--apply", "--model", "flaky"]) == 0
+    assert db.get("flaky").status == "pending"
+
+
+def test_history_forgets_a_model_once_complete(db, tmp_path):
+    models = tmp_path / "models"
+    _finish(db, "m")
+    d = _write_model(models, "m", [("l2", 4)])
+    base = ["--db", str(tmp_path / "jobs.sqlite"), "--models-root", str(models),
+            "--aa-queue-db", str(tmp_path / "absent.sqlite")]
+    reopen_eval.main(base + ["--apply", "--all"])
+    history = tmp_path / "reopen_eval_history.json"
+    assert "m" in history.read_text()
+
+    db.claim_next(9, {})
+    db.mark_finished("m")
+    import shutil
+    shutil.rmtree(d)
+    _write_model(models, "m", FULL)
+    reopen_eval.main(base + ["--apply", "--all"])
+    assert "m" not in __import__("json").loads(history.read_text())

@@ -90,6 +90,13 @@ python -m slurm_job_manager.reopen_eval --db $SJM_DB                  # dry run:
 python -m slurm_job_manager.reopen_eval --db $SJM_DB --apply --all    # or --model NAME (repeatable)
 ```
 
+A **daily Botero cron (07:00)** runs this with `--apply --all` over ssh:
+`slurm_job_manager/scripts/reopen_eval_daily.sh` (`--dry-run` to preview; log in
+`logs/reopen_eval.log`), and mails when it re-opens or caps something. It never re-opens models in
+`aa_sweep/sweep_excludes.csv` or ones the aa_sweep queue still holds, and `--all` stops after
+`--max-reopens` (2) re-opens of the same model — those show up as `capped` (an eval that keeps
+failing: read its final_eval log). `--model NAME` ignores the cap.
+
 A re-opened row goes back to `pending` (only `finished` rows with `current_epoch >= total_epochs`;
 short rows are `seed --reconcile`'s job). The re-claim resumes from its own `last.pth.tar` at the
 final epoch, trains nothing, and final_eval runs only the missing cells. While it is pending/running,

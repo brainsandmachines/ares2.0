@@ -19,6 +19,13 @@ on the three norms, with the same completeness rule (``is_complete_output``).
 Models in ``aa_sweep/sweep_excludes.csv`` (discarded runs: catastrophic overfitting,
 gradient masking) are never re-opened, matching the sweep's own census.
 
+Also skipped: models the aa_sweep cluster queue still has pending/running units
+for (both would write the same CSVs). ``--all`` re-opens a model at most
+``--max-reopens`` times (history in ``reopen_eval_history.json`` next to the DB),
+so an eval that keeps failing is reported as ``capped`` instead of relaunched
+daily; ``--model NAME`` ignores the cap. The last line is a parseable summary for
+the daily cron (``scripts/reopen_eval_daily.sh``).
+
 Caveat: while a re-opened row is pending/running, its not-yet-claimed dependents
 are blocked again (the claim gate wants the dependency finished).
 """
@@ -26,8 +33,11 @@ are blocked again (the claim gate wants the dependency finished).
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import sqlite3
 import sys
+import time
 from pathlib import Path
 
 from .db import JobDB, STATUS_FINISHED
@@ -75,6 +85,33 @@ def missing_cells(model_dir: Path, norms, eps_inputs, kinds) -> dict[str, int]:
     return out
 
 
+def aa_queue_active_models(queue_db: Path) -> set[str]:
+    """Models with a pending/running unit in the aa_sweep cluster queue (read-only; none if absent)."""
+    if not Path(queue_db).exists():
+        return set()
+    conn = sqlite3.connect(f"file:{queue_db}?mode=ro", uri=True, timeout=30)
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT model_name FROM units WHERE status IN ('pending','running')"
+        ).fetchall()
+    finally:
+        conn.close()
+    return {r[0] for r in rows}
+
+
+def _load_history(path: Path) -> dict[str, list[int]]:
+    try:
+        return json.loads(path.read_text())
+    except FileNotFoundError:
+        return {}
+
+
+def _save_history(path: Path, history: dict[str, list[int]]) -> None:
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(history, indent=2, sort_keys=True))
+    os.replace(tmp, path)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="slurm_job_manager.reopen_eval",
                                  description=__doc__.split("\n\n")[0])
@@ -85,6 +122,12 @@ def main(argv=None) -> int:
                     help="limit to this model (repeatable)")
     ap.add_argument("--all", action="store_true", help="with --apply: re-open every incomplete model")
     ap.add_argument("--apply", action="store_true", help="actually re-open (default: dry run)")
+    ap.add_argument("--max-reopens", type=int, default=2,
+                    help="with --all: skip a model already re-opened this many times (default 2)")
+    ap.add_argument("--history", type=Path, default=None,
+                    help="re-open history JSON (default: reopen_eval_history.json next to the DB)")
+    ap.add_argument("--aa-queue-db", type=Path, default=None,
+                    help="aa_sweep cluster queue DB (default: aa_sweep.config.CLUSTER_QUEUE_DB)")
     args = ap.parse_args(argv)
     if not args.db:
         ap.error("no DB path (set --db or $SJM_DB)")
@@ -96,6 +139,9 @@ def main(argv=None) -> int:
 
     norms, eps_inputs, kinds = configured_grid()
     excludes = load_excludes(aa_config.EXCLUDES_CSV)
+    aa_busy = aa_queue_active_models(args.aa_queue_db or Path(aa_config.CLUSTER_QUEUE_DB))
+    history_path = args.history or Path(args.db).with_name("reopen_eval_history.json")
+    history = _load_history(history_path)
     db = JobDB(args.db)
     wanted = set(args.model)
     jobs = [j for j in db.all_jobs()
@@ -104,32 +150,52 @@ def main(argv=None) -> int:
 
     print(f"grid: {','.join(norms)} x eps {','.join(f'{e:g}' for e in eps_inputs)} "
           f"on {','.join(kinds)}  ({len(jobs)} finished rows checked)")
-    incomplete = []
+    incomplete, capped, busy = [], [], []
     for job in sorted(jobs, key=lambda j: j.model_name):
         if job.model_name in excludes:
             print(f"  {job.model_name}: excluded ({excludes[job.model_name]}), skipped", file=sys.stderr)
+            continue
+        if job.model_name in aa_busy:
+            busy.append(job.model_name)
+            print(f"  {job.model_name}: aa_sweep queue still has units for it, skipped", file=sys.stderr)
             continue
         model_dir = args.models_root / job.model_name
         if not model_dir.is_dir():
             print(f"  {job.model_name}: model dir missing ({model_dir}), skipped", file=sys.stderr)
             continue
         missing = missing_cells(model_dir, norms, eps_inputs, kinds)
-        if missing:
-            incomplete.append(job.model_name)
-            detail = ", ".join(f"{k}={n}" for k, n in missing.items())
-            print(f"  {job.model_name:55s} missing cells: {detail}")
+        if not missing:
+            history.pop(job.model_name, None)   # complete now: forget past re-opens
+            continue
+        detail = ", ".join(f"{k}={n}" for k, n in missing.items())
+        n_prev = len(history.get(job.model_name, []))
+        if not wanted and n_prev >= args.max_reopens:
+            capped.append(job.model_name)
+            print(f"  {job.model_name:55s} missing cells: {detail}  CAPPED "
+                  f"(re-opened {n_prev}x already; investigate its final_eval log)")
+            continue
+        incomplete.append(job.model_name)
+        print(f"  {job.model_name:55s} missing cells: {detail}"
+              + (f"  (re-opened {n_prev}x before)" if n_prev else ""))
 
     for name in sorted(wanted - {j.model_name for j in jobs}):
         print(f"  {name}: not a finished fully-trained row, skipped", file=sys.stderr)
 
     print(f"{len(incomplete)} model(s) with an incomplete AA grid")
+    reopened = 0
     if not args.apply:
         if incomplete:
             print("dry run -- re-run with --apply --all (or --model NAME) to re-open")
-        return 0
-
-    reopened = sum(db.reopen_for_eval(name) for name in incomplete)
-    print(f"re-opened {reopened} row(s) -> pending (eval-only rerun on next claim)")
+    else:
+        now = int(time.time())
+        for name in incomplete:
+            if db.reopen_for_eval(name):
+                reopened += 1
+                history.setdefault(name, []).append(now)
+        print(f"re-opened {reopened} row(s) -> pending (eval-only rerun on next claim)")
+        _save_history(history_path, history)
+    print(f"[reopen_eval] {'' if args.apply else 'DRY-RUN '}summary incomplete={len(incomplete)} "
+          f"reopened={reopened} capped={len(capped)} aa_queue_busy={len(busy)}")
     return 0
 
 
