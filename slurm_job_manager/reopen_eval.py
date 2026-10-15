@@ -16,6 +16,8 @@ epoch, trains nothing, and the in-process final_eval fills only the missing cell
 The grid checked is the one final_eval would run: ``final_eval_aa_eps_inputs`` and
 ``final_eval_aa_checkpoint_kinds`` from ``robust_training/configs/config.yaml``,
 on the three norms, with the same completeness rule (``is_complete_output``).
+Models in ``aa_sweep/sweep_excludes.csv`` (discarded runs: catastrophic overfitting,
+gradient masking) are never re-opened, matching the sweep's own census.
 
 Caveat: while a re-opened row is pending/running, its not-yet-claimed dependents
 are blocked again (the claim gate wants the dependency finished).
@@ -89,7 +91,11 @@ def main(argv=None) -> int:
     if args.apply and not (args.all or args.model):
         ap.error("--apply needs --all or at least one --model")
 
+    from aa_sweep import config as aa_config
+    from aa_sweep.plan import load_excludes
+
     norms, eps_inputs, kinds = configured_grid()
+    excludes = load_excludes(aa_config.EXCLUDES_CSV)
     db = JobDB(args.db)
     wanted = set(args.model)
     jobs = [j for j in db.all_jobs()
@@ -100,6 +106,9 @@ def main(argv=None) -> int:
           f"on {','.join(kinds)}  ({len(jobs)} finished rows checked)")
     incomplete = []
     for job in sorted(jobs, key=lambda j: j.model_name):
+        if job.model_name in excludes:
+            print(f"  {job.model_name}: excluded ({excludes[job.model_name]}), skipped", file=sys.stderr)
+            continue
         model_dir = args.models_root / job.model_name
         if not model_dir.is_dir():
             print(f"  {job.model_name}: model dir missing ({model_dir}), skipped", file=sys.stderr)

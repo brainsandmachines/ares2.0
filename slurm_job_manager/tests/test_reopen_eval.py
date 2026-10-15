@@ -93,3 +93,19 @@ def test_cli_dry_run_writes_nothing_and_apply_all_reopens_incomplete(db, tmp_pat
     assert reopen_eval.main(base + ["--apply", "--all"]) == 0
     assert db.get("arch/partial").status == "pending"
     assert db.get("complete").status == "finished"
+
+
+def test_cli_skips_sweep_excludes(db, tmp_path, monkeypatch, capsys):
+    from aa_sweep import config as aa_config
+
+    excludes = tmp_path / "excludes.csv"
+    excludes.write_text("model_name,reason\nbad,catastrophic overfitting\n")
+    monkeypatch.setattr(aa_config, "EXCLUDES_CSV", excludes)
+    models = tmp_path / "models"
+    _finish(db, "bad")
+    _write_model(models, "bad", [("l2", 4)])
+
+    base = ["--db", str(tmp_path / "jobs.sqlite"), "--models-root", str(models)]
+    assert reopen_eval.main(base + ["--apply", "--all"]) == 0
+    assert "0 model(s)" in capsys.readouterr().out
+    assert db.get("bad").status == "finished"
