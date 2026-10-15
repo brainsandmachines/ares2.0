@@ -32,7 +32,7 @@ EPS_NORM_SCORES_JSON = "autoattack_eps_norm_scores.json"
 def _best_from_eps_norm_json(
     model_dir: Path, norm: str, eps: float
 ) -> Optional[tuple[str, float]]:
-    """Fast path for final_eval_aatype=eps_norm runs: a single trained-norm/eps
+    """Fast path: final_eval (eps_norm, or full_sweep phase 1) writes a single trained-norm/eps
     AutoAttack score per checkpoint kind, written directly by final_eval_helpers
     instead of a full linf/l2/l1 CSV grid. Only usable when it matches the
     requested threat model."""

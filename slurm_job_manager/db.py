@@ -221,6 +221,23 @@ class JobDB:
             return cur.rowcount
         return self._atomic(op)
 
+    def reopen_for_eval(self, model_name: str) -> int:
+        """Re-open a finished, fully-trained row so its final_eval runs again.
+
+        Returns 1 if the row went finished -> pending, else 0. The re-claim resumes
+        from its own last.pth.tar at ``start_epoch == epochs``, so no epoch trains
+        and the in-process final_eval fills only the missing AutoAttack cells. Rows
+        short of ``total_epochs`` belong to :meth:`reconcile`, not here.
+        """
+        def op(conn: sqlite3.Connection) -> int:
+            cur = conn.execute(
+                "UPDATE jobs SET status='pending', slurm_job_id=NULL, claimed_ts=NULL "
+                "WHERE model_name=? AND status='finished' AND current_epoch >= total_epochs",
+                (model_name,),
+            )
+            return cur.rowcount
+        return self._atomic(op)
+
     # ---- claiming -----------------------------------------------------------
     def claim_next(self, slurm_job_id: int, deps: Mapping[str, str]) -> Optional[Job]:
         """Atomically claim the top eligible pending model for this array task.

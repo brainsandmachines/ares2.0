@@ -2,13 +2,10 @@
 # The Botero lane's worker tick. Runs queued AutoAttack sweep units on this machine's RTX 4090,
 # strictly one at a time, against models already sitting in the local archives.
 #
-# Install (Botero crontab -e) -- every 10 minutes. The tick is nearly free when there is nothing to
-# do (one sqlite read + one nvidia-smi), and the flock below means a tick landing on a running job
-# costs nothing at all. A short interval only decides how fast the lane notices that the GPU came
-# free or that the 21:30 cron topped the queue up:
-#   */10 * * * * /home/tomer_a/Documents/ares/aa_sweep/scripts/aa_sweep_botero_runner.sh >> /home/tomer_a/Documents/ares/aa_sweep/logs/botero_runner.log 2>&1
+# No longer in cron (removed 2026-10-15, together with the 21:30 submit cron): training jobs run the
+# full grid in-process (final_eval_aatype=full_sweep). Run it by hand to drain a manual backfill.
 #
-# The queue itself is filled by `python -m aa_sweep.submit` (the 21:30 cron) and can be inspected or
+# The queue itself is filled by `python -m aa_sweep.submit` and can be inspected or
 # edited by hand with `python -m aa_sweep.botero status|enqueue|reset|drop`.
 #
 # Safe to run by hand. To see only whether the GPU is free:

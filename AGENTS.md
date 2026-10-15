@@ -121,8 +121,12 @@ the user before running `seed.py` writes or `sbatch`.
 - **`data_analysis/`** — standalone eval/plotting scripts (`final_eval.py`, `autoattack_eval.py` and
   variants, `training_plots.py`, shape-bias analysis) generally run against already-trained
   checkpoints, independent of the job managers.
-- **`aa_sweep/`** — nightly driver that completes the AutoAttack grid (3 norms × 5 eps × 3
-  checkpoint kinds) for every finished model. **Two independent lanes that never exchange models:**
+- **`aa_sweep/`** — completes the AutoAttack grid (3 norms × 5 eps × 3 checkpoint kinds) for
+  finished models. **Manual-only since 2026-10-15:** its two Botero crons were removed because the
+  training job now runs the full grid in-process (`final_eval_aatype: full_sweep`, trained cell
+  first, then the rest — see `config.yaml`); a finished sjm model still missing cells is re-opened
+  for an eval-only rerun with `python -m slurm_job_manager.reopen_eval`. Use `aa_sweep` for manual
+  backfills/audits (`python -m aa_sweep.submit --dry-run`). **Two independent lanes that never exchange models:**
   the Slurm lane submits sbatch jobs against the cluster's own `results/models` copies, and the
   Botero lane runs on this machine's RTX 4090 against `/mnt/data4t/models`. Each writes its result
   CSVs back into the model dir it evaluated; the split is by cluster-directory presence and is

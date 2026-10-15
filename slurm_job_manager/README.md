@@ -77,6 +77,25 @@ python -m slurm_job_manager.monitor                            # (botero) escala
 
 Change occupied GPUs: `scancel` the array and resubmit with a new `--array=1-200%K`.
 
+## Re-open a finished model for its AutoAttack grid (eval-only)
+
+Every job ends with the full AutoAttack grid (`final_eval_aatype: full_sweep`: linf/l2/l1 ×
+`final_eval_aa_eps_inputs` on best/last/advbest — the trained cell first, so `best_checkpoint`
+lands in the DB early, then the rest). A model can still be `finished` without it: it was already
+running when a config change landed (a process keeps the config it started with), or its
+final_eval raised (logged, exit 0, marked finished anyway). Find and re-open those:
+
+```bash
+python -m slurm_job_manager.reopen_eval --db $SJM_DB                  # dry run: list + missing cells
+python -m slurm_job_manager.reopen_eval --db $SJM_DB --apply --all    # or --model NAME (repeatable)
+```
+
+A re-opened row goes back to `pending` (only `finished` rows with `current_epoch >= total_epochs`;
+short rows are `seed --reconcile`'s job). The re-claim resumes from its own `last.pth.tar` at the
+final epoch, trains nothing, and final_eval runs only the missing cells. While it is pending/running,
+its **not-yet-claimed dependents are blocked again** (the claim gate wants the dependency finished);
+already-running dependents are unaffected.
+
 ## Verify (offline)
 
 ```bash

@@ -384,15 +384,31 @@ def test_maybe_run_final_eval_default_call(monkeypatch, tmp_path):
     assert kwargs["plots"] is True
 
 
-def test_maybe_run_final_eval_passes_autoattack_eps_inputs(monkeypatch, tmp_path):
-    calls = []
+def _install_fake_aa_module(monkeypatch, events, robust_acc_by_kind=None, complete=False):
+    """Fake data_analysis.autoattack_array_eval whose runner appends one CSV row per
+    requested (norm, eps) cell, like the real engine, and records each call."""
+    robust_acc_by_kind = robust_acc_by_kind or {"best": 42.0, "last": 41.0, "advbest": 40.0}
     fake_module = types.ModuleType("data_analysis.autoattack_array_eval")
-
-    def _is_complete_output(*_args, **_kwargs):
-        return False
+    fieldnames = ["checkpoint_path", "attack_norm", "epsilon_input", "robust_acc"]
 
     def _run_autoattack_sweep_for_checkpoint(**kwargs):
-        calls.append(kwargs)
+        events.append(("run", kwargs))
+        csv_path = Path(kwargs["model_dir"]) / kwargs["output_csv"]
+        new_file = not csv_path.exists()
+        with csv_path.open("a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            if new_file:
+                writer.writeheader()
+            for norm in kwargs["norms"]:
+                for eps in kwargs["eps_inputs"]:
+                    writer.writerow(
+                        {
+                            "checkpoint_path": str(kwargs["checkpoint_path"]),
+                            "attack_norm": norm,
+                            "epsilon_input": eps,
+                            "robust_acc": robust_acc_by_kind[kwargs["checkpoint_kind"]],
+                        }
+                    )
 
     def _find_checkpoint_for_kind(model_dir, checkpoint_kind):
         candidates = {
@@ -412,33 +428,40 @@ def test_maybe_run_final_eval_passes_autoattack_eps_inputs(monkeypatch, tmp_path
         return f"{path.stem}_{suffix}{path.suffix}"
 
     fake_module.find_checkpoint_for_kind = _find_checkpoint_for_kind
-    fake_module.is_complete_output = _is_complete_output
+    fake_module.is_complete_output = lambda *_a, **_k: complete
     fake_module.output_csv_for_checkpoint_kind = _output_csv_for_checkpoint_kind
     fake_module.run_autoattack_sweep_for_checkpoint = _run_autoattack_sweep_for_checkpoint
     monkeypatch.setitem(__import__("sys").modules, "data_analysis.autoattack_array_eval", fake_module)
     monkeypatch.setattr(advt.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(feh, "_maybe_plot_aa_checkpoint_comparison", lambda *a, **k: events.append(("plot", a)))
 
-    plot_calls = []
-    monkeypatch.setattr(feh, "_maybe_plot_aa_checkpoint_comparison", lambda *a, **k: plot_calls.append((a, k)))
+    from aircc.aircc_job_manager import progress as aircc_progress
 
-    class _Logger:
-        def info(self, *_a, **_k):
-            return None
+    monkeypatch.setattr(
+        aircc_progress,
+        "write_best_checkpoint",
+        lambda output_dir, *a, **k: events.append(
+            ("best", (Path(output_dir) / "autoattack_eps_norm_scores.json").exists())
+        ),
+    )
 
-        def warning(self, *_a, **_k):
-            return None
 
-        def error(self, *_a, **_k):
-            return None
+class _QuietLogger:
+    def info(self, *_a, **_k):
+        return None
 
-        def exception(self, *_a, **_k):
-            return None
+    def warning(self, *_a, **_k):
+        return None
 
-    output_dir = tmp_path / "out"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "model_best.pth.tar").write_bytes(b"x")
+    def error(self, *_a, **_k):
+        return None
 
-    cfg = OmegaConf.merge(
+    def exception(self, *_a, **_k):
+        return None
+
+
+def _full_sweep_cfg(**extra):
+    return OmegaConf.merge(
         _runtime_test_cfg(_compose_base_cfg()),
         OmegaConf.create(
             {
@@ -453,25 +476,94 @@ def test_maybe_run_final_eval_passes_autoattack_eps_inputs(monkeypatch, tmp_path
                 "final_eval_aa_norm": None,
                 "final_eval_aa_eps": None,
                 "final_eval_aa_max_batches": 8,
-                "final_eval_aa_eps_inputs": "1,2,4,6,8,12",
+                "final_eval_aa_eps_inputs": "1,2,4,6,8",
                 "final_eval_aa_completion_csv": "autoattack_sweep_results.csv",
+                "final_eval_aa_checkpoint_kinds": "best,last,advbest",
                 "final_eval_skip_if_complete": True,
                 "final_eval_num_workers": 8,
+                # l2 has no unit conversion, so the trained eps_input equals attack_eps directly.
+                "attacks": {"attack_norm": "l2", "attack_eps": 4.0},
+                **extra,
             }
         ),
     )
 
-    advt._maybe_run_final_eval(cfg, str(output_dir), _Logger())
 
-    assert len(calls) == 1
-    assert calls[0]["eps_inputs"] == [1.0, 2.0, 4.0, 6.0, 8.0, 12.0]
-    assert calls[0]["norms"] == ["linf", "l2", "l1"]
-    assert calls[0]["checkpoint_kind"] == "best"
-    assert len(plot_calls) == 1
-    assert not (output_dir / "autoattack_eps_norm_scores.json").exists()
+def test_final_eval_default_aatype_is_full_sweep():
+    assert _compose_base_cfg().final_eval_aatype == "full_sweep"
 
 
-def test_maybe_run_final_eval_defaults_to_trained_norm_eps(monkeypatch, tmp_path):
+def test_maybe_run_final_eval_full_sweep_runs_trained_cell_first(monkeypatch, tmp_path):
+    events = []
+    _install_fake_aa_module(monkeypatch, events)
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "model_best.pth.tar").write_bytes(b"x")
+    (output_dir / "last.pth.tar").write_bytes(b"x")
+
+    advt._maybe_run_final_eval(_full_sweep_cfg(), str(output_dir), _QuietLogger())
+
+    runs = [kwargs for kind, kwargs in events if kind == "run"]
+    # Phase 1: the trained cell on every existing kind (advbest has no checkpoint).
+    assert [(r["checkpoint_kind"], r["norms"], r["eps_inputs"]) for r in runs[:2]] == [
+        ("best", ["l2"], [4.0]),
+        ("last", ["l2"], [4.0]),
+    ]
+    # Phase 2: the full grid on every existing kind.
+    assert [(r["checkpoint_kind"], r["norms"], r["eps_inputs"]) for r in runs[2:]] == [
+        ("best", ["linf", "l2", "l1"], [1.0, 2.0, 4.0, 6.0, 8.0]),
+        ("last", ["linf", "l2", "l1"], [1.0, 2.0, 4.0, 6.0, 8.0]),
+    ]
+
+    # The best checkpoint is recorded (with the score JSON already on disk) before
+    # phase 2 starts, and again after the plot.
+    order = [kind for kind, _ in events]
+    assert order == ["run", "run", "best", "run", "run", "plot", "best"]
+    assert [has_json for kind, has_json in events if kind == "best"] == [True, True]
+
+    payload = json.loads((output_dir / "autoattack_eps_norm_scores.json").read_text())
+    assert payload["attack_norm"] == "l2"
+    assert payload["epsilon_input"] == 4.0
+    assert payload["scores"] == {"model_best.pth.tar": 42.0, "last.pth.tar": 41.0}
+
+
+def test_maybe_run_final_eval_full_sweep_skips_complete_model(monkeypatch, tmp_path):
+    events = []
+    _install_fake_aa_module(monkeypatch, events, complete=True)
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "model_best.pth.tar").write_bytes(b"x")
+    (output_dir / "last.pth.tar").write_bytes(b"x")
+
+    advt._maybe_run_final_eval(_full_sweep_cfg(), str(output_dir), _QuietLogger())
+
+    assert events == []
+
+
+def test_maybe_run_final_eval_full_sweep_checks_off_grid_trained_cell(monkeypatch, tmp_path):
+    """A trained eps outside the grid (here 3) is required on its own: a kind whose
+    grid is complete but lacks the trained cell is still pending."""
+    events = []
+    _install_fake_aa_module(monkeypatch, events)
+    fake_module = __import__("sys").modules["data_analysis.autoattack_array_eval"]
+    fake_module.is_complete_output = lambda *_a, **k: k["eps_inputs"] != [3.0]
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "model_best.pth.tar").write_bytes(b"x")
+
+    advt._maybe_run_final_eval(
+        _full_sweep_cfg(attacks={"attack_norm": "l2", "attack_eps": 3.0}), str(output_dir), _QuietLogger()
+    )
+
+    runs = [kwargs for kind, kwargs in events if kind == "run"]
+    assert runs[0]["norms"] == ["l2"] and runs[0]["eps_inputs"] == [3.0]
+    assert json.loads((output_dir / "autoattack_eps_norm_scores.json").read_text())["epsilon_input"] == 3.0
+
+
+def test_maybe_run_final_eval_eps_norm_runs_only_trained_cell(monkeypatch, tmp_path):
     calls = []
     robust_acc_by_kind = {"best": 42.0, "last": 41.0}
     fake_module = types.ModuleType("data_analysis.autoattack_array_eval")
@@ -554,7 +646,7 @@ def test_maybe_run_final_eval_defaults_to_trained_norm_eps(monkeypatch, tmp_path
                 "final_eval_val_dir": "",
                 "final_eval_out_dir": "",
                 "final_eval_aa_batch_size": 128,
-                # final_eval_aatype intentionally omitted -> defaults to "eps_norm"
+                "final_eval_aatype": "eps_norm",
                 "final_eval_aa_norm": None,
                 "final_eval_aa_eps": None,
                 "final_eval_aa_max_batches": 8,

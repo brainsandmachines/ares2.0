@@ -1,5 +1,14 @@
 # `aa_sweep` — daily AutoAttack full-sweep completion
 
+> **Retired as a cron (2026-10-15).** Training jobs now run this whole grid themselves:
+> `final_eval_aatype` defaults to `full_sweep` (`robust_training/configs/config.yaml`), in two phases —
+> the trained norm/eps cell first, then the rest of the grid — writing the same per-kind CSVs this
+> package reads. Both Botero cron lines (21:30 `aa_sweep_daily.sh`, `*/10` `aa_sweep_botero_runner.sh`)
+> were removed. A finished sjm model that still lacks cells (it trained under the old default, or its
+> final_eval raised) is re-opened for an eval-only rerun with `python -m slurm_job_manager.reopen_eval`.
+> The package stays as a **manual** backfill/audit tool: `python -m aa_sweep.submit --dry-run` still
+> censuses every finished model. Everything below describes the pre-2026-10-15 nightly setup.
+
 Keeps every **finished** model on both clusters covered by the full AutoAttack grid:
 
 ```
@@ -187,11 +196,7 @@ python -m aa_sweep.submit --model convnext_base_linftrades_2_init0   # one model
 python -m aa_sweep.submit --limit 3          # feed at most 3 runnable units (debugging)
 ```
 
-Install the cron (see the header of `scripts/aa_sweep_daily.sh`):
-
-```cron
-30 21 * * * /home/tomer_a/Documents/ares/aa_sweep/scripts/aa_sweep_daily.sh >> /home/tomer_a/Documents/ares/aa_sweep/logs/aa_sweep.log 2>&1
-```
+No cron since 2026-10-15 (see the note at the top); run `submit` by hand when a backfill is needed.
 
 Quiet unless something breaks; emails via `aircc.aircc_job_manager.notify.make_emailer` on a
 missing filesystem, an unreadable DB, or a failed queue feed / array sbatch.

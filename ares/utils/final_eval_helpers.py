@@ -308,6 +308,10 @@ def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
         aa_import_failed = False
         aa_norms = list(AA_FULL_SWEEP_NORMS)
         resolved_trained_norm_eps = False
+        # (norm, eps_input) the model was trained at. full_sweep runs this cell
+        # first (phase 1) so the score JSON and the DB best checkpoint land
+        # before the rest of the grid (phase 2).
+        trained_cell = None
         all_aa_checkpoint_kinds = list(aa_checkpoint_kinds)
 
         if cfg.get("final_eval_require_train_this_run", False) and not did_train_this_run:
@@ -316,16 +320,17 @@ def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
 
         if run_aa_sweep:
             aatype = _parse_aatype(cfg.get("final_eval_aatype", "eps_norm"))
-            if aatype == "eps_norm":
-                try:
-                    aa_norms = [str(cfg.attacks.attack_norm)]
-                    aa_eps_inputs = [float(current_active_epsilon_user(cfg))]
-                    resolved_trained_norm_eps = True
-                except Exception as exc:
-                    _logger.warning(
-                        "final_eval_aatype=eps_norm but the trained attack norm/eps could not be "
-                        "resolved (%s); running the full AA sweep instead.", exc,
-                    )
+            try:
+                trained_cell = (str(cfg.attacks.attack_norm).lower(), float(current_active_epsilon_user(cfg)))
+            except Exception as exc:
+                _logger.warning(
+                    "The trained attack norm/eps could not be resolved (%s); running the full AA sweep "
+                    "without a trained-cell first phase.", exc,
+                )
+            if aatype == "eps_norm" and trained_cell is not None:
+                aa_norms = [trained_cell[0]]
+                aa_eps_inputs = [trained_cell[1]]
+                resolved_trained_norm_eps = True
 
             if cfg.get("final_eval_aa_norm", None) is not None or cfg.get("final_eval_aa_eps", None) is not None:
                 _logger.warning(
@@ -359,13 +364,20 @@ def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
                         _logger.info("AutoAttack checkpoint kind=%s missing under %s. Skipping.", checkpoint_kind, output_dir)
                         continue
                     kind_csv_name = output_csv_for_checkpoint_kind(aa_csv_name, checkpoint_kind)
-                    if is_complete_output(
-                        Path(output_dir) / kind_csv_name,
-                        max_settings=None,
-                        checkpoint_path=kind_ckpt,
-                        model_name=os.path.basename(output_dir),
-                        eps_inputs=aa_eps_inputs,
-                        norms=aa_norms,
+                    # A trained eps outside the grid (e.g. 3 or 12) is its own cell.
+                    required_cells = [(aa_norms, aa_eps_inputs)]
+                    if trained_cell is not None and not resolved_trained_norm_eps:
+                        required_cells.append(([trained_cell[0]], [trained_cell[1]]))
+                    if all(
+                        is_complete_output(
+                            Path(output_dir) / kind_csv_name,
+                            max_settings=None,
+                            checkpoint_path=kind_ckpt,
+                            model_name=os.path.basename(output_dir),
+                            eps_inputs=cell_eps,
+                            norms=cell_norms,
+                        )
+                        for cell_norms, cell_eps in required_cells
                     ):
                         _logger.info("AutoAttack sweep already complete for %s. Skipping AutoAttack.", kind_ckpt)
                         continue
@@ -415,48 +427,70 @@ def _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run=True):
                 )
 
         if run_aa_sweep and aa_runner is not None:
-            for checkpoint_kind in aa_checkpoint_kinds:
-                kind_ckpt = find_checkpoint_for_kind(Path(output_dir), checkpoint_kind)
-                if kind_ckpt is None:
-                    _logger.info("AutoAttack checkpoint kind=%s missing under %s. Skipping.", checkpoint_kind, output_dir)
-                    continue
-                kind_csv_name = output_csv_for_checkpoint_kind(aa_csv_name, checkpoint_kind)
-                aa_runner(
-                    checkpoint_path=kind_ckpt,
-                    model_dir=output_dir,
-                    val_dir=val_dir,
-                    device=device,
-                    batch_size=int(aa_bs),
-                    num_batches=int(aa_num_batches),
-                    num_workers=int(cfg.get("final_eval_num_workers", 8)),
-                    seed=int(cfg.seed or 0),
-                    output_csv=kind_csv_name,
-                    checkpoint_kind=checkpoint_kind,
-                    eps_inputs=aa_eps_inputs,
-                    norms=aa_norms,
-                    force=not bool(cfg.get("final_eval_skip_if_complete", True)),
-                    logger=_logger,
-                )
-            if resolved_trained_norm_eps:
+            def _run_aa(norms, eps_inputs):
+                for checkpoint_kind in aa_checkpoint_kinds:
+                    kind_ckpt = find_checkpoint_for_kind(Path(output_dir), checkpoint_kind)
+                    if kind_ckpt is None:
+                        _logger.info("AutoAttack checkpoint kind=%s missing under %s. Skipping.", checkpoint_kind, output_dir)
+                        continue
+                    kind_csv_name = output_csv_for_checkpoint_kind(aa_csv_name, checkpoint_kind)
+                    aa_runner(
+                        checkpoint_path=kind_ckpt,
+                        model_dir=output_dir,
+                        val_dir=val_dir,
+                        device=device,
+                        batch_size=int(aa_bs),
+                        num_batches=int(aa_num_batches),
+                        num_workers=int(cfg.get("final_eval_num_workers", 8)),
+                        seed=int(cfg.seed or 0),
+                        output_csv=kind_csv_name,
+                        checkpoint_kind=checkpoint_kind,
+                        eps_inputs=eps_inputs,
+                        norms=norms,
+                        force=not bool(cfg.get("final_eval_skip_if_complete", True)),
+                        logger=_logger,
+                    )
+
+            def _write_score_summary(norm, eps_input):
                 _write_eps_norm_score_summary(
                     output_dir=output_dir,
                     checkpoint_kinds=all_aa_checkpoint_kinds,
                     aa_csv_name=aa_csv_name,
-                    aa_norm=aa_norms[0],
-                    aa_eps_input=aa_eps_inputs[0],
+                    aa_norm=norm,
+                    aa_eps_input=eps_input,
                     find_checkpoint_for_kind=find_checkpoint_for_kind,
                     output_csv_for_checkpoint_kind=output_csv_for_checkpoint_kind,
                     _logger=_logger,
                 )
+
+            def _record_best_checkpoint():
+                # aircc job manager: pick the best checkpoint by the model's threat
+                # model and record it in the AIRCC DB. No-op when the job is untracked
+                # (AIRCC_MODEL_ID/AIRCC_DB unset).
+                try:
+                    from aircc.aircc_job_manager import progress as _aircc_progress
+                    _aircc_progress.write_best_checkpoint(output_dir)
+                except Exception:  # pragma: no cover - never block on the handoff
+                    _logger.warning("aircc best-checkpoint write failed (ignored)")
+
+            if resolved_trained_norm_eps:
+                _run_aa(aa_norms, aa_eps_inputs)
+                _write_score_summary(aa_norms[0], aa_eps_inputs[0])
             else:
+                if trained_cell is not None:
+                    _logger.info(
+                        "AutoAttack phase 1: trained cell %s eps=%g on %s.",
+                        trained_cell[0], trained_cell[1], ",".join(aa_checkpoint_kinds),
+                    )
+                    _run_aa([trained_cell[0]], [trained_cell[1]])
+                    _write_score_summary(trained_cell[0], trained_cell[1])
+                    _record_best_checkpoint()
+                _logger.info(
+                    "AutoAttack phase 2: full grid %s x eps %s.",
+                    ",".join(aa_norms), ",".join(f"{eps:g}" for eps in aa_eps_inputs),
+                )
+                _run_aa(aa_norms, aa_eps_inputs)
                 _maybe_plot_aa_checkpoint_comparison(output_dir, aa_eps_inputs, _logger)
-            # aircc job manager: pick the best checkpoint by the model's threat
-            # model and record it in the AIRCC DB. No-op when the job is untracked
-            # (AIRCC_MODEL_ID/AIRCC_DB unset).
-            try:
-                from aircc.aircc_job_manager import progress as _aircc_progress
-                _aircc_progress.write_best_checkpoint(output_dir)
-            except Exception:  # pragma: no cover - never block on the handoff
-                _logger.warning("aircc best-checkpoint write failed (ignored)")
+            _record_best_checkpoint()
     except Exception as exc:
         _logger.exception("Final eval failed: %s", exc)

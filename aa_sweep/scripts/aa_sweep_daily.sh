@@ -5,9 +5,8 @@
 # DB (aa_sweep/cluster_queue.py, one ssh) -- which submits the `main` / `rtx6000` arrays when they
 # are due -- and tops up the Botero lane's local queue. Quiet unless something breaks.
 #
-# Install (Botero crontab -e). The time of day no longer matters -- it used to have to clear the
-# 03:00 AIRCC backup that filled the staging mirror, but the archive is now static:
-#   30 21 * * * /home/tomer_a/Documents/ares/aa_sweep/scripts/aa_sweep_daily.sh >> /home/tomer_a/Documents/ares/aa_sweep/logs/aa_sweep.log 2>&1
+# No longer in cron (removed 2026-10-15): training jobs run the full grid in-process
+# (final_eval_aatype=full_sweep). Kept for manual backfills.
 #
 # Safe to run by hand; add --dry-run via AA_SWEEP_ARGS to see the plan without writing anything:
 #   AA_SWEEP_ARGS=--dry-run aa_sweep/scripts/aa_sweep_daily.sh
