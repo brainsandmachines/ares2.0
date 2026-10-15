@@ -162,3 +162,13 @@ if [[ "$offsite" -ne 0 ]]; then
     exit 1
 fi
 log "done: $entries entries, 0 dangling, 0 pointing off /mnt/data4t"
+
+# --- 5. Hugging Face upload proposal ---------------------------------------
+# The zoo just changed, so mail "HF upload proposal #N" listing every non-excluded zoo model
+# whose Hub copy is missing or stale. Nothing uploads here: the user approves a mail by
+# number ("approved mail #N" -> python -m model_store.hf_proposal approve N). A failure here
+# is reported but never marks route 2 failed -- the sync itself already succeeded.
+PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" "$MS_PYTHON" -m model_store.hf_proposal propose
+rc=$?
+[[ "$rc" -ne 0 ]] && log "WARNING: HF upload proposal step failed rc=$rc (the sync itself succeeded)"
+exit 0

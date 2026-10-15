@@ -237,7 +237,8 @@ checkpoint.
 ## Publishing to Hugging Face
 
 `model_store.hf_export` publishes the zoo's **EMA weights** to the private repo
-`BrainsAndMachinesLab/robustness_models`. It is a manual pass — no cron:
+`BrainsAndMachinesLab/robustness_models`. Uploading is always a manual, approved step. The
+Monday sync only *proposes* (see "Weekly upload proposals" below):
 
 ```bash
 tmux new -s ms_hf 'model_store/scripts/ms_run.sh hf; read'        # plan: new / changed / unchanged / orphans
@@ -265,6 +266,12 @@ README.md, manifest.csv                                   regenerated on every a
 - **Nothing deletes.** A model that left the zoo is reported as `ORPHAN` and stays, both in
   the mirror and on the Hub. To remove one by hand:
   `HfApi().delete_folder(path_in_repo="<repo_path>", repo_id="BrainsAndMachinesLab/robustness_models")`.
+- **`hf_excludes.csv`** (`pattern,reason`, fnmatch on the model *name*) keeps a zoo model off
+  the Hub while leaving it in the zoo. Today that is the 12 collapsed or gradient-masked runs
+  from `aa_sweep/sweep_excludes.csv`. An excluded model is never exported or indexed. Because
+  the upload sends the whole mirror, `--upload` refuses while an excluded model still has a
+  mirror dir: stage that dir under `pending_deletion/` and delete it from the Hub first.
+  The 8 that were already published were removed on 2026-10-15 (Hub commit `6d9b5b47bb`).
 - **Quota**: a free org gets 100 GB of private storage, and each model is ~0.35 GB. A
   re-exported model keeps its old version in the repo history, and that counts too. Making
   the repo public removes the cap.
@@ -273,6 +280,54 @@ One-time setup:
 1. An org admin gives you the **write** role in `BrainsAndMachinesLab`.
 2. Create a token with write access to that org's repos.
 3. Run `hf auth login` on Botero.
+
+### Verifying the Hub: `verify_hf`
+
+```bash
+python -m model_store.verify_hf                      # Hub check: ~1 min once the hash cache is warm
+python -m model_store.verify_hf --forward --out-md /tmp/list.md   # + forward pass, ~5 s/model on the 4090
+```
+
+The **Hub check** makes one `list_repo_tree` call and downloads nothing. For each model it
+requires:
+
+- the Hub `model.safetensors` LFS sha256 equals the mirror file's sha256 and its
+  `metadata.json` `weights.sha256`;
+- the Hub `metadata.json` blob equals the mirror copy;
+- `source.path` / `source.sha256` are the zoo target and its sha256.
+
+An excluded model on the Hub, or a Hub dir that no zoo row expects, is also a failure.
+
+The **forward check** builds the model once and loads the checkpoint's `state_dict_ema`,
+then the published safetensors (`strict=True`). It pushes the same seeded batch through
+both and requires bitwise-equal logits.
+
+The report (`logs/reorg/hf_verify.csv`, plus `--out-md`) is the model list: epoch, AA clean
+accuracy, full-val top-1, AA at the trained threat, HF status, Hub sha256, and the checks.
+Re-exporting an unchanged checkpoint can change the safetensors bytes, because the header
+metadata order is not stable. The tensors stay identical, and the forward check is what
+proves it.
+
+### Weekly upload proposals: `hf_proposal`
+
+Route 2 ends with `python -m model_store.hf_proposal propose`. If any non-excluded zoo model's
+Hub copy is missing or stale, it writes `logs/reorg/hf_proposals/HF-<N>.csv/.json` and mails
+**"[ares] HF upload proposal #N"**. The mail lists each model's epoch, clean, val, AA and
+flags (AA < 10, AA missing, AA rows from another epoch). A newer proposal supersedes an
+older open one. A failure in this step never fails the sync.
+
+**Nothing uploads until you approve a mail by number.** Tell Claude Code "approved mail #N",
+or run:
+
+```bash
+python -m model_store.hf_proposal status
+python -m model_store.hf_proposal approve N
+```
+
+`approve` refuses unless every pinned checkpoint (path, file_key or sha256) is still the
+one that was mailed. It then exports and uploads exactly those models, runs
+`verify_hf --forward` on them, and marks the proposal `uploaded` (or `failed`, which can be
+approved again).
 
 ## Tests
 

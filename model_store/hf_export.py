@@ -30,6 +30,13 @@ already hold -- a week that added three models uploads three models.
 **Nothing here deletes.** A mirror dir whose model has left the zoo is reported as an
 orphan and left in place, locally and on the Hub; removing one is a deliberate hand step
 (see ``model_store/README.md``).
+
+**HF excludes.** ``model_store/hf_excludes.csv`` (``pattern,reason``, fnmatch on the model
+name) keeps a zoo model off the Hub while leaving it in the zoo -- e.g. the collapsed or
+gradient-masked runs ``aa_sweep/sweep_excludes.csv`` lists. An excluded model is never
+exported and never indexed. Because the upload sends the whole mirror, ``--upload`` refuses
+while an excluded model still has a mirror dir: move it out (and delete it from the Hub)
+first.
 """
 
 from __future__ import annotations
@@ -46,12 +53,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from .build_experiments import load_excludes
 from .census import EXPERIMENTS_ROOT
 from .dedupe_report import _now
 from .hashes import CHUNK, DEFAULT_CACHE, HashCache, file_key
 
 MIRROR_ROOT = Path(os.environ.get("MS_HF_MIRROR", "/mnt/data4t/hf_robustness_models"))
 HF_REPO = os.environ.get("MS_HF_REPO", "BrainsAndMachinesLab/robustness_models")
+HF_EXCLUDES_CSV = Path(__file__).with_name("hf_excludes.csv")
 
 WEIGHTS_FILE = "model.safetensors"
 META_FILE = "metadata.json"
@@ -85,7 +94,7 @@ class Item:
     row: dict
     source: Path      # the resolved zoo target
     dest: Path        # this model's dir in the mirror
-    status: str       # new | changed | unchanged | missing-source
+    status: str       # new | changed | unchanged | missing-source | excluded
     detail: str = ""
 
     @property
@@ -112,8 +121,14 @@ def _read_meta(dest: Path) -> Optional[dict]:
         return None
 
 
+def excluded_reason(name: str, excludes: dict[str, str]) -> Optional[str]:
+    """The hf_excludes.csv reason keeping ``name`` off the Hub, or None."""
+    hit = next((p for p in excludes if fnmatch.fnmatchcase(name, p)), None)
+    return None if hit is None else excludes[hit]
+
+
 def plan(rows: list[dict], mirror: Path, only: Optional[list[str]] = None,
-         force: bool = False) -> list[Item]:
+         force: bool = False, excludes: Optional[dict[str, str]] = None) -> list[Item]:
     items: list[Item] = []
     for row in rows:
         rel = row["relpath"]
@@ -121,6 +136,10 @@ def plan(rows: list[dict], mirror: Path, only: Optional[list[str]] = None,
             continue
         source = Path(os.path.realpath(row["target"]))
         dest = mirror / repo_path(rel)
+        reason = excluded_reason(row["model"], excludes or {})
+        if reason is not None:
+            items.append(Item(row, source, dest, "excluded", reason))
+            continue
         if not source.is_file():
             items.append(Item(row, source, dest, "missing-source",
                               f"zoo target {row['target']} does not exist"))
@@ -486,6 +505,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                     help="re-export models whose source is unchanged too (e.g. after a "
                          "metadata.json schema change)")
     ap.add_argument("--hash-cache", type=Path, default=DEFAULT_CACHE)
+    ap.add_argument("--excludes", type=Path, default=HF_EXCLUDES_CSV,
+                    help="pattern,reason CSV of zoo models never published to the Hub")
     ap.add_argument("--num-workers", type=int, default=None, help="upload workers")
     args = ap.parse_args(argv)
 
@@ -501,12 +522,14 @@ def main(argv: Optional[list[str]] = None) -> int:
               file=sys.stderr)
         return 1
 
-    items = plan(rows, args.mirror, args.only, force=args.force)
+    excludes = load_excludes(args.excludes)
+    items = plan(rows, args.mirror, args.only, force=args.force, excludes=excludes)
     orphans = find_orphans(args.mirror, (args.mirror / repo_path(r["relpath"]) for r in rows))
     by_status: dict[str, list[Item]] = {}
     for item in items:
         by_status.setdefault(item.status, []).append(item)
-    counts = {s: len(by_status.get(s, [])) for s in ("new", "changed", "unchanged", "missing-source")}
+    counts = {s: len(by_status.get(s, []))
+              for s in ("new", "changed", "unchanged", "missing-source", "excluded")}
     print(f"[hf] {_now()} {len(rows)} models in {args.manifest}"
           + (f", {len(items)} selected by --only" if args.only else "")
           + f": {counts}, orphans={len(orphans)}")
@@ -518,6 +541,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"[hf]   ... and {len(by_status[status]) - 25} more {status}")
     for o in orphans:
         print(f"[hf]   ORPHAN         {o.relative_to(args.mirror)}  (not in the zoo; left in place)")
+    # The upload sends the whole mirror, so an excluded model still in it would be published.
+    present = [i for i in by_status.get("excluded", []) if i.dest.exists()]
+    for item in by_status.get("excluded", []):
+        print(f"[hf]   EXCLUDED       {item.repo_path}  ({item.detail})"
+              + ("  ** STILL IN THE MIRROR **" if item.dest.exists() else ""))
 
     failed = len(by_status.get("missing-source", []))
     if not args.apply:
@@ -540,7 +568,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # The index lists every manifest model whose mirror copy is current -- not just this
     # run's --only selection -- so a partial export never shrinks the model card.
-    current = [i for i in plan(rows, args.mirror) if i.status == "unchanged"]
+    current = [i for i in plan(rows, args.mirror, excludes=excludes) if i.status == "unchanged"]
     metas = [m for m in (_read_meta(i.dest) for i in current) if m is not None]
     write_index(args.mirror, metas, args.repo)
     print(f"[hf] {_now()} index written: {len(metas)} models in manifest.csv / README.md")
@@ -550,6 +578,11 @@ def main(argv: Optional[list[str]] = None) -> int:
               f"is incremental.", file=sys.stderr)
         return 1
     if args.upload:
+        if present:
+            print(f"[hf] {len(present)} excluded model(s) still have a mirror dir -- not uploading "
+                  f"(upload_large_folder would publish them). Move them out of {args.mirror} "
+                  f"and delete them from the Hub first.", file=sys.stderr)
+            return 1
         return upload(args.mirror, args.repo, args.num_workers)
     return 0
 

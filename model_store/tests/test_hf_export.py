@@ -222,3 +222,53 @@ def test_only_limits_the_export_but_not_the_index(tmp_path, uploads):
 
     readme = (tmp_path / "mirror" / "README.md").read_text()
     assert "a_init0" in readme and "b_init0" in readme
+
+
+def _excludes(tmp_path: Path, *patterns: str) -> Path:
+    path = tmp_path / "hf_excludes.csv"
+    with path.open("w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["pattern", "reason"])
+        w.writerows((p, f"collapsed ({p})") for p in patterns)
+    return path
+
+
+def test_excluded_model_is_never_exported_or_indexed(tmp_path, uploads, capsys):
+    good, _ = _row(tmp_path, "good_init0")
+    bad, _ = _row(tmp_path, "bad_init0", seed=1)
+    manifest = _manifest(tmp_path, [good, bad])
+    excludes = _excludes(tmp_path, "bad_*")
+
+    assert hf_export.main(_args(tmp_path, manifest, "--apply", "--upload",
+                                "--excludes", str(excludes))) == 0
+
+    mirror = tmp_path / "mirror"
+    assert (mirror / "convnext_base/madry/l2/good_init0" / "model.safetensors").is_file()
+    assert not (mirror / "convnext_base/madry/l2/bad_init0").exists()
+    assert "bad_init0" not in (mirror / "manifest.csv").read_text()
+    assert "bad_init0" not in (mirror / "README.md").read_text()
+    out = capsys.readouterr().out
+    assert "'excluded': 1" in out and "EXCLUDED       convnext_base/madry/l2/bad_init0" in out
+    assert len(uploads) == 1
+
+
+def test_upload_refused_while_an_excluded_model_is_still_in_the_mirror(tmp_path, uploads, capsys):
+    row, _ = _row(tmp_path, "bad_init0")
+    manifest = _manifest(tmp_path, [row])
+    assert hf_export.main(_args(tmp_path, manifest, "--apply")) == 0  # exported before the exclude
+    excludes = _excludes(tmp_path, "bad_init0")
+
+    assert hf_export.main(_args(tmp_path, manifest, "--apply", "--upload",
+                                "--excludes", str(excludes))) == 1
+
+    assert uploads == []
+    assert "STILL IN THE MIRROR" in capsys.readouterr().out
+    # Dropped from the index even though its files are still there.
+    assert "bad_init0" not in (tmp_path / "mirror" / "manifest.csv").read_text()
+
+
+def test_excludes_match_the_model_name_case_sensitively():
+    excludes = {"swin_b_linftrades_4_init1": "collapsed"}
+    assert hf_export.excluded_reason("swin_b_linftrades_4_init1", excludes) == "collapsed"
+    assert hf_export.excluded_reason("swin_b_linftrades_4_init2", excludes) is None
+    assert hf_export.excluded_reason("SWIN_B_LINFTRADES_4_INIT1", excludes) is None

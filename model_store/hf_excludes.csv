@@ -1,0 +1,13 @@
+pattern,reason
+swin_b_linftrades_4_init1,"aa_sweep/sweep_excludes.csv: 2026-10-07 catastrophic overfitting (AA 0.00, clean 79); replaced by swin_b/linftrades_4_init2 -- see completion_runs_plan.md"
+swin_b_linftrades_2_init1,aa_sweep/sweep_excludes.csv: 2026-10-07 catastrophic overfitting (AA 0.20); replaced by swin_b/linftrades_2_init2 -- see completion_runs_plan.md
+swin_b_l2trades_4_init1,aa_sweep/sweep_excludes.csv: 2026-10-07 gradient masking (AA 0.88 vs PGD-val 62); replaced by swin_b/l2trades_4_init2 -- see completion_runs_plan.md
+vit_b_cvst_linftrades_4_init1,"aa_sweep/sweep_excludes.csv: 2026-10-07 catastrophic overfitting, 2nd time (AA 0.39); replaced by vit_b_cvst/linftrades_4_init2 -- see completion_runs_plan.md"
+convnext_base_dvd_b_linf_2_init0,aa_sweep/sweep_excludes.csv: 2026-10-07 catastrophic overfitting (AA 0.10); not retrained -- see completion_runs_plan.md
+convnext_base_dvd_b_l2_2_init0,aa_sweep/sweep_excludes.csv: 2026-10-07 catastrophic overfitting (AA 0.20); replaced by convnext_base_dvd_b_l2_2_init2 -- see completion_runs_plan.md
+convnext_base_dvd_b_l2_4_init1,aa_sweep/sweep_excludes.csv: 2026-10-07 collapse/divergence ~ep 76-90 (AA 8.79); replaced by convnext_base_dvd_b_l2_4_init2 -- see completion_runs_plan.md
+convnext_base_dvd_b_l1_4_init0,aa_sweep/sweep_excludes.csv: 2026-10-07 catastrophic overfitting (AA 4.98); replaced by convnext_base_dvd_b_l1_4_init2 -- see completion_runs_plan.md
+convnext_base_linftrades_cont4to8_init0,aa_sweep/sweep_excludes.csv: 2026-10-07 collapsed at continuation start (AA 1.86); replaced by convnext_base_linftrades_cont4to8_init2 -- see completion_runs_plan.md
+convnext_base_linftrades_cont4to8_init1,aa_sweep/sweep_excludes.csv: 2026-10-07 collapsed at continuation start (AA 4.49); replaced by convnext_base_linftrades_cont4to8_init3 -- see completion_runs_plan.md
+convnext_base_dvd_b_l2_cont4to6_init1_contepoch,aa_sweep/sweep_excludes.csv: 2026-10-07 collapsed (AA 0.10); not retrained -- see completion_runs_plan.md
+vit_b_cvst_l2trades_4_init1,"aa_sweep/sweep_excludes.csv: 2026-10-07 gradient masking (AA 12.01, ep113; eps6 cont scores 17.4); replaced by vit_b_cvst/l2trades_4_init2 -- see completion_runs_plan.md"
