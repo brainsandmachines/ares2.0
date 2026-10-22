@@ -111,6 +111,32 @@ sbatch slurm_job_manager/slurm/manager_rtx_pro_6000.sbatch   # --array=1-200%8, 
 These tasks share the account's 8 rtx_pro_6000 GPUs with the AA sweep's `aaq-pro` array. No hold
 was placed on it, so training starts as those tasks free GPUs.
 
+## Addendum (2026-10-22): cont 4→4 for the collapsed swin/vit TRADES eps-4 parents
+The four collapsed init1 eps-4 TRADES parents (bsz 256, PGD 3) get a same-ε continuation, last in
+the queue. Their cont4to6/4to8 children recovered from the same collapsed DB-best checkpoint.
+
+| prio | model_name | starts from (DB best) |
+|---|---|---|
+| 401 | swin_b/linftrades_cont4to4_init1 | `swin_b/linftrades_4_init1/model_best` |
+| 402 | swin_b/l2trades_cont4to4_init1 | `swin_b/l2trades_4_init1/model_best` |
+| 403 | vit_b_cvst/linftrades_cont4to4_init1 | `vit_b_cvst/linftrades_4_init1/model_best_adv` |
+| 404 | vit_b_cvst/l2trades_cont4to4_init1 | `vit_b_cvst/l2trades_4_init1/model_best` |
+
+Each row copies its `cont4to6_init1` sibling (40 ep, lrb 1e-4, wd 0.1), with these changes:
+- **PGD 5**: the same step count as the init1 cont4to6 siblings.
+- **No warmups**:
+  - `lr_scheduler.warmup_epochs=0`
+  - `epsilon_schedule.type=fixed` at ε 4
+  - `attacks.disable_attack_step_warmup=true`
+
+They were seeded with `--arch vit-b-cvst_swin-b --init 1`, and an rtx6000 manager array
+(`--array=1-200%8`) was launched alongside the rtx_pro_6000 one.
+
+**Batch caveat:** rtx6000 halves the CSV batch (`SJM_BATCH_DIVISOR=2`), and the claim gate does
+not filter by partition. So anything that array claims trains at bsz 128 (DVD rows at 256): the
+4→4 rows and any pending completion row above. Check `runtime_config.yaml` → `batch_size` before
+comparing a run against its siblings.
+
 ## Status page
 `update-training-status-html` shows convnext_base init0/init1, plus init2/init3 rows that are
 present in the job-manager CSVs. The AIRCC CSV's never-run init2 rows stay hidden.
