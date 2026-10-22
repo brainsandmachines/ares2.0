@@ -1,29 +1,30 @@
 # Plan: linftrades cont4to8 init change
 
-**Status: DONE for init1 (2026-10-22). init0 waits for init2 to reach Botero; see steps 4–5.**
-Run on the user's go-ahead before the watcher fired. At that time init2 was `finished` and then
-re-opened by `reopen_eval` for the rest of its AA grid. init3 was still in final_eval (advbest cell
-running), and its DB row had no `best_score` yet. Gate 3 passed on the AA linf@8 sweep CSVs:
+**Status: DONE (2026-10-22).** Both reruns are in the zoo and on the Hub under the init0/init1 names.
+Run on the user's go-ahead before the watcher fired. AA linf@8 (1024 images):
 
-| new run | best | last | advbest | old |
-|---|---|---|---|---|
-| init2 | 8.01 (ep0) | **10.64** (ep39) | 10.64 (ep39) | init0 1.86 |
-| init3 | 9.86 (ep0) | **17.58** (ep39) | pending (ep38) | init1 4.49 |
+| new run | best | last | advbest | old | published as |
+|---|---|---|---|---|---|
+| init2 | 8.01 (ep0) | **10.64** (ep39) | 10.64 (ep39) | init0 1.86 | init0 (HF #4) |
+| init3 | 9.86 (ep0) | **17.58** (ep39) | 17.29 (ep38) | init1 4.49 | init1 (HF #3) |
 
-- Step 1: done. Both dirs are in `results/models_failed/…__collapsed_20261007`.
-- Steps 2–3: done and committed. A zoo dry-run reports both overrides as `override-unused` until
-  init2/init3 reach `/mnt/data4t/models` (Sun route 1 → Mon route 2). Until then the live zoo
-  still points init0/init1 at the old collapsed checkpoints.
-- Step 4: **init1 done, init0 pending.** On 2026-10-22 I ran route 1 by hand (with a separate
-  pacing file, `logs/.backup.attempted.manual_20261022`, so Sunday's run still goes ahead), then
-  `ms_weekly_sync.sh`. Now `models_for_experiments` maps init1 to `…_init3/last.pth.tar` (17.58).
-  init2 was `running` (the reopen_eval AA-grid rerun), so route 1 skipped it, and init0 still
-  maps to the collapsed original. The next weekly sync after init2's eval finishes picks it up
-  without any action.
-- Step 5: **proposal #3 (init1 only) is open; approve it with "approved mail #3".** #2 included the
-  collapsed init0 and is superseded. To prevent that, init0 is back in `hf_excludes.csv` with a
-  TEMPORARY row. **Remove that row once `manifest.csv` maps init0 to the init2 checkpoint.** After
-  that, the next proposal offers init0.
+- Step 1: done. Both old dirs are in `results/models_failed/…__collapsed_20261007`, and copied to
+  the QNAP's `models_failed` by the hand-run route 1.
+- Steps 2–3: done. `publish_as` overrides were added and the init0/init1 `hf_excludes` rows removed.
+- Step 4: done 2026-10-22, outside the weekly schedule.
+  - init3: route 1 run by hand (separate pacing file
+    `logs/.backup.attempted.manual_20261022`, so Sunday's run is unaffected), then
+    `ms_weekly_sync.sh`.
+  - init2: it was in its reopen_eval AA-grid rerun (`running`), so route 1 skipped it. I rsynced
+    its dir from the cluster straight into `/mnt/data4t/models/convnext_base/` (route 1's
+    filters; `last.pth.tar` sha256 a8907a02… matches the cluster). Then I pinned
+    `last.pth.tar` + score 10.64 on its override row, because the zoo's trained gate only
+    sees the QNAP and `finished` rows. After `zoo-apply` + `--check` (204 rows, 0 problems),
+    `models_for_experiments` maps init0 → `…_init2/last.pth.tar` and init1 → `…_init3/last.pth.tar`.
+  - Later weekly runs: route 1 copies init2 to the QNAP once its row is finished. The
+    checkpoints are byte-identical, so backfill only refreshes its AA CSVs, and HF sees no change.
+- Step 5: done. HF #2 (it held the collapsed init0) was superseded. #3 uploaded init1 and #4
+  uploaded init0; each passed `verify_hf --forward` (8/8 top-1 agree).
 - Step 6: done. The crontab entry is removed (backup in `slurm_job_manager/logs/crontab_backup_20261022.txt`)
   and the watcher script is deleted.
 
