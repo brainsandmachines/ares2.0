@@ -31,3 +31,8 @@ data_analysis/logs/catastrophic_notifier_state.json.lock
 .env.*
 *.env
 *.env.*
+# Rendered figures and reports (already-tracked ones stay tracked)
+*.png
+*.pdf
+# AT recap paper pipeline: not versioned yet
+paper/
