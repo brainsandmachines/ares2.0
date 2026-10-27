@@ -3,7 +3,7 @@ swin_b_linftrades_4_init1,"aa_sweep/sweep_excludes.csv: 2026-10-07 catastrophic 
 swin_b_linftrades_2_init1,aa_sweep/sweep_excludes.csv: 2026-10-07 catastrophic overfitting (AA 0.20); replaced by swin_b/linftrades_2_init2 -- see completion_runs_plan.md
 swin_b_l2trades_4_init1,aa_sweep/sweep_excludes.csv: 2026-10-07 gradient masking (AA 0.88 vs PGD-val 62); replaced by swin_b/l2trades_4_init2 -- see completion_runs_plan.md
 vit_b_cvst_linftrades_4_init1,"aa_sweep/sweep_excludes.csv: 2026-10-07 catastrophic overfitting, 2nd time (AA 0.39); replaced by vit_b_cvst/linftrades_4_init2 -- see completion_runs_plan.md"
-convnext_base_dvd_b_linf_2_init0,aa_sweep/sweep_excludes.csv: 2026-10-07 catastrophic overfitting (AA 0.10); not retrained -- see completion_runs_plan.md
+convnext_base_dvd_b_linf_2_init0,aa_sweep/sweep_excludes.csv: 2026-10-07 catastrophic overfitting (AA 0.10); retrained as init2 (sjm prio 313, 2026-10-27) -- see completion_runs_plan.md
 convnext_base_dvd_b_l2_2_init0,aa_sweep/sweep_excludes.csv: 2026-10-07 catastrophic overfitting (AA 0.20); replaced by convnext_base_dvd_b_l2_2_init2 -- see completion_runs_plan.md
 convnext_base_dvd_b_l2_4_init1,aa_sweep/sweep_excludes.csv: 2026-10-07 collapse/divergence ~ep 76-90 (AA 8.79); replaced by convnext_base_dvd_b_l2_4_init2 -- see completion_runs_plan.md
 convnext_base_dvd_b_l1_4_init0,aa_sweep/sweep_excludes.csv: 2026-10-07 catastrophic overfitting (AA 4.98); replaced by convnext_base_dvd_b_l1_4_init2 -- see completion_runs_plan.md

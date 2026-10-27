@@ -12,8 +12,9 @@ family gets a **completion run**:
 - continuations from it;
 - for two convnext families, cross-parent continuations counted as init2/init3.
 
-Two collapsed models are **not** retrained: `convnext_base_dvd_b_linf_2_init0` and
-`convnext_base_dvd_b_l2_cont4to6_init1_contepoch`.
+One collapsed model is **not** retrained: `convnext_base_dvd_b_l2_cont4to6_init1_contepoch`.
+(`convnext_base_dvd_b_linf_2_init0` was originally left out too; it got its init2 retrain,
+row 313, on 2026-10-27.)
 
 ## The PGD step warmup in continuations
 `ares/utils/train_loop.py` ramps the training PGD step as `attack_step * min(epoch, 5) / 5`. A
@@ -59,6 +60,7 @@ Botero smoke test (row 301, ImageNet sample, from the local `linftrades_4_init0/
 | 308 | convnext_base_dvd_b_l2_4_init2 | scratch | — | 200 | 512 | 5 | 1e-4 | |
 | 311 | swin_b/linftrades_2_init2 | scratch | — | 150 | 256 | 3 | 5e-4 | |
 | 312 | convnext_base_dvd_b_l2_2_init2 | scratch | — | 200 | 512 | 3 | 1e-4 | |
+| 313 | convnext_base_dvd_b_linf_2_init2 | scratch | — | 200 | 512 | 3 | 1e-4 | |
 | 321 | convnext_base_l2_cont4to8_init2 | continuation | `convnext_base_l2_4_init0` → `model_best` (37.2) | 40 | 512 | 7 | 1e-4 | true |
 | 322 | swin_b/l2trades_cont4to6_init2 | continuation | `swin_b/l2trades_4_init2` DB-best | 40 | 256 | 7 | 1e-4 | true |
 | 323 | swin_b/l2trades_cont4to8_init2 | continuation | same | 40 | 256 | 7 | 1e-4 | true |
@@ -86,6 +88,9 @@ Botero smoke test (row 301, ImageNet sample, from the local `linftrades_4_init0/
   `resume_offset_assumed` shift). If the best is at ep 150, the child runs 150 → 190.
 - **AIRCC name clash:** the AIRCC CSV already has same-named convnext init2 rows. They point at
   init2 parents and never ran. The job-manager copy is the live one.
+
+- **Row 313** was added on 2026-10-27, after the others were already running. It is a copy
+  of the AIRCC `convnext_base_dvd_b_linf_2_init0` template, seeded with `--arch convnext_base --init 2`.
 
 ## Anchor rows (cluster `jobs.sqlite` only, no CSV row)
 Rows 301, 302 and 321 depend on AIRCC-only parents. The job manager only claims a child whose
