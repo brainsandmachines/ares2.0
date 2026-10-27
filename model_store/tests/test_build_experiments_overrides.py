@@ -176,6 +176,6 @@ def test_missing_files_are_empty(tmp_path):
 
 def test_checked_in_files_parse():
     ov = load_overrides(OVERRIDES_CSV)
-    assert ov[NAME].checkpoint == "model_best_adv.pth.tar"
+    assert ov[NAME].checkpoint == "last.pth.tar"
     assert ov[RERUN].publish_as == ORIGINAL
     assert "*_resetepoch.pth.tar" in load_excludes(EXCLUDES_CSV)
