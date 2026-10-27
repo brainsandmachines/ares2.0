@@ -199,6 +199,7 @@ def plot_comparation(
     out_png: Path,
     out_svg: Path | None = None,
     show: bool = False,
+    bold_labels: Iterable[str] = (),
 ) -> None:
 
     fig_width = max(MIN_FIG_WIDTH, FIG_WIDTH_PER_MODEL * len(model_labels) + FIG_WIDTH_PADDING)
@@ -232,7 +233,7 @@ def plot_comparation(
                 ax.text(
                     col_idx,
                     row_idx,
-                    ANNOTATION_FMT.format(value),
+                    "n/a" if np.isnan(value) else ANNOTATION_FMT.format(value),
                     ha="center",
                     va="center",
                     color=text_color,
@@ -241,6 +242,10 @@ def plot_comparation(
 
     axes[-1].set_xticks(range(len(model_labels)))
     axes[-1].set_xticklabels(model_labels, fontsize=TICK_FONTSIZE, rotation=35, ha="right")
+    bold_labels = set(bold_labels)
+    for tick_label in axes[-1].get_xticklabels():
+        if tick_label.get_text() in bold_labels:
+            tick_label.set_fontweight("bold")
     axes[-1].set_xlabel("Model", fontsize=LABEL_FONTSIZE)
     fig.suptitle(TITLE_TEMPLATE.format(plot_name=plot_name), fontsize=TITLE_FONTSIZE, x=0.48)
 
