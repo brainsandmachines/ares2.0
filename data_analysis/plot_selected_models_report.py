@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.patches import Patch
+from matplotlib.patches import Patch, Rectangle
 
 from aa_sweep.config import EPS_INPUTS
 from data_analysis.plot_autoattack_comparation import (
@@ -52,6 +52,15 @@ SUMMARY_EPS_LABELS = ["1", "2", "4", "cont→6", "cont→8"]
 BAR_COLOR = "#4C72B0"
 OTHER_INIT_COLOR = "#A9BEDC"
 BASELINE_COLOR = "#C44E52"
+TOP_N = 5
+TOP_FRAME_COLOR = "red"
+
+
+def top_n_indices(values, n: int = TOP_N) -> list:
+    """Indices of the n highest non-NaN values (flat indices for a 2-D array)."""
+    flat = np.asarray(values, dtype=float).ravel()
+    order = [i for i in np.argsort(-np.nan_to_num(flat, nan=-np.inf)) if not np.isnan(flat[i])]
+    return order[:n]
 
 
 def label_for(sel: Selected) -> str:
@@ -185,12 +194,17 @@ def all_models_bars_page(pdf: PdfPages, families: dict[str, list[Selected]], bas
         ax.text(start + len(ms) / 2 - 0.5, 1.0, family if len(ms) >= 5 else family.replace(" ", "\n"),
                 ha="center", va="bottom", fontsize=8)
         start += len(ms)
+    bars = ax.containers[0]
+    for i in top_n_indices([shape_bias_of(sb, m) for m in models]):
+        bars[i].set_edgecolor(TOP_FRAME_COLOR)
+        bars[i].set_linewidth(2.5)
     ax.set_xlim(-0.6, len(models) - 0.4)
     ax.set_ylim(0, 1.12)
     ax.set_title("")
     legend = ax.get_legend()
-    ax.legend(legend.legend_handles, [t.get_text() for t in legend.get_texts()], loc="lower left",
-              bbox_to_anchor=(0, 1.0), ncol=3, fontsize=9, frameon=False)
+    handles = [*legend.legend_handles, Patch(facecolor="none", edgecolor=TOP_FRAME_COLOR, linewidth=2.5)]
+    labels = [*(t.get_text() for t in legend.get_texts()), f"top {TOP_N} shape bias"]
+    ax.legend(handles, labels, loc="lower left", bbox_to_anchor=(0, 1.0), ncol=4, fontsize=9, frameon=False)
     fig.suptitle("Shape bias, all models (bold / solid = experiment checkpoint from the JSON)", fontsize=15)
     fig.tight_layout()
     pdf.savefig(fig)
@@ -215,6 +229,10 @@ def summary_page(pdf: PdfPages, families: dict[str, list[Selected]], baselines: 
                 ax.text(c, r, f"{data[r, c]:.3f}", ha="center", va="center", fontsize=10,
                         color="white" if data[r, c] < 0.6 else "black")
     ax.axvline(0.5, color="white", linewidth=4)
+    for flat in top_n_indices(data):
+        r, c = np.unravel_index(flat, data.shape)
+        ax.add_patch(Rectangle((c - 0.5, r - 0.5), 1, 1, fill=False, edgecolor=TOP_FRAME_COLOR, linewidth=3,
+                               zorder=3))
     ax.set_xticks(range(len(columns)))
     ax.set_xticklabels(columns, fontsize=11)
     ax.set_yticks(range(len(families)))
@@ -227,7 +245,8 @@ def summary_page(pdf: PdfPages, families: dict[str, list[Selected]], baselines: 
     ax.grid(which="minor", color="white", linewidth=1)
     ax.tick_params(which="minor", top=False, left=False)
     fig.colorbar(im, ax=ax, shrink=0.6, pad=0.02, label="shape bias (mean aggregation)")
-    fig.suptitle("Shape bias — all selected models (experiment checkpoints)", fontsize=15)
+    fig.suptitle(f"Shape bias — all selected models (experiment checkpoints)\n"
+                 f"red frame = top {TOP_N} cells", fontsize=15)
     fig.tight_layout()
     pdf.savefig(fig)
     plt.close(fig)
