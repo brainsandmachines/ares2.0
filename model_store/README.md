@@ -316,6 +316,16 @@ Hub copy is missing or stale, it writes `logs/reorg/hf_proposals/HF-<N>.csv/.jso
 flags (AA < 10, AA missing, AA rows from another epoch). A newer proposal supersedes an
 older open one. A failure in this step never fails the sync.
 
+**Only models whose AutoAttack sweep is complete on Botero are proposed.** The check is
+the full final_eval grid (linf/l2/l1 × `final_eval_aa_eps_inputs` × each of
+`final_eval_aa_checkpoint_kinds` whose checkpoint is in the dir), using the same rule as
+`slurm_job_manager.reopen_eval`. Models that fail it are held. The weekly backup can copy
+a model while its in-job sweep is still running, so its CSVs only arrive with a later
+sync. Held models are listed in the mail (and in the log, `[hf-proposal] HELD …`), and
+they are proposed once the CSVs arrive. If every candidate is held, no proposal is
+written. A model in `aa_sweep/sweep_excludes.csv` never completes its sweep, so it stays
+held unless it is also in `hf_excludes.csv` (today all of them are).
+
 **Nothing uploads until you approve a mail by number.** Tell Claude Code "approved mail #N",
 or run:
 
@@ -325,7 +335,8 @@ python -m model_store.hf_proposal approve N
 ```
 
 `approve` refuses unless every pinned checkpoint (path, file_key or sha256) is still the
-one that was mailed. It then exports and uploads exactly those models, runs
+one that was mailed and its AA sweep is still complete. The second check also refuses
+proposals mailed before the gate existed. It then exports and uploads exactly those models, runs
 `verify_hf --forward` on them, and marks the proposal `uploaded` (or `failed`, which can be
 approved again).
 

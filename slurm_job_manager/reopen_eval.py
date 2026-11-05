@@ -62,8 +62,15 @@ def configured_grid(config_yaml: Path = CONFIG_YAML):
     return list(AA_FULL_SWEEP_NORMS), eps_inputs, kinds
 
 
-def missing_cells(model_dir: Path, norms, eps_inputs, kinds) -> dict[str, int]:
-    """{kind: missing cell count} for each kind whose checkpoint exists and is incomplete."""
+def missing_cells(model_dir: Path, norms, eps_inputs, kinds, *,
+                  match_model_name: bool = True) -> dict[str, int]:
+    """{kind: missing cell count} for each kind whose checkpoint exists and is incomplete.
+
+    ``match_model_name=False`` drops the CSV ``model_name == model_dir.name`` filter, for
+    dirs renamed after the sweep ran (``model_store`` stores ``swin_b/l1_4_init1`` as
+    ``swin_b_l1_4_init1``, but its CSV rows still say ``l1_4_init1``). The checkpoint-path
+    match still applies, and a model dir holds only its own CSVs.
+    """
     from data_analysis.autoattack_array_eval import (
         _setting_key,
         find_checkpoint_for_kind,
@@ -78,7 +85,8 @@ def missing_cells(model_dir: Path, norms, eps_inputs, kinds) -> dict[str, int]:
         if ckpt is None:
             continue
         csv_path = model_dir / output_csv_for_checkpoint_kind("autoattack_sweep_results.csv", kind)
-        found = observed_settings(csv_path, checkpoint_path=ckpt, model_name=model_dir.name)
+        found = observed_settings(csv_path, checkpoint_path=ckpt,
+                                  model_name=model_dir.name if match_model_name else None)
         n_missing = len(expected - found)
         if n_missing:
             out[kind] = n_missing

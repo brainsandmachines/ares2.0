@@ -1,8 +1,10 @@
-"""hf_proposal: Monday proposes (and mails) only what awaits upload; "approved mail #N"
-uploads exactly those models, and only if their checkpoints are still the ones mailed."""
+"""hf_proposal: Monday proposes (and mails) only what awaits upload and has finished its AA
+sweep; "approved mail #N" uploads exactly those models, and only if their checkpoints are
+still the ones mailed and their sweep is still complete."""
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 
@@ -10,6 +12,24 @@ import pytest
 
 from model_store import hf_export, hf_proposal, verify_hf
 from model_store.tests.test_hf_export import _args, _ckpt, _manifest, _row
+
+GRID = [(n, e) for n in ("linf", "l2", "l1") for e in (1.0, 2.0, 4.0, 6.0, 8.0)]
+
+
+def _aa_csv(target: Path, cells=GRID) -> Path:
+    """The sweep CSV for the fixture's ``last`` checkpoint, as the cluster wrote it: the
+    model_name and checkpoint_path are the cluster's, not the renamed zoo dir's."""
+    path = target.parent / "autoattack_sweep_results_last.csv"
+    with path.open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=["model_name", "checkpoint_path", "epoch", "attack_norm",
+                                           "epsilon_input", "clean_acc", "robust_acc"])
+        w.writeheader()
+        for norm, eps in cells:
+            w.writerow({"model_name": "cluster_name",
+                        "checkpoint_path": "results/models/arch/cluster_name/last.pth.tar",
+                        "epoch": 7, "attack_norm": norm, "epsilon_input": eps,
+                        "clean_acc": 70.0, "robust_acc": 30.0})
+    return path
 
 
 @pytest.fixture
@@ -21,6 +41,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(verify_hf, "main", lambda argv: verifies.append(argv) or 0)
     a, _ = _row(tmp_path, "a_l2_4_init0")
     b, _ = _row(tmp_path, "b_l2_4_init0", seed=1)
+    for row in (a, b):
+        _aa_csv(Path(row["target"]))
     manifest = _manifest(tmp_path, [a, b])
     excludes = tmp_path / "ex.csv"
     excludes.write_text("pattern,reason\n")
@@ -99,3 +121,36 @@ def test_dry_run_writes_and_mails_nothing(env, capsys):
     assert env.run("propose", "--dry-run") == 0
     assert env.mails == [] and not env.props.exists()
     assert "approved mail #1" in capsys.readouterr().out
+
+
+def test_model_with_incomplete_aa_sweep_is_held_not_proposed(env, capsys):
+    _aa_csv(Path(env.b["target"]), cells=GRID[:3])  # sweep still running when it was synced
+    assert env.run("propose") == 0
+    [(subject, body, _)] = env.mails
+    assert subject == "[ares] HF upload proposal #1: 1 model(s)"
+    assert "Held back until their AutoAttack sweep reaches Botero (1):" in body
+    assert "b_l2_4_init0  AA sweep incomplete: last 12 cells missing" in body
+    st = _status(env, 1)
+    assert st["models"] == ["a_l2_4_init0"]
+    assert st["held"] == [{"model": "b_l2_4_init0",
+                           "reason": "AA sweep incomplete: last 12 cells missing"}]
+    assert "HELD b_l2_4_init0" in capsys.readouterr().out
+
+
+def test_nothing_mailed_when_every_candidate_is_held(env, capsys):
+    for row in (env.a, env.b):
+        (Path(row["target"]).parent / "autoattack_sweep_results_last.csv").unlink()
+    assert env.run("propose") == 0
+    assert env.mails == [] and not env.props.exists()
+    assert "(2 held)" in capsys.readouterr().out
+
+
+def test_approve_refused_when_the_sweep_is_incomplete(env, capsys):
+    """A proposal mailed before the gate existed (HF-6) must not upload an unswept model."""
+    assert env.run("propose") == 0
+    _aa_csv(Path(env.a["target"]), cells=[])
+
+    assert env.run("approve", "1") == 1
+    assert env.uploads == [] and not (env.tmp / "mirror").exists()
+    assert "a_l2_4_init0: AA sweep incomplete: last 15 cells missing" in capsys.readouterr().err
+    assert _status(env, 1)["status"] == "open"

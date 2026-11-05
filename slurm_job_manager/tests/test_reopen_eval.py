@@ -73,6 +73,15 @@ def test_missing_cells_counts_per_existing_kind(tmp_path):
     assert reopen_eval.missing_cells(full, norms, eps, kinds) == {}
 
 
+def test_missing_cells_can_ignore_a_renamed_dir(tmp_path):
+    """model_store renames swin_b/l1_4_init1 -> swin_b_l1_4_init1; its CSVs keep the old name."""
+    full = _write_model(tmp_path, "l1_4_init1", FULL)
+    renamed = full.rename(tmp_path / "swin_b_l1_4_init1")
+    grid = reopen_eval.configured_grid()
+    assert reopen_eval.missing_cells(renamed, *grid) == {"best": 15, "last": 15}
+    assert reopen_eval.missing_cells(renamed, *grid, match_model_name=False) == {}
+
+
 def test_cli_dry_run_writes_nothing_and_apply_all_reopens_incomplete(db, tmp_path, capsys):
     models = tmp_path / "models"
     _finish(db, "arch/partial")

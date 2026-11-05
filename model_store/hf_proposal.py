@@ -2,7 +2,10 @@
 
 Route 2 (``ms_weekly_sync.sh``, Monday) rebuilds the zoo and then runs ``propose``. If the
 zoo holds models whose HF export is missing or stale (``hf_export.plan`` status ``new`` /
-``changed``, ``hf_excludes.csv`` honoured), it writes proposal **#N** and mails it:
+``changed``, ``hf_excludes.csv`` honoured) **and whose AutoAttack sweep is complete on
+Botero** (the full final_eval grid, ``aa_missing`` -- a model synced mid-sweep is listed as
+held in the mail and log, and proposed once the next sync brings its CSVs), it writes
+proposal **#N** and mails it:
 
     slurm_job_manager/logs/reorg/hf_proposals/HF-<N>.csv    one row per model, frozen facts
     slurm_job_manager/logs/reorg/hf_proposals/HF-<N>.json   status: open | superseded | uploaded | failed
@@ -17,7 +20,9 @@ which runs ``approve N``:
 1. the proposal must be open, or failed on an earlier try (a newer proposal supersedes an
    older open one);
 2. every row's zoo target must still be the same file (path, file_key, sha256) -- if a
-   checkpoint moved since the mail, the approval no longer describes it and nothing uploads;
+   checkpoint moved since the mail, the approval no longer describes it and nothing uploads --
+   and its AA sweep must still be complete (this also refuses proposals mailed before the
+   sweep gate existed);
 3. ``hf_export --apply --upload --only <exactly those models>``;
 4. ``verify_hf --forward --only <those models>``; the proposal is marked uploaded or failed.
 
@@ -98,6 +103,33 @@ def candidates(manifest: Path, mirror: Path, excludes_csv: Path) -> list:
     return [i for i in items if i.status in ("new", "changed")]
 
 
+def aa_missing(target: Path) -> dict[str, int]:
+    """{kind: missing cells} of the full final_eval AA grid in the zoo target's model dir.
+
+    The grid and the completeness rule are ``reopen_eval``'s (config.yaml's
+    ``final_eval_aa_eps_inputs`` x ``final_eval_aa_checkpoint_kinds`` x linf/l2/l1, each kind
+    whose checkpoint exists in the dir). Empty = the sweep is complete and the model may go up.
+    """
+    from slurm_job_manager.reopen_eval import configured_grid, missing_cells
+    return missing_cells(Path(target).parent, *configured_grid(), match_model_name=False)
+
+
+def _aa_reason(missing: dict[str, int]) -> str:
+    return "AA sweep incomplete: " + ", ".join(f"{k} {n}" for k, n in missing.items()) + " cells missing"
+
+
+def split_ready(items: list) -> tuple[list, list[tuple[str, str]]]:
+    """(items whose AA sweep is complete, [(model, why held)] for the rest)."""
+    ready, held = [], []
+    for item in items:
+        missing = aa_missing(Path(os.path.realpath(item.row["target"])))
+        if missing:
+            held.append((item.row["model"], _aa_reason(missing)))
+        else:
+            ready.append(item)
+    return ready, held
+
+
 def proposal_rows(items: list, cache: HashCache) -> list[dict]:
     rows = []
     for item in items:
@@ -118,7 +150,16 @@ def _cell(v) -> str:
     return "n/a" if v in (None, "") else str(v)
 
 
-def mail_body(n: int, rows: list[dict], superseded: list[int]) -> str:
+def _held_lines(held: list[tuple[str, str]]) -> list[str]:
+    if not held:
+        return []
+    w = max(len(m) for m, _ in held)
+    return ([f"Held back until their AutoAttack sweep reaches Botero ({len(held)}):"]
+            + [f"  {m.ljust(w)}  {why}" for m, why in held] + [""])
+
+
+def mail_body(n: int, rows: list[dict], superseded: list[int],
+              held: Optional[list[tuple[str, str]]] = None) -> str:
     lines = [f"HF upload proposal #{n} -- {len(rows)} zoo model(s) are not on Hugging Face "
              f"({HF_REPO}) or have a stale export.", ""]
     head = ("model", "threat", "ckpt", "epoch", "clean(AA1k)", "val top1", "AA", "flags")
@@ -130,6 +171,7 @@ def mail_body(n: int, rows: list[dict], superseded: list[int]) -> str:
         lines.append("  ".join(str(c).ljust(w) for c, w in zip(row, widths)).rstrip())
     lines += ["", "Checkpoints are pinned by path + sha256; if one changes before approval, the",
               "approval is refused and next Monday's proposal lists it again.", ""]
+    lines += _held_lines(held or [])
     if superseded:
         lines.append("This supersedes open proposal(s): " + ", ".join(f"#{s}" for s in superseded))
         lines.append("")
@@ -142,9 +184,12 @@ def mail_body(n: int, rows: list[dict], superseded: list[int]) -> str:
 # --- commands ------------------------------------------------------------------------------
 
 def cmd_propose(args) -> int:
-    items = candidates(args.manifest, args.mirror, args.excludes)
+    items, held = split_ready(candidates(args.manifest, args.mirror, args.excludes))
+    for model, why in held:
+        print(f"[hf-proposal] HELD {model}: {why}")
     if not items:
-        print(f"[hf-proposal] {_now()} nothing to propose: every non-excluded zoo model is on the Hub")
+        print(f"[hf-proposal] {_now()} nothing to propose: every non-excluded zoo model with a "
+              f"complete AA sweep is on the Hub" + (f" ({len(held)} held)" if held else ""))
         return 0
     rows = proposal_rows(items, HashCache(args.hash_cache))
     pdir: Path = args.proposals
@@ -152,7 +197,7 @@ def cmd_propose(args) -> int:
     n = (ids[-1] + 1) if ids else 1
     open_ids = [i for i in ids if load_status(pdir, i)["status"] == "open"]
     subject = f"[ares] HF upload proposal #{n}: {len(rows)} model(s)"
-    body = mail_body(n, rows, open_ids)
+    body = mail_body(n, rows, open_ids, held)
     if args.dry_run:
         print(subject + "\n\n" + body)
         print(f"[hf-proposal] DRY RUN -- nothing written, no mail (would be #{n})")
@@ -167,7 +212,8 @@ def cmd_propose(args) -> int:
         w.writerows(rows)
     os.replace(tmp, csv_path)
     _write_json(json_path, {"id": n, "created": _now(), "status": "open",
-                            "models": [r["model"] for r in rows]})
+                            "models": [r["model"] for r in rows],
+                            "held": [{"model": m, "reason": why} for m, why in held]})
     for i in open_ids:
         st = load_status(pdir, i)
         st.update(status="superseded", superseded_by=n, superseded_at=_now())
@@ -217,6 +263,8 @@ def cmd_approve(args) -> int:
         return 2
     rows = load_rows(pdir, n)
     problems = check_pins(rows, args.manifest, HashCache(args.hash_cache))
+    # also catches proposals mailed before this gate existed (or a CSV pruned since)
+    problems += [f"{r['model']}: {_aa_reason(m)}" for r in rows if (m := aa_missing(Path(r["target"])))]
     if problems:
         for p in problems:
             print(f"[hf-proposal] REFUSED: {p}", file=sys.stderr)
