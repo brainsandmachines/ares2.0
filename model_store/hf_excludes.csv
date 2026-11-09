@@ -11,3 +11,4 @@ convnext_base_dvd_b_l2_cont4to6_init1_contepoch,aa_sweep/sweep_excludes.csv: 202
 vit_b_cvst_l2trades_4_init1,"aa_sweep/sweep_excludes.csv: 2026-10-07 gradient masking (AA 12.01, ep113; eps6 cont scores 17.4); replaced by vit_b_cvst/l2trades_4_init2 -- see completion_runs_plan.md"
 swin_b_linftrades_4_init2,"2026-11-09 gradient masking under PGD 3 (AA 0.00 on best/last/advbest, clean 83); retraining from periodic epoch_0045 with PGD 5 -- drop this row once the retrain's AA is verified"
 convnext_base_dvd_b_l2_2_init2,"2026-11-09 gradient masking under PGD 3 (AA 0.00 on best/last/advbest, clean 71); retraining from periodic epoch_0150 with PGD 5 -- drop this row once the retrain's AA is verified"
+swin_b_l2trades_4_init2,"2026-11-09 suspected gradient masking under PGD 3 (PGD-val 60-66 vs AA l2@4 5.4/1.4/8.3 at ep96/144/149); retraining from periodic epoch_0105 with PGD 5 -- drop this row once the retrain's AA is verified"
