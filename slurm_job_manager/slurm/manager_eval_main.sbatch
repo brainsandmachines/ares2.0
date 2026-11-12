@@ -11,6 +11,9 @@
 #
 #   sbatch slurm_job_manager/slurm/manager_eval_main.sbatch
 #
+# NOTE: the cluster's job_submit plugin reroutes `--partition=main --gpus=1` to the `gpu`
+# partition (QOS gpu-part: max 5 GPUs per user, shared with every other --gpus job of yours).
+#
 # --constraint/--exclude as in sbatches/aa_sweep_queue_main.sbatch: >=24GB cards only,
 # never the *-pheno-* nodes (their second card is an 11GB gtx_1080 that --gpus=1 may hand
 # out), and never dt-3090-01 / cs-3090-01 (no /groups mount: the ImageNet dirs are missing).

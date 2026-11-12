@@ -98,7 +98,10 @@ Row states: `pending → running (train) → eval → running (eval job) → fin
   node — enough jobs to cover every unowned `eval` row not already matched by a PENDING
   `sjm-eval` job. A surplus job (two callers racing) claims nothing and exits in seconds.
 - **The job.** `--partition=main --gpus=1`, constraint `rtx_3090|rtx_4090|rtx_6000|rtx_pro_6000`,
-  same excludes as the aa_sweep `main` array (pheno nodes, no-`/groups` nodes), 7 days. AA batch
+  same excludes as the aa_sweep `main` array (pheno nodes, no-`/groups` nodes), 7 days. The
+  cluster's submit plugin reroutes it to the **`gpu`** partition (QOS `gpu-part`, **max 5 GPUs per
+  user**, shared with any other `--gpus` job you run there — e.g. epsilon_bounded_contstim's
+  `pe_*` cells), so eval jobs queue as `QOSMaxGRESPerUser` while those hold the 5. AA batch
   by card, always the same 1024 images: ≥45 GB keeps the config's 128 × 8, smaller cards get
   `final_eval_aa_batch_size=32 final_eval_aa_max_batches=32` (via `$SJM_EXTRA_OVERRIDES`).
   Nothing else is new: it is `controller --lane eval` running `lifecycle.build_command` (own
