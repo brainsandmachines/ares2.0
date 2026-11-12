@@ -109,11 +109,49 @@ def test_heartbeat_below_threshold_is_not_cancelled(db):
     assert report.stalled == [] and cancelled == []
 
 
-def test_final_eval_is_never_cancelled(db):
+def test_final_eval_is_never_cancelled_as_a_stall(db):
     _running(db, "a", 1, hb_ago=20 * HOUR, epoch=150, epochs=150)
     cancelled = []
     report = _sweep(db, {1: ("RUNNING", STARTED)}, cancelled)
     assert report.stalled == [] and cancelled == []
+
+
+def test_in_process_final_eval_on_a_training_partition_is_handed_off(db):
+    _running(db, "old", 1, hb_ago=2 * HOUR, epoch=150, epochs=150)
+    cancelled = []
+    report = _sweep(db, {1: ("RUNNING", STARTED)}, cancelled,
+                    partition_of={1: "rtx_pro_6000"}.get)
+    assert cancelled == [1]
+    assert report.handed_off == [("old", 1, "rtx_pro_6000")]
+    assert report.stalled == [] and report.cancelled == []
+    # The owner's TERM trap then releases the fully-trained row to the eval lane.
+    assert db.release("old", owner=1) == 1 and db.get("old").status == "eval"
+
+
+def test_eval_lane_owner_on_main_is_never_handed_off(db):
+    _running(db, "ev", 1, hb_ago=20 * HOUR, epoch=150, epochs=150)
+    cancelled = []
+    report = _sweep(db, {1: ("RUNNING", STARTED)}, cancelled, partition_of={1: "main"}.get)
+    assert cancelled == [] and report.handed_off == []
+
+
+def test_handoff_waits_for_a_quiet_final_eval(db):
+    # Just wrote its last epoch: a new-code run about to mark itself trained.
+    _running(db, "fresh", 1, hb_ago=60, epoch=150, epochs=150)
+    # Still training on a training partition: not a handoff.
+    _running(db, "training", 2, hb_ago=2 * HOUR, epoch=10, epochs=150)
+    cancelled = []
+    report = _sweep(db, {1: ("RUNNING", STARTED), 2: ("RUNNING", STARTED)}, cancelled,
+                    partition_of=lambda jid: "rtx_pro_6000", stall_s=10 * HOUR)
+    assert cancelled == [] and report.handed_off == []
+
+
+def test_handoff_dry_run_cancels_nothing(db):
+    _running(db, "old", 1, hb_ago=2 * HOUR, epoch=150, epochs=150)
+    cancelled = []
+    report = _sweep(db, {1: ("RUNNING", STARTED)}, cancelled, dry_run=True,
+                    partition_of=lambda jid: "rtx6000")
+    assert report.handed_off == [("old", 1, "rtx6000")] and cancelled == []
 
 
 def test_breaker_blocks_cancels_when_many_stall_at_once(db):

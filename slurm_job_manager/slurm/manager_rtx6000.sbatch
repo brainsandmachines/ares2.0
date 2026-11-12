@@ -1,6 +1,7 @@
 #!/bin/bash
 # Slurm job-manager array for the rtx6000 partition (standard-memory GPUs).
-# One task = one GPU = one model (see manager_rtx_pro_6000.sbatch for the model).
+# One task = one GPU = one model, training only (see manager_rtx_pro_6000.sbatch for the
+# model; the AA sweep runs in the eval lane, manager_eval_main.sbatch).
 #
 # Adjust GPU count by editing --array=1-200%K and resubmit.
 #

@@ -5,8 +5,9 @@ The manager sbatch traps Slurm's time-limit SIGTERM and runs::
 
     python -m slurm_job_manager.release "$(cat $SJM_TRAP_FILE)"
 
-which returns the in-flight model to ``pending`` (clears the Slurm owner, bumps
-``requeued``) so the next array task resumes it from ``last.pth.tar``. Safe to
+which returns the in-flight model to the claimable pool (clears the Slurm owner,
+bumps ``requeued``): ``pending`` so the next training task resumes it from
+``last.pth.tar``, or ``eval`` if it has trained every epoch (the eval lane's). Safe to
 call with an empty/absent model name (no-op) and safe if the row already
 finished/failed (the release only touches a running/pending row).
 

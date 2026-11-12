@@ -144,3 +144,73 @@ def test_aircc_progress_hooks_write_to_superset_schema(tmp_path):
     assert j.best_score == 55.5
     # and JobDB's own columns still resolve after aircc touched the table.
     assert db.claim_next(1, {}).slurm_job_id == 1
+
+
+# ---- eval lane ---------------------------------------------------------------
+def _trained(db, name, epochs=150, owner=1):
+    _seed(db, name, epochs=epochs)
+    assert db.claim_next(owner, {}).model_name == name
+    db.update_epoch(name, epochs)
+
+
+def test_mark_trained_hands_row_to_eval_lane(db):
+    _trained(db, "a")
+    assert db.mark_trained("a") == 1
+    j = db.get("a")
+    assert j.status == "eval" and j.slurm_job_id is None and j.claimed_ts is None
+    assert db.claim_next(2, {}) is None                     # train lane: nothing
+    e = db.claim_next(3, {}, lane="eval")
+    assert e.model_name == "a" and e.status == "running" and e.slurm_job_id == 3
+    assert db.claim_next(4, {}, lane="eval") is None        # owned now
+
+
+def test_eval_lane_ignores_pending_and_dependency_gate(db):
+    _trained(db, "child")
+    db.mark_trained("child")
+    _seed(db, "fresh")
+    # The dependency is not finished, but an eval row has already trained from it.
+    assert db.claim_next(5, {"child": "parent_not_finished"}, lane="eval").model_name == "child"
+    assert db.claim_next(6, {}, lane="eval") is None        # 'fresh' is the train lane's
+
+
+def test_train_lane_skips_fully_trained_pending_rows(db):
+    _trained(db, "done")
+    conn = sqlite3.connect(db.db_path)
+    conn.execute("UPDATE jobs SET status='pending', slurm_job_id=NULL WHERE model_name='done'")
+    conn.commit()
+    conn.close()
+    _seed(db, "todo", priority=500)
+    assert db.claim_next(2, {}).model_name == "todo"
+    assert db.promote_trained(dry_run=True) == ["done"]
+    assert db.get("done").status == "pending"
+    assert db.promote_trained() == ["done"]
+    assert db.get("done").status == "eval"
+
+
+def test_release_sends_fully_trained_rows_to_eval(db):
+    _seed(db, "mid")
+    db.claim_next(1, {})
+    db.update_epoch("mid", 70)
+    _trained(db, "end", owner=2)
+    assert db.release("mid", owner=1) == 1 and db.get("mid").status == "pending"
+    assert db.release("end", owner=2) == 1 and db.get("end").status == "eval"
+    # An eval-lane owner released at its time limit goes back to eval too.
+    db.claim_next(3, {}, lane="eval")
+    assert db.release("end", owner=3) == 1
+    assert db.get("end").status == "eval" and db.get("end").requeued == 2
+
+
+def test_reconcile_sends_unclaimed_eval_row_back_to_training(db):
+    _trained(db, "a", epochs=100)
+    db.mark_trained("a")
+    assert db.reconcile("a", 100) == 0 and db.get("a").status == "eval"
+    assert db.reconcile("a", 200) == 1 and db.get("a").status == "pending"
+
+
+def test_unowned_eval_lists_only_claimable_eval_rows(db):
+    _trained(db, "a", owner=1)
+    db.mark_trained("a")
+    _trained(db, "b", owner=2)
+    db.mark_trained("b")
+    db.claim_next(9, {}, lane="eval")
+    assert len(db.unowned_eval()) == 1

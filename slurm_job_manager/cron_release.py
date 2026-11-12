@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Hourly dead/stalled-owner sweep over the sjm DB (``JobDB.cron_release``).
+"""Hourly sjm sweep: dead/stalled owners, eval handoff, eval-lane top-up.
+
+1. ``JobDB.cron_release``: release rows no live task owns, scancel stalled owners,
+   and hand off old-config runs stuck in in-process final_eval on a training
+   partition (scancel -> the trap releases the row to ``eval``).
+2. ``eval_lane.top_up``: move stray fully-trained ``pending`` rows to ``eval`` and
+   sbatch enough ``sjm-eval`` jobs on ``main`` for every unowned ``eval`` row --
+   the catch-up for a submit that failed on the compute node.
 
 Runs on the cluster login node, driven by ``scripts/cron_release.sh`` from a Botero cron::
 
@@ -14,6 +21,7 @@ import subprocess
 import sys
 from typing import Optional
 
+from . import eval_lane
 from .db import JobDB
 
 # Epoch-second timestamps: local wall-clock times are ambiguous across a DST change.
@@ -53,6 +61,14 @@ def owner_state(job_id: int) -> Optional[tuple[str, Optional[int]]]:
     return None
 
 
+def partition_of(job_id: int) -> Optional[str]:
+    """The partition a live job runs on, or None if squeue did not say."""
+    sq = _run(["squeue", "-j", str(job_id), "-h", "-o", "%P"])
+    if sq is None or sq.returncode != 0 or not sq.stdout.strip():
+        return None
+    return sq.stdout.strip().splitlines()[0].strip()
+
+
 def cancel(job_id: int) -> bool:
     r = _run(["scancel", str(job_id)])
     return r is not None and r.returncode == 0
@@ -76,9 +92,24 @@ def main() -> int:
         print("[cron_release] no DB path (set --db or $SJM_DB)", file=sys.stderr)
         return 2
 
-    report = JobDB(args.db).cron_release(owner_state, cancel, stall_s=args.stall_s,
-                                         max_stalled=args.max_stalled, dry_run=args.dry_run)
+    db = JobDB(args.db)
+    report = db.cron_release(owner_state, cancel, stall_s=args.stall_s,
+                             max_stalled=args.max_stalled, dry_run=args.dry_run,
+                             partition_of=partition_of)
     tag = "[cron_release]" + (" DRY-RUN" if args.dry_run else "")
+    for name, job_id, part in report.handed_off:
+        print(f"{tag} handoff {name} (owner {job_id} on {part}: trained, in-process "
+              f"final_eval) -> scancelled, eval lane takes over")
+    try:
+        lane = eval_lane.top_up(db, dry_run=args.dry_run)
+    except Exception as exc:  # never let the top-up hide the release report
+        lane = {"promoted": [], "unowned": "?", "pending_jobs": None, "submitted": []}
+        print(f"{tag} eval top-up FAILED: {exc}")
+    for name in lane["promoted"]:
+        print(f"{tag} promoted {name} (pending, fully trained) -> eval")
+    if lane["submitted"]:
+        print(f"{tag} eval lane: {lane['unowned']} unowned eval row(s), "
+              f"{lane['pending_jobs']} queued sjm-eval job(s) -> submitted {lane['submitted']}")
     for name, job_id, reason in report.released:
         print(f"{tag} released {name} (owner {job_id}: {reason})")
     cancelled = {(name, job_id) for name, job_id, _ in report.cancelled}
@@ -94,7 +125,8 @@ def main() -> int:
               f"(> {args.max_stalled}); cancelled none")
     print(f"{tag} summary released={len(report.released)} stalled={len(report.stalled)} "
           f"cancelled={len(report.cancelled)} breaker={int(report.breaker_tripped)} "
-          f"unknown={len(report.unknown)}")
+          f"unknown={len(report.unknown)} handoff={len(report.handed_off)} "
+          f"eval_unowned={lane['unowned']} eval_submitted={len(lane['submitted'])}")
     return 0
 
 

@@ -36,10 +36,26 @@ STATUS_PENDING = "pending"
 STATUS_RUNNING = "running"
 STATUS_FAILED = "failed"
 STATUS_FINISHED = "finished"
+# Trained to total_epochs, waiting for (or between runs of) its eval-only job on
+# the `main` partition: the full AutoAttack grid + the DB best_checkpoint/score.
+# The training lane never runs final_eval; the eval lane claims these rows.
+STATUS_EVAL = "eval"
+
+# SQL predicate: the row has trained every epoch it is meant to.
+_FULLY_TRAINED = "(total_epochs > 0 AND current_epoch >= total_epochs)"
 
 # Owner states whose processes may still be training; ``cron_release`` frees rows
 # owned by anything else. SUSPENDED resumes in place, so it keeps its row.
 _OWNER_LIVE_STATES = frozenset({"RUNNING", "SUSPENDED"})
+
+# The training-lane partitions. A run there that has trained every epoch yet is
+# still alive is an old-config process inside its in-process final_eval: the
+# hourly sweep scancels it so the eval lane (on `main`) takes the AA sweep over.
+TRAINING_PARTITIONS = frozenset({"rtx_pro_6000", "rtx6000"})
+# ...but only once its last epoch write is this old: a new-code train run sits
+# at current_epoch == total_epochs for the few seconds between its last epoch
+# and mark_trained, and final_eval writes no heartbeat.
+HANDOFF_MIN_S = 1800
 
 _BUSY_TIMEOUT_MS = 30_000
 _MAX_RETRIES = 8
@@ -110,6 +126,7 @@ class CronReleaseReport:
     stalled: list = field(default_factory=list)    # (model_name, slurm_job_id, heartbeat_age_s)
     cancelled: list = field(default_factory=list)  # (model_name, slurm_job_id, heartbeat_age_s)
     unknown: list = field(default_factory=list)    # (model_name, slurm_job_id): probe failed
+    handed_off: list = field(default_factory=list)  # (model_name, slurm_job_id, partition)
     breaker_tripped: bool = False
 
 
@@ -206,16 +223,18 @@ class JobDB:
     def reconcile(self, model_name: str, total_epochs: int) -> int:
         """Update total_epochs; re-open a finished row whose progress is short of it.
 
-        Returns 1 if the row was re-opened (finished -> pending), else 0. Lets you
-        raise a model's epochs in the CSV and have training resume the delta from
-        its own last.pth.tar.
+        Returns 1 if the row was re-opened (finished/eval -> pending), else 0. Lets
+        you raise a model's epochs in the CSV and have training resume the delta
+        from its own last.pth.tar. An unclaimed ``eval`` row goes back to the
+        training lane too: the eval lane must never train.
         """
         def op(conn: sqlite3.Connection) -> int:
             conn.execute("UPDATE jobs SET total_epochs=? WHERE model_name=?",
                          (int(total_epochs), model_name))
             cur = conn.execute(
                 "UPDATE jobs SET status='pending', slurm_job_id=NULL, claimed_ts=NULL "
-                "WHERE model_name=? AND status='finished' AND current_epoch < ?",
+                "WHERE model_name=? AND current_epoch < ? AND "
+                "(status='finished' OR (status='eval' AND slurm_job_id IS NULL))",
                 (model_name, int(total_epochs)),
             )
             return cur.rowcount
@@ -224,14 +243,14 @@ class JobDB:
     def reopen_for_eval(self, model_name: str) -> int:
         """Re-open a finished, fully-trained row so its final_eval runs again.
 
-        Returns 1 if the row went finished -> pending, else 0. The re-claim resumes
-        from its own last.pth.tar at ``start_epoch == epochs``, so no epoch trains
-        and the in-process final_eval fills only the missing AutoAttack cells. Rows
-        short of ``total_epochs`` belong to :meth:`reconcile`, not here.
+        Returns 1 if the row went finished -> eval, else 0. The eval lane's claim
+        resumes from its own last.pth.tar at ``start_epoch == epochs``, so no epoch
+        trains and final_eval fills only the missing AutoAttack cells. Rows short
+        of ``total_epochs`` belong to :meth:`reconcile`, not here.
         """
         def op(conn: sqlite3.Connection) -> int:
             cur = conn.execute(
-                "UPDATE jobs SET status='pending', slurm_job_id=NULL, claimed_ts=NULL "
+                "UPDATE jobs SET status='eval', slurm_job_id=NULL, claimed_ts=NULL "
                 "WHERE model_name=? AND status='finished' AND current_epoch >= total_epochs",
                 (model_name,),
             )
@@ -239,24 +258,37 @@ class JobDB:
         return self._atomic(op)
 
     # ---- claiming -----------------------------------------------------------
-    def claim_next(self, slurm_job_id: int, deps: Mapping[str, str]) -> Optional[Job]:
-        """Atomically claim the top eligible pending model for this array task.
+    def claim_next(self, slurm_job_id: int, deps: Mapping[str, str],
+                   lane: str = "train") -> Optional[Job]:
+        """Atomically claim the top eligible model for this task's lane.
+
+        ``lane="train"`` claims ``pending`` rows that still have epochs to train
+        (a fully-trained pending row is the eval lane's, see :meth:`promote_trained`);
+        ``lane="eval"`` claims ``eval`` rows. Either way the row becomes
+        ``running`` and owned by ``slurm_job_id``.
 
         Order: **test lane first** (``is_test DESC``), then ``priority ASC`` (lower
         number = sooner). ``deps`` maps model_name -> dependency_model_name (from
         the CSV; '' means none). A dependency is satisfied only when its row is
-        FINISHED *and* has a non-empty ``best_checkpoint``. The whole
+        FINISHED *and* has a non-empty ``best_checkpoint`` (train lane only: an
+        eval row has already trained from it). The whole
         SELECT+eligibility+UPDATE runs under one write lock.
         """
+        if lane not in ("train", "eval"):
+            raise ValueError(f"unknown lane {lane!r}")
         now = int(time.time())
+        if lane == "eval":
+            where = "status='eval' AND slurm_job_id IS NULL"
+        else:
+            where = f"status='pending' AND slurm_job_id IS NULL AND NOT {_FULLY_TRAINED}"
 
         def op(conn: sqlite3.Connection) -> Optional[Job]:
             candidates = conn.execute(
-                "SELECT * FROM jobs WHERE status='pending' AND slurm_job_id IS NULL "
+                f"SELECT * FROM jobs WHERE {where} "
                 "ORDER BY is_test DESC, priority ASC"
             ).fetchall()
             for cand in candidates:
-                dep = (deps.get(cand["model_name"]) or "").strip()
+                dep = (deps.get(cand["model_name"]) or "").strip() if lane == "train" else ""
                 if dep:
                     dep_row = conn.execute(
                         "SELECT status, best_checkpoint FROM jobs WHERE model_name=?",
@@ -316,17 +348,20 @@ class JobDB:
 
     def release(self, model_name: str, owner: Optional[int] = None,
                 claimed_ts: Optional[int] = None) -> int:
-        """Return a row to the claimable pool (status->pending, clear owner).
+        """Return a row to the claimable pool (clear owner).
 
         The SIGTERM-trap path (Slurm time-limit) and the dead-owner requeue path.
-        Only touches an owned/running row so a concurrent finish/fail wins.
+        Only touches an owned/running row so a concurrent finish/fail wins. A
+        fully-trained row goes to ``eval`` (the eval lane picks it up), anything
+        else to ``pending`` (the training lane resumes it).
 
         ``owner`` (a Slurm job id) makes the release conditional on still owning
         the row: a task whose claim was taken over no-ops instead of freeing the
         run that now holds it. ``None`` is the unguarded manual/admin path.
         ``claimed_ts`` also pins the claim, since a requeued Slurm id keeps its number.
         """
-        sql = ("UPDATE jobs SET status='pending', slurm_job_id=NULL, claimed_ts=NULL, "
+        sql = (f"UPDATE jobs SET status=CASE WHEN {_FULLY_TRAINED} THEN 'eval' ELSE 'pending' END, "
+               "slurm_job_id=NULL, claimed_ts=NULL, "
                "requeued=requeued+1 WHERE model_name=? AND status IN ('running','pending')")
         params: tuple = (model_name,)
         if owner is not None:
@@ -340,11 +375,20 @@ class JobDB:
     def cron_release(self, owner_state: Callable[[int], Optional[tuple]],
                      cancel: Callable[[int], bool], stall_s: int, max_stalled: int,
                      min_age_s: int = 300, skew_s: int = 120, dry_run: bool = False,
-                     now: Optional[int] = None) -> CronReleaseReport:
+                     now: Optional[int] = None,
+                     partition_of: Optional[Callable[[int], Optional[str]]] = None,
+                     handoff_min_s: int = HANDOFF_MIN_S) -> CronReleaseReport:
         """Release rows no live trainer owns; scancel owners whose heartbeat stalled.
 
         ``owner_state(job_id)`` -> ``(slurm_state, start_ts)``, state ``""`` once Slurm
         has forgotten the id, or ``None`` if the probe failed (row left untouched).
+
+        ``partition_of(job_id)`` (optional) enables the eval **handoff**: a live owner
+        on a :data:`TRAINING_PARTITIONS` partition whose row has trained every epoch
+        and whose last epoch write is older than ``handoff_min_s`` is running final_eval
+        in-process (an old-config run) -> scancel it. Its SIGTERM trap releases the
+        row, and :meth:`release` sends a fully-trained row to ``eval``. Eval-lane
+        owners (on ``main``) are never handed off. Not subject to the stall breaker.
         """
         now = int(time.time()) if now is None else int(now)
         report = CronReleaseReport()
@@ -370,6 +414,13 @@ class JobDB:
                 continue
             # current_epoch == total_epochs is final_eval, which writes no heartbeat.
             age = now - job.heartbeat_ts
+            fully_trained = job.total_epochs > 0 and job.current_epoch >= job.total_epochs
+            if fully_trained and partition_of is not None and age > handoff_min_s:
+                part = partition_of(int(job.slurm_job_id))
+                if part in TRAINING_PARTITIONS:
+                    if dry_run or cancel(int(job.slurm_job_id)):
+                        report.handed_off.append((job.model_name, job.slurm_job_id, part))
+                continue
             if job.current_epoch < job.total_epochs and age > stall_s:
                 report.stalled.append((job.model_name, job.slurm_job_id, age))
 
@@ -404,6 +455,42 @@ class JobDB:
             "heartbeat_ts=? WHERE model_name=?",
             (path, None if score is None else float(score), int(time.time()), model_name),
         )
+
+    def mark_trained(self, model_name: str) -> int:
+        """Training lane done: running -> eval, owner cleared, for the eval lane."""
+        return self._write(
+            "UPDATE jobs SET status='eval', slurm_job_id=NULL, claimed_ts=NULL, heartbeat_ts=? "
+            "WHERE model_name=? AND status='running'",
+            (int(time.time()), model_name),
+        )
+
+    def promote_trained(self, dry_run: bool = False) -> list[str]:
+        """Move unowned fully-trained ``pending`` rows to ``eval``; return their names.
+
+        Such a row comes from a run that ended outside the normal path (an old
+        controller's transient requeue, a manual release); the training lane no
+        longer claims it, so without this it would sit pending forever.
+        """
+        def op(conn: sqlite3.Connection) -> list[str]:
+            names = [r["model_name"] for r in conn.execute(
+                f"SELECT model_name FROM jobs WHERE status='pending' AND slurm_job_id IS NULL "
+                f"AND {_FULLY_TRAINED}"
+            ).fetchall()]
+            if names and not dry_run:
+                conn.executemany(
+                    "UPDATE jobs SET status='eval' WHERE model_name=? AND status='pending' "
+                    "AND slurm_job_id IS NULL", [(n,) for n in names])
+            return names
+        return self._atomic(op)
+
+    def unowned_eval(self) -> list[Job]:
+        """``eval`` rows no eval job has claimed yet (what an eval job would take)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM jobs WHERE status='eval' AND slurm_job_id IS NULL "
+                "ORDER BY is_test DESC, priority ASC"
+            ).fetchall()
+        return [_row_to_job(r) for r in rows]
 
     def mark_finished(self, model_name: str) -> int:
         return self._write(

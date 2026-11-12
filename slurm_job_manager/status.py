@@ -3,8 +3,9 @@
 
     python -m slurm_job_manager.status --db $SJM_DB
 
-Counts by status, currently-running models (epoch + heartbeat age + owner),
-recently finished (best_score), failed (signature + first error line), the test
+Counts by status, currently-running models (epoch + heartbeat age + owner; a
+row at ep N/N is in its eval job on ``main``), trained rows waiting for an eval
+job (status ``eval``), recently finished (best_score), failed (signature + first error line), the test
 lane, and dependency-blocked pending models. Never writes.
 """
 
@@ -60,6 +61,12 @@ def main() -> None:
         print(f"  {j.model_name:55s} ep {j.current_epoch}/{j.total_epochs}  "
               f"hb {_age(j.heartbeat_ts, now)}  job {j.slurm_job_id}"
               f"  requeued {j.requeued}{tag}")
+
+    evals = [j for j in jobs if j.status == "eval"]
+    print(f"\n-- trained, waiting for an sjm-eval job on main ({len(evals)}) --")
+    for j in sorted(evals, key=lambda x: (-x.is_test, x.priority)):
+        print(f"  {j.model_name:55s} ep {j.current_epoch}/{j.total_epochs}  "
+              f"trained {_age(j.heartbeat_ts, now)} ago  requeued {j.requeued}")
 
     pending_test = [j for j in jobs if j.status == "pending" and j.is_test]
     if pending_test:

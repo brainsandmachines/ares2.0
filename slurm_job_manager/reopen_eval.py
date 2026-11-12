@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Re-open finished models whose AutoAttack grid is incomplete (eval-only rerun).
 
-The training job runs the full linf/l2/l1 x eps AutoAttack grid in-process
-(``final_eval_aatype: full_sweep``). A model can still finish without it: it was
-already running when that default changed (old config loaded at start), or its
-final_eval raised -- the exception is logged, the process exits 0, and the row
-is marked finished anyway. This finds those rows and, with ``--apply``, puts them
-back to pending. The re-claim resumes from its own ``last.pth.tar`` at the final
-epoch, trains nothing, and the in-process final_eval fills only the missing cells.
+The eval lane (an ``sjm-eval`` job on ``main``, see ``eval_lane.py``) runs the full
+linf/l2/l1 x eps AutoAttack grid (``final_eval_aatype: full_sweep``) after training.
+A model can still finish without it: it trained under an older config, or its
+final_eval raised -- the exception is logged, the process exits 0, and the row is
+marked finished anyway. This finds those rows and, with ``--apply``, puts them
+back to ``eval`` and queues ``sjm-eval`` jobs for them. The eval job resumes from
+its own ``last.pth.tar`` at the final epoch, trains nothing, and final_eval fills
+only the missing cells.
 
     python -m slurm_job_manager.reopen_eval --db $SJM_DB               # dry run: list
     python -m slurm_job_manager.reopen_eval --db $SJM_DB --apply --all
@@ -26,7 +27,7 @@ so an eval that keeps failing is reported as ``capped`` instead of relaunched
 daily; ``--model NAME`` ignores the cap. The last line is a parseable summary for
 the daily cron (``scripts/reopen_eval_daily.sh``).
 
-Caveat: while a re-opened row is pending/running, its not-yet-claimed dependents
+Caveat: while a re-opened row is eval/running, its not-yet-claimed dependents
 are blocked again (the claim gate wants the dependency finished).
 """
 
@@ -200,8 +201,16 @@ def main(argv=None) -> int:
             if db.reopen_for_eval(name):
                 reopened += 1
                 history.setdefault(name, []).append(now)
-        print(f"re-opened {reopened} row(s) -> pending (eval-only rerun on next claim)")
+        print(f"re-opened {reopened} row(s) -> eval (eval-only rerun on main)")
         _save_history(history_path, history)
+        if reopened:
+            from .eval_lane import top_up
+            try:
+                lane = top_up(db)
+                print(f"eval lane: {lane['unowned']} unowned eval row(s), "
+                      f"{lane['pending_jobs']} queued sjm-eval job(s) -> submitted {lane['submitted']}")
+            except Exception as exc:  # the hourly cron_release sweep catches up
+                print(f"eval job submit failed (cron_release will retry): {exc}", file=sys.stderr)
     print(f"[reopen_eval] {'' if args.apply else 'DRY-RUN '}summary incomplete={len(incomplete)} "
           f"reopened={reopened} capped={len(capped)} aa_queue_busy={len(busy)}")
     return 0

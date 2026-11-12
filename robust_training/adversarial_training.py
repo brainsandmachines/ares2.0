@@ -428,7 +428,10 @@ def main(cfg: DictConfig):
 
     if cfg.dist.rank == 0:
         _maybe_run_final_eval(cfg, output_dir, _logger, did_train_this_run)
-        run_shape_bias_analysis(cfg, output_dir)
+        # Shape-bias is post-training analysis, like final_eval: a training-only
+        # run (final_eval=False, the sjm training lane) leaves both to the eval job.
+        if cfg.get("final_eval", False):
+            run_shape_bias_analysis(cfg, output_dir)
 
 @hydra.main(config_path="configs", config_name="config", version_base="1.3")
 def hydra_main(cfg: DictConfig):

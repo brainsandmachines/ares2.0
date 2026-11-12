@@ -23,7 +23,9 @@ now-finished AIRCC allocation; its queue is retired but its shared helpers are s
    through `~/slurm_mount` (a read-only sshfs mount, for inspecting remote logs/checkpoints only).
 2. **Slurm cluster** (`ssh slurm`, remote repo `/home/ashtomer/projects/ares`) — run via
    `slurm_job_manager/`. Partitions `rtx_pro_6000` (96GB) / `rtx6000`. One array task = one GPU =
-   one model, single-process train→final_eval→plot.
+   one model, **training only** (`final_eval=False`). Since 2026-11-12 the AutoAttack sweep + DB
+   best score run in a separate **eval lane**: one `sjm-eval` job per trained model on the shared
+   `main` partition (row status `eval`; see `slurm_job_manager/README.md`).
 
 `slurm_job_manager` is the only live queue, and its philosophy is: **the CSV is ground truth** (one
 column per Hydra override), the SQLite DB holds only operational state (claim status, progress, best
@@ -122,10 +124,11 @@ the user before running `seed.py` writes or `sbatch`.
   variants, `training_plots.py`, shape-bias analysis) generally run against already-trained
   checkpoints, independent of the job managers.
 - **`aa_sweep/`** — completes the AutoAttack grid (3 norms × 5 eps × 3 checkpoint kinds) for
-  finished models. **Manual-only since 2026-10-15:** its two Botero crons were removed because the
-  training job now runs the full grid in-process (`final_eval_aatype: full_sweep`, trained cell
-  first, then the rest — see `config.yaml`); a finished sjm model still missing cells is re-opened
-  for an eval-only rerun with `python -m slurm_job_manager.reopen_eval`. Use `aa_sweep` for manual
+  finished models. **Manual-only since 2026-10-15:** its two Botero crons were removed because every
+  sjm model now gets the full grid automatically (`final_eval_aatype: full_sweep`, trained cell
+  first, then the rest — see `config.yaml`), since 2026-11-12 in its `sjm-eval` job on `main` rather
+  than in the training process; a finished sjm model still missing cells is re-opened for an
+  eval-only rerun with `python -m slurm_job_manager.reopen_eval`. Use `aa_sweep` for manual
   backfills/audits (`python -m aa_sweep.submit --dry-run`). **Two independent lanes that never exchange models:**
   the Slurm lane submits sbatch jobs against the cluster's own `results/models` copies, and the
   Botero lane runs on this machine's RTX 4090 against `/mnt/data4t/models`. Each writes its result

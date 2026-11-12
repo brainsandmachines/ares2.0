@@ -1,14 +1,22 @@
-"""Cluster-side array worker: requeue dead owners -> claim one model -> run it.
+"""Cluster-side worker: requeue dead owners -> claim one model -> run it.
 
-Every task of a manager array (``slurm/manager_<partition>.sbatch``) runs this
-once and exits. One task = one GPU = one model:
+Every task of a manager array (``slurm/manager_<partition>.sbatch``) and every
+``sjm-eval`` job (``slurm/manager_eval_main.sbatch``) runs this once and exits.
+One task = one GPU = one model, in one of two lanes (``--lane`` / ``$SJM_LANE``):
+
+* **train** (rtx_pro_6000 / rtx6000 arrays): claim a ``pending`` row, train it
+  with ``final_eval=False``; success -> ``eval`` + queue an ``sjm-eval`` job.
+* **eval** (``main``): claim an ``eval`` row, resume it at its final epoch so
+  only final_eval (full AA sweep + DB best checkpoint/score) and shape-bias run;
+  success -> ``finished``.
+
+Both lanes:
 
 1. release rows whose owning Slurm task is dead (liveness, not heartbeat),
 2. atomically claim the single top-priority eligible row (test lane first),
-3. run the full single-process lifecycle (train -> final_eval AA -> plot),
-4. success -> mark_finished; transient error -> requeue; real error -> mark
-   FAILED with the log tail + signature (the botero monitor escalates unknown
-   signatures to codex).
+3. run the lane's single-process command,
+4. transient error -> requeue; real error -> mark FAILED with the log tail +
+   signature (the botero monitor escalates unknown signatures to codex).
 
 The claimed model id is written to ``SJM_TRAP_FILE`` (if set) so the sbatch's
 SIGTERM trap can ``release`` the row on a Slurm time-limit kill.
@@ -27,7 +35,7 @@ from typing import Optional
 from .classify import ACTION_REQUEUE, classify, error_hash
 from .csv_spec import CSV_DIR, deps_map, load_all_rows, row_map
 from .db import JobDB
-from . import lifecycle
+from . import eval_lane, lifecycle
 
 logger = logging.getLogger("sjm.controller")
 
@@ -93,15 +101,15 @@ def _write_trap_file(model_name: str) -> None:
 
 
 def run_once(db: JobDB, rows: dict, deps: dict, models_root: Path,
-             slurm_job_id: int) -> int:
+             slurm_job_id: int, lane: str = "train") -> int:
     """Do one requeue+claim+run cycle. Returns a process exit code."""
     freed = db.requeue_dead(_default_slurm_active, min_age_s=REQUEUE_MIN_AGE_S)
     if freed:
         logger.info("released %d dead-owner row(s)", freed)
 
-    job = db.claim_next(slurm_job_id, deps)
+    job = db.claim_next(slurm_job_id, deps, lane=lane)
     if job is None:
-        logger.info("no claimable work; exiting 0")
+        logger.info("no claimable %s work; exiting 0", lane)
         return 0
 
     row = rows.get(job.model_name)
@@ -111,14 +119,28 @@ def run_once(db: JobDB, rows: dict, deps: dict, models_root: Path,
         return 1
 
     _write_trap_file(job.model_name)
-    logger.info("claimed %s (test=%s, priority=%s)", job.model_name, job.is_test, job.priority)
+    logger.info("claimed %s [%s lane] (test=%s, priority=%s)",
+                job.model_name, lane, job.is_test, job.priority)
 
-    rc, tail = lifecycle.run(row, models_root, db, log=lambda m: print(m, flush=True))
+    rc, tail = lifecycle.run(row, models_root, db, log=lambda m: print(m, flush=True),
+                             extra_overrides=lifecycle.lane_overrides(lane))
 
     fresh = db.get(job.model_name)
     if rc == 0 and fresh is not None and fresh.status == "running":
-        db.mark_finished(job.model_name)
-        logger.info("%s FINISHED", job.model_name)
+        if lane == "eval":
+            db.mark_finished(job.model_name)
+            logger.info("%s FINISHED (eval lane)", job.model_name)
+            return 0
+        # Like the old mark_finished, a clean exit is trusted even if the DB epoch
+        # counter is short of total_epochs (e.g. a shift-managed target that
+        # could not be synced): re-queueing it for training would loop forever.
+        db.mark_trained(job.model_name)
+        logger.info("%s TRAINED -> eval lane", job.model_name)
+        try:
+            report = eval_lane.top_up(db)
+            logger.info("eval lane top-up: %s", report)
+        except Exception as exc:  # the hourly cron_release sweep catches up
+            logger.warning("eval job submit failed (cron will retry): %s", exc)
         return 0
 
     # Non-zero (or the row was released mid-run by the trap): classify the tail.
@@ -149,6 +171,10 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true",
                     help="Show the next eligible command(s) without claiming/launching.")
     ap.add_argument("--dry-run-count", type=int, default=8)
+    ap.add_argument("--lane", choices=("train", "eval"),
+                    default=os.environ.get("SJM_LANE", "train"),
+                    help="train: pending rows, final_eval=False. eval: trained rows, "
+                         "final_eval only (default $SJM_LANE or train).")
     args = ap.parse_args()
 
     if not args.db:
@@ -160,18 +186,23 @@ def main() -> int:
     db = JobDB(args.db)
 
     if args.dry_run:
-        return _dry_run(db, rows, deps, args.models_root, args.dry_run_count)
+        return _dry_run(db, rows, deps, args.models_root, args.dry_run_count, args.lane)
 
     slurm_job_id = int(os.environ.get("SLURM_JOB_ID", os.getpid()))
-    return run_once(db, rows, deps, args.models_root, slurm_job_id)
+    return run_once(db, rows, deps, args.models_root, slurm_job_id, lane=args.lane)
 
 
-def _dry_run(db: JobDB, rows: dict, deps: dict, models_root: Path, n: int) -> int:
-    pending = [j for j in db.all_jobs() if j.status == "pending"]
+def _dry_run(db: JobDB, rows: dict, deps: dict, models_root: Path, n: int,
+             lane: str = "train") -> int:
+    if lane == "eval":
+        pending = db.unowned_eval()
+    else:
+        pending = [j for j in db.all_jobs() if j.status == "pending"
+                   and not (j.total_epochs > 0 and j.current_epoch >= j.total_epochs)]
     shown = 0
-    print(f"# dry-run: next {n} eligible job(s) in claim order (test lane first)")
+    print(f"# dry-run [{lane} lane]: next {n} eligible job(s) in claim order (test lane first)")
     for j in pending:
-        dep = deps.get(j.model_name, "")
+        dep = deps.get(j.model_name, "") if lane == "train" else ""
         if dep:
             dj = db.get(dep)
             if not (dj and dj.status == "finished" and (dj.best_checkpoint or "").strip()):
@@ -180,7 +211,8 @@ def _dry_run(db: JobDB, rows: dict, deps: dict, models_root: Path, n: int) -> in
         if row is None:
             continue
         try:
-            cmd = lifecycle.build_command(row, models_root, db)
+            cmd = lifecycle.build_command(row, models_root, db,
+                                          extra_overrides=lifecycle.lane_overrides(lane))
             print(f"\n# [{shown}] {j.model_name} (test={j.is_test}, priority={j.priority})")
             print(" ".join(cmd))
         except Exception as exc:

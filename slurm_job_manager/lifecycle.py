@@ -1,12 +1,20 @@
-"""Full per-model lifecycle: build the training command and run it.
+"""Per-model lifecycle: build the ``adversarial_training`` command and run it.
 
-A single ``python -m robust_training.adversarial_training`` does **everything** --
-train, then (via the config default ``final_eval=True``) the AutoAttack sweep on
-best/last/advbest and the comparison plot, all in one process. The in-process
-hooks (``aircc.aircc_job_manager.progress``, already imported by the training
-code) write epoch / heartbeat / best-checkpoint to this manager's DB because we
-export ``AIRCC_DB`` + ``AIRCC_MODEL_ID``. So the lifecycle here just builds the
-command, launches one subprocess, and marks the row finished/failed.
+The same command serves both lanes; only the trailing overrides differ:
+
+* **train** lane (rtx_pro_6000 / rtx6000 manager arrays) appends ``final_eval=False``:
+  the process trains to ``training.epochs`` and exits -- no AutoAttack, no
+  shape-bias -- so the big cards only ever train.
+* **eval** lane (``slurm/manager_eval_main.sbatch`` on ``main``) appends nothing
+  but the per-card AA batch geometry (``$SJM_EXTRA_OVERRIDES``). The command
+  resumes from the row's own ``last.pth.tar`` at the final epoch, trains 0
+  epochs, and runs the config-default ``final_eval`` (``full_sweep``: trained
+  cell first, then the full grid on best/last/advbest + plot) and shape-bias.
+
+The in-process hooks (``aircc.aircc_job_manager.progress``, already imported by
+the training code) write epoch / heartbeat / best-checkpoint to this manager's DB
+because we export ``AIRCC_DB`` + ``AIRCC_MODEL_ID``. So the lifecycle here just
+builds the command and launches one subprocess; the controller owns the status.
 
 Botero differences vs the aircc lifecycle: **no** ``+machine`` override (the
 config default dataset dirs are used), and the CSV's ``training.batch_size`` is
@@ -188,7 +196,17 @@ def _apply_batch_divisor(tokens: list[str]) -> list[str]:
     return out
 
 
-def build_command(row: dict, models_root: Path, db, *, python_exe: Optional[str] = None) -> list[str]:
+def lane_overrides(lane: str) -> list[str]:
+    """The overrides a lane appends after the row's own (see the module doc)."""
+    if lane == "train":
+        return ["final_eval=False"]
+    if lane == "eval":
+        return os.environ.get("SJM_EXTRA_OVERRIDES", "").split()
+    raise ValueError(f"unknown lane {lane!r}")
+
+
+def build_command(row: dict, models_root: Path, db, *, python_exe: Optional[str] = None,
+                  extra_overrides: Optional[list[str]] = None) -> list[str]:
     """Construct the full training command for a CSV row.
 
     init_mode:
@@ -232,6 +250,7 @@ def build_command(row: dict, models_root: Path, db, *, python_exe: Optional[str]
     else:  # scratch
         overrides.append(f"model.resume={own_last}")
 
+    overrides += list(extra_overrides or [])
     return [python_exe, "-m", "robust_training.adversarial_training"] + _apply_batch_divisor(overrides)
 
 
@@ -255,8 +274,9 @@ def _lifecycle_env(row: dict, db) -> dict:
 
 
 def run(row: dict, models_root: Path, db, *, python_exe: Optional[str] = None,
-        tail_lines: int = 400, log=print) -> tuple[int, str]:
-    """Run the full lifecycle (train+eval+plot) in one process.
+        tail_lines: int = 400, log=print,
+        extra_overrides: Optional[list[str]] = None) -> tuple[int, str]:
+    """Run one lane's command (train-only, or eval-only) in one process.
 
     Streams the child's output to our stdout (the Slurm .out) while keeping a
     bounded tail for the caller's failure classification. Returns
@@ -266,7 +286,8 @@ def run(row: dict, models_root: Path, db, *, python_exe: Optional[str] = None,
     """
     name = row["model_name"]
     try:
-        cmd = build_command(row, models_root, db, python_exe=python_exe)
+        cmd = build_command(row, models_root, db, python_exe=python_exe,
+                            extra_overrides=extra_overrides)
     except Exception as exc:
         msg = f"build_command: {exc}"
         log(f"[lifecycle] {name}: {msg}")

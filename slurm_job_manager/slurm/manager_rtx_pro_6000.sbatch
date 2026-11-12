@@ -1,7 +1,9 @@
 #!/bin/bash
 # Slurm job-manager array for the rtx_pro_6000 partition (96 GB GPUs).
-# One task = one GPU = one model: requeue dead owners -> claim one row -> run the
-# single-process lifecycle (train -> final_eval AA -> plot) -> exit.
+# One task = one GPU = one model: requeue dead owners -> claim one pending row -> TRAIN
+# it (final_eval=False: no AutoAttack, no shape-bias here) -> mark it `eval` and sbatch
+# an `sjm-eval` job on `main` (manager_eval_main.sbatch), which runs the full AA sweep +
+# writes the DB best score -> exit. The 96GB cards only ever train.
 #
 # Adjust GPU count by editing --array=1-200%K (K = concurrent GPUs) and resubmit.
 #
@@ -50,7 +52,7 @@ python -m slurm_job_manager.controller &
 CHILD=$!
 wait "$CHILD"
 status=$?
-# After a clean exit, prune the finished model's rolling checkpoints (keep
+# After a clean exit, prune the trained model's rolling checkpoints (keep
 # best/best_adv/last + top-3 by eval_top1). The controller wrote the claimed
 # model name to SJM_TRAP_FILE; it is empty on a "no claimable work" exit.
 if [ "$status" -eq 0 ]; then

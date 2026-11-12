@@ -225,3 +225,29 @@ def test_corrupt_sidecar_is_recomputed(db, monkeypatch, tmp_path):
     row = _row(init_mode="resume", dependency_model_name="dep", resume_offset_assumed="150")
     cmd = lifecycle.build_command(row, tmp_path, db, python_exe="py")
     assert _val(cmd, "training.epochs") == "158"
+
+
+# --------------------------------------------------------------------------
+# lanes
+# --------------------------------------------------------------------------
+def test_train_lane_turns_final_eval_off(db, monkeypatch, tmp_path):
+    monkeypatch.delenv("SJM_BATCH_DIVISOR", raising=False)
+    cmd = lifecycle.build_command(_row(), tmp_path, db, python_exe="py",
+                                  extra_overrides=lifecycle.lane_overrides("train"))
+    assert cmd[-1] == "final_eval=False"
+    assert _val(cmd, "model.resume") == str(tmp_path / "m" / "last.pth.tar")
+
+
+def test_eval_lane_keeps_final_eval_and_adds_card_overrides(db, monkeypatch, tmp_path):
+    monkeypatch.delenv("SJM_BATCH_DIVISOR", raising=False)
+    monkeypatch.setenv("SJM_EXTRA_OVERRIDES", "final_eval_aa_batch_size=32 final_eval_aa_max_batches=32")
+    cmd = lifecycle.build_command(_row(), tmp_path, db, python_exe="py",
+                                  extra_overrides=lifecycle.lane_overrides("eval"))
+    assert _count(cmd, "final_eval") == 0
+    assert _val(cmd, "final_eval_aa_batch_size") == "32"
+    assert _val(cmd, "final_eval_aa_max_batches") == "32"
+    assert _val(cmd, "model.resume") == str(tmp_path / "m" / "last.pth.tar")
+    monkeypatch.delenv("SJM_EXTRA_OVERRIDES")
+    assert lifecycle.lane_overrides("eval") == []
+    with pytest.raises(ValueError):
+        lifecycle.lane_overrides("nope")

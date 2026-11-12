@@ -17,6 +17,16 @@ def db(tmp_path):
     return JobDB(str(tmp_path / "jobs.sqlite"))
 
 
+@pytest.fixture(autouse=True)
+def lane_calls(monkeypatch):
+    """Stub the eval-lane sbatch top-up (no Slurm here); record each call's DB."""
+    calls = []
+    from slurm_job_manager import eval_lane
+    monkeypatch.setattr(eval_lane, "top_up", lambda db, **k: calls.append(db.db_path) or
+                        {"promoted": [], "unowned": 1, "pending_jobs": 0, "submitted": ["1"]})
+    return calls
+
+
 def _finish(db, name, epochs=10, reached=10):
     db.upsert_pending(name, epochs, 1)
     db.claim_next(1, {})
@@ -49,7 +59,7 @@ def test_reopen_for_eval_only_touches_finished_fully_trained(db):
     db.upsert_pending("pend", 10, 1)
 
     assert db.reopen_for_eval("done") == 1
-    assert db.get("done").status == "pending"
+    assert db.get("done").status == "eval"
     assert db.get("done").slurm_job_id is None
     assert db.reopen_for_eval("short") == 0      # reconcile's job, not ours
     assert db.get("short").status == "finished"
@@ -82,7 +92,8 @@ def test_missing_cells_can_ignore_a_renamed_dir(tmp_path):
     assert reopen_eval.missing_cells(renamed, *grid, match_model_name=False) == {}
 
 
-def test_cli_dry_run_writes_nothing_and_apply_all_reopens_incomplete(db, tmp_path, capsys):
+def test_cli_dry_run_writes_nothing_and_apply_all_reopens_incomplete(db, tmp_path, capsys,
+                                                                   lane_calls):
     models = tmp_path / "models"
     _finish(db, "arch/partial")
     _finish(db, "complete")
@@ -95,13 +106,15 @@ def test_cli_dry_run_writes_nothing_and_apply_all_reopens_incomplete(db, tmp_pat
     listed = [line.split()[0] for line in out.splitlines() if "missing cells" in line]
     assert listed == ["arch/partial"]
     assert db.get("arch/partial").status == "finished"   # dry run
+    assert lane_calls == []                                # dry run submits nothing
 
     with pytest.raises(SystemExit):
         reopen_eval.main(base + ["--apply"])               # needs --all/--model
 
     assert reopen_eval.main(base + ["--apply", "--all"]) == 0
-    assert db.get("arch/partial").status == "pending"
+    assert db.get("arch/partial").status == "eval"
     assert db.get("complete").status == "finished"
+    assert len(lane_calls) == 1                            # eval jobs queued once
 
 
 def test_cli_skips_sweep_excludes(db, tmp_path, monkeypatch, capsys):
@@ -144,7 +157,7 @@ def test_cli_skips_models_with_live_aa_queue_units(db, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "summary incomplete=1 reopened=1 capped=0 aa_queue_busy=1" in out
     assert db.get("busy").status == "finished"
-    assert db.get("done_in_queue").status == "pending"
+    assert db.get("done_in_queue").status == "eval"
 
 
 def test_cli_caps_repeated_reopens_unless_named(db, tmp_path, capsys):
@@ -156,8 +169,8 @@ def test_cli_caps_repeated_reopens_unless_named(db, tmp_path, capsys):
 
     for _ in range(2):   # re-open, the eval-only rerun "fails" again, finished again
         assert reopen_eval.main(base + ["--apply", "--all"]) == 0
-        assert db.get("flaky").status == "pending"
-        db.claim_next(9, {})
+        assert db.get("flaky").status == "eval"
+        db.claim_next(9, {}, lane="eval")
         db.mark_finished("flaky")
     capsys.readouterr()
 
@@ -167,7 +180,7 @@ def test_cli_caps_repeated_reopens_unless_named(db, tmp_path, capsys):
 
     # Naming the model explicitly overrides the cap.
     assert reopen_eval.main(base + ["--apply", "--model", "flaky"]) == 0
-    assert db.get("flaky").status == "pending"
+    assert db.get("flaky").status == "eval"
 
 
 def test_history_forgets_a_model_once_complete(db, tmp_path):
