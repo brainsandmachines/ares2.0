@@ -6,7 +6,10 @@ names the exact checkpoint (kind + path) whose AutoAttack score is recorded. Alw
 on that checkpoint path: the published name is not always the run dir (e.g.
 ``convnext_base_linftrades_cont4to8_init1`` is the ``..._init3`` run dir).
 
-Each family also carries the other init (0 or 1) of every model when that run exists, at
+The V1 models left the adversarial campaign on 2026-10-29; they resolve through the picks
+``models_left_out.json`` keeps for them (``left_out_from: adversarial``, same checkpoints).
+
+Each family also carries the other init (0, 1 or 2) of every model when that run exists, at
 the checkpoint kind ``models_aa_clean_by_init.csv`` picks for it, flagged ``in_json=False``.
 A ``publish_as`` row in ``model_store/blessing_overrides.csv`` swaps in the run blessed under
 that name (e.g. ``convnext_base_linftrades_cont4to8_init0`` is the ``..._init2`` rerun). Only
@@ -29,10 +32,11 @@ import pandas as pd
 ZOO_DIR = Path.home() / "Documents/epsilon_bounded_contstim/model_zoo"
 ZOO_JSON = ZOO_DIR / "models_for_adversarial_experiments.json"
 BLACKBOX_JSON = ZOO_DIR / "models_for_blackbox_experiments.json"
+LEFT_OUT_JSON = ZOO_DIR / "models_left_out.json"
 ZOO_BY_INIT_CSV = ZOO_DIR / "models_aa_clean_by_init.csv"
 MODELS_ROOT = Path("/mnt/data4t/models")
 BLESSING_OVERRIDES_CSV = Path(__file__).resolve().parents[1] / "model_store" / "blessing_overrides.csv"
-COMPARED_INITS = (0, 1)
+COMPARED_INITS = (0, 1, 2)  # init2: completion runs, kept only where the black-box JSON has them
 
 _CONVNEXT = {
     "madry_l1": "l1_1_init0 l1_2_init0 l1_4_init0 l1_cont4to6_init0 l1_cont4to8_init0",
@@ -42,8 +46,9 @@ _CONVNEXT = {
     "trades_l2": "l2trades_1_init0 l2trades_2_init0 l2trades_4_init0 l2trades_cont4to6_init0 l2trades_cont4to8_init0",
     "trades_linf": "linftrades_1_init0 linftrades_2_init0 linftrades_4_init1 linftrades_cont4to6_init0 "
                    "linftrades_cont4to8_init1",
-    "dvdb_madry_l1": "dvd_b_l1_1_init0 dvd_b_l1_2_init0 dvd_b_l1_4_init1 dvd_b_l1_cont4to6_init1_contepoch "
-                     "dvd_b_l1_cont4to8_init1_contepoch",
+    # eps 6/8: the init2 completion runs are the generators since 2026-11-17 (init1 is their other init)
+    "dvdb_madry_l1": "dvd_b_l1_1_init0 dvd_b_l1_2_init0 dvd_b_l1_4_init1 dvd_b_l1_cont4to6_init2_contepoch "
+                     "dvd_b_l1_cont4to8_init2_contepoch",
     "dvdb_madry_l2": "dvd_b_l2_1_init0 dvd_b_l2_2_init1 dvd_b_l2_4_init0 dvd_b_l2_cont4to6_init0_contepoch "
                      "dvd_b_l2_cont4to8_init0_contepoch",
     "dvdb_madry_linf": "dvd_b_linf_1_init0 dvd_b_linf_2_init1 dvd_b_linf_4_init0 dvd_b_linf_cont4to6_init0_contepoch "
@@ -95,8 +100,11 @@ class Selected:
         return self.checkpoint.parent.name
 
 
-def load_zoo(json_path: Path = ZOO_JSON) -> dict[str, Selected]:
+def load_zoo(json_path: Path = ZOO_JSON, *, left_out_from: str | None = None) -> dict[str, Selected]:
+    """{key: Selected} of a zoo JSON; ``left_out_from`` keeps only left-out entries from that JSON."""
     models = json.loads(Path(json_path).read_text())["models"]
+    if left_out_from is not None:
+        models = [m for m in models if m.get("left_out_from") == left_out_from]
     return {
         m["model_name"].replace("/", "_"): Selected(
             key=m["model_name"].replace("/", "_"),
@@ -156,6 +164,8 @@ def resolve(json_path: Path = ZOO_JSON) -> tuple[dict[str, list[Selected]], dict
     """
     zoo = load_zoo(json_path)
     wanted = [*BASELINES, *(k for _a, _b, ks in FAMILIES.values() for k in ks)]
+    left_out = load_zoo(LEFT_OUT_JSON, left_out_from="adversarial")
+    zoo.update({k: left_out[k] for k in wanted if k not in zoo and k in left_out and "_v1_" in k})
     missing = sorted({k for k in wanted if k not in zoo})
     if missing:
         raise KeyError(f"Not in {json_path}: {', '.join(missing)}")
