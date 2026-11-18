@@ -107,6 +107,26 @@ def test_approve_uploads_exactly_the_proposed_models(env):
     assert env.run("approve", "1") == 2  # not twice
 
 
+def test_approve_crash_is_recorded_as_failed_and_can_be_retried(env, monkeypatch, capsys):
+    """A 403 from the Hub raised out of upload() once left HF-9 stuck at "approved"."""
+    assert env.run("propose") == 0
+
+    def forbidden(mirror, repo, nw):
+        raise RuntimeError("403 Forbidden: no rights under the namespace")
+    monkeypatch.setattr(hf_export, "upload", forbidden)
+    assert env.run("approve", "1") == 1
+    st = _status(env, 1)
+    assert st["status"] == "failed" and st["rc"] == 1
+    assert st["error"] == "RuntimeError: 403 Forbidden: no rights under the namespace"
+    assert "403 Forbidden" in capsys.readouterr().err
+    assert env.verifies == []
+
+    monkeypatch.setattr(hf_export, "upload", lambda mirror, repo, nw: env.uploads.append(mirror) or 0)
+    assert env.run("approve", "1", "--device", "cpu") == 0
+    st = _status(env, 1)
+    assert st["status"] == "uploaded" and "error" not in st
+
+
 def test_approve_refused_when_a_checkpoint_changed_after_the_mail(env, capsys):
     assert env.run("propose") == 0
     _ckpt(Path(env.a["target"]), seed=5)  # retrained / re-synced: new bytes, new inode

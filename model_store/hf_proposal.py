@@ -38,6 +38,7 @@ import csv as _csv
 import json
 import os
 import sys
+import traceback
 from pathlib import Path
 from typing import Optional
 
@@ -278,10 +279,19 @@ def cmd_approve(args) -> int:
     _write_json(_paths(pdir, n)[1], st)
     common = ["--manifest", str(args.manifest), "--mirror", str(args.mirror),
               "--excludes", str(args.excludes), "--hash-cache", str(args.hash_cache)]
-    rc = hf_export.main(["--apply", "--upload", *common, "--only", *relpaths])
-    if rc == 0:
-        rc = verify_hf.main(["--forward", *common, "--device", args.device,
-                             "--out-csv", str(pdir / f"HF-{n}.verify.csv"), "--only", *relpaths])
+    # A crash here (e.g. a 403 from the Hub) must still land as "failed": left at "approved",
+    # the proposal could never be approved again.
+    try:
+        rc = hf_export.main(["--apply", "--upload", *common, "--only", *relpaths])
+        if rc == 0:
+            rc = verify_hf.main(["--forward", *common, "--device", args.device,
+                                 "--out-csv", str(pdir / f"HF-{n}.verify.csv"), "--only", *relpaths])
+    except Exception as exc:
+        traceback.print_exc()
+        rc = 1
+        st["error"] = f"{type(exc).__name__}: {exc}"
+    else:
+        st.pop("error", None)
     st.update(status="uploaded" if rc == 0 else "failed", finished_at=_now(), rc=rc)
     _write_json(_paths(pdir, n)[1], st)
     print(f"[hf-proposal] {_now()} proposal #{n}: {st['status']} (rc={rc})")
