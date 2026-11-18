@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Connections between training protocol, threat norm, epsilon, shape bias and the 16 OOD tasks.
 
-Joins, one row per checkpoint (199 checkpoints = 199 distinct runs):
+Joins, one row per checkpoint (one per run; the set is ``models.load_models()``, 201 today):
 - ``results/task_metrics.csv``: 16-class OOD accuracy and error consistency per task
-- the zoo JSONs: arch, protocol, norm, eps, full-val clean accuracy (bilinear resize, the same
+- the five contstim zoo JSONs: arch, protocol, norm, eps, full-val clean accuracy (bilinear resize, the same
   preprocessing as this evaluation), AA robust accuracy at the trained threat
-- ``data_analysis/shape_bias_results_botero.csv``: cue-conflict shape bias (169 of the 199;
-  the 30 vit_b_cvst / swin_b TRADES checkpoints were never scored for shape bias)
+- ``data_analysis/shape_bias_results_botero.csv``: cue-conflict shape bias (NaN where not
+  scored, e.g. the vit_b_cvst / swin_b TRADES checkpoints)
 
 Outputs ``analysis/tables/*.csv`` and ``analysis/plots/*.{pdf,png}`` (findings: ``analysis/FINDINGS.md``):
 - ``eps_curves_<group>``: each task's accuracy against eps, Madry (solid) vs TRADES (dashed), one
@@ -28,7 +28,6 @@ start from the eps-4 model, so the top of each curve also carries the continuati
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import matplotlib
@@ -41,7 +40,7 @@ from matplotlib.lines import Line2D
 from scipy import stats
 from scipy.cluster import hierarchy
 
-from experiments.geirhos_ood.models import ADV_JSON, BLACKBOX_JSON, load_models
+from experiments.geirhos_ood.models import load_models, zoo_entries
 from experiments.geirhos_ood.tasks import TASKS
 
 EXP_DIR = Path(__file__).resolve().parent
@@ -73,7 +72,7 @@ def _variant(meta: dict) -> str:
 
 def model_table() -> pd.DataFrame:
     """One row per checkpoint: metadata, clean/AA accuracy, shape bias, 16 accuracies and ECs."""
-    meta = {m["checkpoint"]: m for p in (ADV_JSON, BLACKBOX_JSON) for m in json.loads(p.read_text())["models"]}
+    meta = {m["checkpoint"]: m for _source, m in zoo_entries()}
     rows = []
     for e in load_models():
         m = meta[str(e.checkpoint)]
@@ -83,7 +82,7 @@ def model_table() -> pd.DataFrame:
             "protocol": ("clean" if norm is None else "trades" if "trades" in norm else "madry")
             if m["protocol"] in ("madry_trades", "dvd_b", "clean_baseline") else "other",
             "norm": norm.replace("trades", "") if norm else None, "eps": m["eps"], "init": e.init,
-            "kind": e.kind, "in_adv_json": e.in_adv_json, "clean_acc": m["clean_acc_bilinear"] / 100,
+            "kind": e.kind, "generator": e.generator, "clean_acc": m["clean_acc_bilinear"] / 100,
             "aa_robust_acc": m["aa_robust_acc"] / 100 if m["aa_robust_acc"] is not None else np.nan,
         })
     df = pd.DataFrame(rows)
@@ -386,7 +385,7 @@ def plot_corr_matrix(corr: pd.DataFrame) -> plt.Figure:
     ax.set_yticks(range(len(c)))
     ax.set_yticklabels(labels)
     fig.colorbar(im, ax=ax, shrink=0.7, label="Spearman rho across checkpoints")
-    fig.suptitle("Which measures move together across the 199 checkpoints (clustered order)", fontsize=13)
+    fig.suptitle("Which measures move together across the checkpoints (clustered order)", fontsize=13)
     fig.tight_layout()
     return fig
 

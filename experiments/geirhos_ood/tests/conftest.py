@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -52,25 +51,20 @@ def build_root(root: Path, task_ids, n_subjects: int = 2, with_humans: bool = Tr
     return root
 
 
-@dataclass(frozen=True)
-class FakeSelected:
-    key: str
-    arch: str
-    kind: str
-    checkpoint: Path
-    eps: float | None
-    init: int
-    in_json: bool = True
-
-
-def zoo_entry(arch, name, kind, ckpt, norm=None, eps=None, init=0):
-    return {"arch": arch, "protocol": "madry_trades", "variant": None, "norm": norm, "eps": eps, "init": init,
-            "model_name": f"{arch}/{name}", "checkpoint_kind": kind, "checkpoint": str(ckpt)}
+def zoo_entry(arch, name, kind, ckpt, norm=None, eps=None, init=0, protocol="madry_trades", variant=None,
+              role="generator"):
+    return {"arch": arch, "protocol": protocol, "variant": variant, "norm": norm, "eps": eps, "init": init,
+            "model_name": f"{arch}/{name}", "checkpoint_kind": kind, "checkpoint": str(ckpt),
+            "adv_campaign_role": role}
 
 
 @pytest.fixture
 def tiny_zoo(tmp_path):
-    """A 5-checkpoint zoo: baseline + other init, one madry family + other init, one vit trades model."""
+    """A 6-checkpoint zoo in two files, plus one hf-excluded and one _resetepoch run that are dropped.
+
+    Kept: baseline + other init, one madry family + other init, one vit madry and one vit trades model.
+    Returns (zoo files, hf_excludes csv).
+    """
     ck = tmp_path / "models"
 
     def ckpt(arch, run, f="model_best.pth.tar"):
@@ -85,29 +79,30 @@ def tiny_zoo(tmp_path):
     m1 = ckpt("convnext_base", "convnext_base_l2_1_init1", "last.pth.tar")
     vm = ckpt("vit_b_cvst", "vit_b_cvst_l2_1_init1")
     vt = ckpt("vit_b_cvst", "vit_b_cvst_l2trades_1_init1")
-    adv = [zoo_entry("convnext_base", "baseline_init0", "best", b0),
-           zoo_entry("convnext_base", "l2_1_init0", "best", m0, "l2", 1, 0),
-           zoo_entry("vit_b_cvst", "l2_1_init1", "best", vm, "l2", 1, 1),
-           zoo_entry("vit_b_cvst", "l2trades_1_init1", "best", vt, "l2trades", 1, 1)]
-    bb = [zoo_entry("convnext_base", "baseline_init1", "best", b1, init=1),
-          zoo_entry("convnext_base", "l2_1_init1", "last", m1, "l2", 1, 1)]
-    (tmp_path / "adv.json").write_text(json.dumps({"models": adv}))
-    (tmp_path / "bb.json").write_text(json.dumps({"models": bb}))
-    S = FakeSelected
-    reference = (
-        {"convnext_base madry_l2": [S("convnext_base_l2_1_init0", "convnext_base", "best", m0, 1, 0),
-                                    S("convnext_base_l2_1_init1", "convnext_base", "last", m1, 1, 1, False)],
-         "vit_b_cvst madry_l2": [S("vit_b_cvst_l2_1_init1", "vit_b_cvst", "best", vm, 1, 1)]},
-        {"convnext_base_baseline_init0": S("convnext_base_baseline_init0", "convnext_base", "best", b0, None, 0),
-         "convnext_base_baseline_init1": S("convnext_base_baseline_init1", "convnext_base", "best", b1, None, 1,
-                                           False)},
-    )
-    return tmp_path / "adv.json", tmp_path / "bb.json", reference
+    bad = ckpt("convnext_base", "convnext_base_l2_2_init0")
+    reset = ckpt("convnext_base", "convnext_base_dvd_b_l2_cont4to6_init0_resetepoch")
+    main = [zoo_entry("convnext_base", "l2_1_init1", "last", m1, "l2", 1, 1, role="blackbox"),
+            zoo_entry("convnext_base", "baseline_init1", "best", b1, init=1, protocol="clean_baseline",
+                      variant="standard", role="blackbox"),
+            zoo_entry("convnext_base", "l2_1_init0", "best", m0, "l2", 1, 0),
+            zoo_entry("convnext_base", "baseline_init0", "best", b0, protocol="clean_baseline",
+                      variant="standard")]
+    other = [zoo_entry("vit_b_cvst", "l2trades_1_init1", "best", vt, "l2trades", 1, 1, role="none"),
+             zoo_entry("vit_b_cvst", "l2_1_init1", "best", vm, "l2", 1, 1),
+             zoo_entry("convnext_base", "l2_2_init0", "best", bad, "l2", 2, 0, role="none"),
+             zoo_entry("convnext_base", "dvd_b_l2_cont4to6_init0_resetepoch", "best", reset, "l2", 6, 0,
+                       protocol="dvd_b", role="none")]
+    files = [tmp_path / "models_main.json", tmp_path / "models_other.json"]
+    for path, models in zip(files, (main, other)):
+        path.write_text(json.dumps({"models": models}))
+    excludes = tmp_path / "hf_excludes.csv"
+    excludes.write_text("pattern,reason\nconvnext_base_l2_2_init0,collapsed\n")
+    return files, excludes
 
 
 @pytest.fixture
 def tiny_models(tiny_zoo):
     from experiments.geirhos_ood.models import load_models
 
-    adv, bb, ref = tiny_zoo
-    return load_models(adv, bb, ref)
+    files, excludes = tiny_zoo
+    return load_models(files, excludes)

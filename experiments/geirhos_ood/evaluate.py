@@ -236,7 +236,7 @@ def score(models, tasks, root, out_dir) -> pd.DataFrame:
         for t in tasks:
             path = trial_path(out_dir, m, t)
             ds = data_status[t.task_id]
-            base = {"model_id": m.model_id, "key": m.key, "family": m.family, "in_adv_json": m.in_adv_json,
+            base = {"model_id": m.model_id, "key": m.key, "family": m.family, "generator": m.generator,
                     "arch": m.arch, "checkpoint_kind": m.kind, "checkpoint": str(m.checkpoint),
                     "task_id": t.task_id}
             if not is_complete(path, ds.n_images):

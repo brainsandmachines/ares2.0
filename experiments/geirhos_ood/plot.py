@@ -53,7 +53,7 @@ def plotted_values(models: list[ModelEntry], task: TaskSpec, metrics: pd.DataFra
         r = sub.loc[m.model_id] if m.model_id in sub.index else None
         done = r is not None and r.get("status") == "done"
         rows.append({
-            "x": x, "family": m.family, "label": m.label, "model_id": m.model_id, "in_adv_json": m.in_adv_json,
+            "x": x, "family": m.family, "label": m.label, "model_id": m.model_id, "generator": m.generator,
             "checkpoint": str(m.checkpoint), "status": r.get("status") if r is not None else "not_scored",
             "ood_accuracy": float(r["ood_accuracy"]) if done else np.nan,
             "ood_accuracy_max": float(r["ood_accuracy_max"]) if done else np.nan,
@@ -70,8 +70,8 @@ def draw_task_page(task: TaskSpec, models: list[ModelEntry], values: pd.DataFram
     fig, ax = plt.subplots(figsize=(0.26 * len(models) + 3, 11))
     x = values["x"].to_numpy()
     means, maxes = values["ood_accuracy"].to_numpy(), values["ood_accuracy_max"].to_numpy()
-    ax.bar(x, means, color=[BAR_COLOR if s else OTHER_INIT_COLOR for s in values["in_adv_json"]], width=0.65,
-           label="OOD accuracy (mean aggregation), JSON pick")
+    ax.bar(x, means, color=[BAR_COLOR if s else OTHER_INIT_COLOR for s in values["generator"]], width=0.65,
+           label="OOD accuracy (mean aggregation), adv_experiments generator")
     ax.scatter(x, maxes, color="black", zorder=3, s=22, label="OOD accuracy (max aggregation)")
     for xi, value in zip(x, means):
         ax.text(xi, (0 if np.isnan(value) else value) + 0.015, "n/a" if np.isnan(value) else f"{value:.3f}",
@@ -81,7 +81,7 @@ def draw_task_page(task: TaskSpec, models: list[ModelEntry], values: pd.DataFram
                    label=f"humans (pooled, n={human['n_humans']}): {human['ood_accuracy']:.3f}")
     ax.set_xticks(x)
     ax.set_xticklabels(values["label"], rotation=90, ha="center", fontsize=7)
-    for tick_label, pick in zip(ax.get_xticklabels(), values["in_adv_json"]):
+    for tick_label, pick in zip(ax.get_xticklabels(), values["generator"]):
         if pick:
             tick_label.set_fontweight("bold")
     start = 0
@@ -126,7 +126,7 @@ def draw_overview(models: list[ModelEntry], metrics: pd.DataFrame, column: str, 
     ax.set_yticks(range(len(models)))
     ax.set_yticklabels([m.label for m in models], fontsize=5)
     for tick_label, m in zip(ax.get_yticklabels(), models):
-        if m.in_adv_json:
+        if m.generator:
             tick_label.set_fontweight("bold")
     fig.colorbar(im, ax=ax, shrink=0.4, pad=0.02, label=column)
     fig.suptitle(title, fontsize=13)

@@ -14,7 +14,7 @@ The registry refuses it (`select_tasks(["cue-conflict"])` raises), and nothing h
 | file | role |
 |---|---|
 | `tasks.py` | the 16 tasks. Each has its upstream id, conditions, `EXCLUDE_CONDITIONS` and expected trial / subject counts. |
-| `models.py` | the 199 checkpoints of `epsilon_bounded_contstim/model_zoo/models_for_{adversarial,blackbox}_experiments.json`, grouped and ordered like the shape-bias report |
+| `models.py` | the HF-published checkpoints of the five `epsilon_bounded_contstim/model_zoo/models_*.json` (201 today), grouped into families |
 | `data.py` | read-only presence checks and the dataset class (local files only) |
 | `metrics.py` | upstream metric definitions (see below) |
 | `gpu.py` | sharing the GPU with another job: free-memory check, allocator cap, OOM back-off |
@@ -35,15 +35,24 @@ reimplemented in `metrics.py`, with a citation per function. The 16-class mappin
 
 ## Models
 
-There are 199 checkpoints: 133 experiment picks plus their 66 other-init "black-box" siblings.
-Each checkpoint's family and position come from `data_analysis.selected_models.resolve()`, so the
-bars follow the shape-bias page.
+The set is every checkpoint in the five contstim model JSONs (`models_{main62,dvd,swin,vit,left_out}.json`,
+since 2026-11-17) that Hugging Face publishes: 201 today. Like `model_store.hf_export`, it drops the
+runs `model_store/hf_excludes.csv` holds back (collapsed, gradient-masked, overfit) and the DVD
+`_resetepoch` continuations.
 
-Differences from that page:
-- **Added:** the 30 vit_b_cvst / swin_b TRADES checkpoints, as `<arch> trades_<norm>` families
-  after the arch's madry families.
-- **Left out:** the 5 failed dvd_b other-init runs that `model_store/hf_excludes.csv` holds back,
-  which is why neither JSON lists them.
+Families come from the JSON fields (arch, protocol, norm) and keep the shape-bias page's names and
+order: clean baselines, then convnext_base (standard, DVD-B, V1, GradNorm), vit_b_cvst and swin_b.
+Madry comes before TRADES and l1 before l2 before linf; within a family the order is (eps, init).
+A solid bar and bold label mark an adv_experiments generator (`adv_campaign_role`). A light bar is
+anything else: a generator's black-box other init, or a model outside that campaign (V1, GradNorm,
+the vit_b_cvst / swin_b TRADES runs).
+
+**Change of set on 2026-11-18.** The results and `analysis/FINDINGS.md` came from the 199
+checkpoints of the retired `models_for_{adversarial,blackbox}_experiments.json` (the 2026-10-27 run).
+The new set keeps 194 of them with the same families and order. It drops the 5 vit_b_cvst /
+swin_b TRADES runs now in `hf_excludes.csv` and adds 7 that were never evaluated: the dvd_b
+init2 completion runs, `convnext_base_l2_cont4to8_init2`, and `vit_b_cvst_{l2,linf}trades_4_init2`.
+Until those are evaluated, the task pages show them as `n/a`.
 
 Every checkpoint is loaded with `data_analysis.autoattack_array_eval.load_model`: EMA weights,
 with normalisation inside the wrapper.
