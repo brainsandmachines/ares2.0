@@ -96,12 +96,12 @@ def draw_task_page(task: TaskSpec, models: list[ModelEntry], values: pd.DataFram
     ax.set_ylabel(Y_LABEL, fontsize=11)
     ax.grid(axis="y", alpha=0.3)
     handles, _ = ax.get_legend_handles_labels()
-    handles.append(Patch(color=OTHER_INIT_COLOR, label="OOD accuracy (mean aggregation), other init"))
+    handles.append(Patch(color=OTHER_INIT_COLOR, label="OOD accuracy (mean aggregation), other init or outside the campaign"))
     ax.legend(handles=handles, loc="lower left", bbox_to_anchor=(0, 1.0), ncol=3, fontsize=9, frameon=False)
     n_done = int(values["status"].eq("done").sum())
     incomplete = "" if n_done == len(values) else f"  [INCOMPLETE: {n_done}/{len(values)} models measured]"
     fig.suptitle(f"{task.label} ({task.task_id}): OOD accuracy, all models "
-                 f"(bold / solid = experiment checkpoint from the JSON){incomplete}", fontsize=15)
+                 f"(bold / solid = adv_experiments generator){incomplete}", fontsize=15)
     if watermark:
         fig.text(0.5, 0.5, watermark, fontsize=90, color="red", alpha=0.25, ha="center", va="center", rotation=20)
     fig.tight_layout()

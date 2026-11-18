@@ -47,12 +47,13 @@ A solid bar and bold label mark an adv_experiments generator (`adv_campaign_role
 anything else: a generator's black-box other init, or a model outside that campaign (V1, GradNorm,
 the vit_b_cvst / swin_b TRADES runs).
 
-**Change of set on 2026-11-18.** The results and `analysis/FINDINGS.md` came from the 199
-checkpoints of the retired `models_for_{adversarial,blackbox}_experiments.json` (the 2026-10-27 run).
+**Change of set on 2026-11-18.** The 2026-10-27 run evaluated the 199 checkpoints of the retired
+`models_for_{adversarial,blackbox}_experiments.json`.
 The new set keeps 194 of them with the same families and order. It drops the 5 vit_b_cvst /
-swin_b TRADES runs now in `hf_excludes.csv` and adds 7 that were never evaluated: the dvd_b
-init2 completion runs, `convnext_base_l2_cont4to8_init2`, and `vit_b_cvst_{l2,linf}trades_4_init2`.
-Until those are evaluated, the task pages show them as `n/a`.
+swin_b TRADES runs now in `hf_excludes.csv` and adds 7: the dvd_b init2 completion runs,
+`convnext_base_l2_cont4to8_init2`, and `vit_b_cvst_{l2,linf}trades_4_init2`. They were evaluated on
+2026-11-18 with the same settings (`results/logs/run_7new_20261118*.out`), then the scores, plots,
+tables and `analysis/FINDINGS.md` were regenerated for all 201.
 
 Every checkpoint is loaded with `data_analysis.autoattack_array_eval.load_model`: EMA weights,
 with normalisation inside the wrapper.

@@ -20,7 +20,7 @@
    "family": "clean baselines",
    "label": "convnext_base_baseline_init0 [best]",
    "model_id": "convnext_base_baseline_init0__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_baseline_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -33,7 +33,7 @@
    "family": "clean baselines",
    "label": "convnext_base_baseline_init1 [best]",
    "model_id": "convnext_base_baseline_init1__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_baseline_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9890625,
@@ -46,7 +46,7 @@
    "family": "clean baselines",
    "label": "convnext_base_dvd_b_baseline_init0 [best]",
    "model_id": "convnext_base_dvd_b_baseline_init0__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_baseline_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9828125,
@@ -59,7 +59,7 @@
    "family": "clean baselines",
    "label": "convnext_base_dvd_b_baseline_init1 [best]",
    "model_id": "convnext_base_dvd_b_baseline_init1__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_baseline_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9859375,
@@ -72,7 +72,7 @@
    "family": "clean baselines",
    "label": "convnext_base_v1_clean_init0 [last]",
    "model_id": "convnext_base_v1_clean_init0__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_v1_clean_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -85,7 +85,7 @@
    "family": "clean baselines",
    "label": "convnext_base_v1_clean_init1 [best]",
    "model_id": "convnext_base_v1_clean_init1__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_v1_clean_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -98,7 +98,7 @@
    "family": "clean baselines",
    "label": "convnext_base_v1_noise_init0 [best]",
    "model_id": "convnext_base_v1_noise_init0__best",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_v1_noise_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9703125,
@@ -111,7 +111,7 @@
    "family": "clean baselines",
    "label": "convnext_base_v1_noise_init1 [best]",
    "model_id": "convnext_base_v1_noise_init1__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_v1_noise_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9671875,
@@ -124,7 +124,7 @@
    "family": "clean baselines",
    "label": "vit_b_cvst_baseline_init1 [last]",
    "model_id": "vit_b_cvst_baseline_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_baseline_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9828125,
@@ -137,7 +137,7 @@
    "family": "clean baselines",
    "label": "swin_b_baseline_init1 [best]",
    "model_id": "swin_b_baseline_init1__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_baseline_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9828125,
@@ -150,7 +150,7 @@
    "family": "convnext_base madry_l1",
    "label": "convnext_base_l1_1_init0 [best]",
    "model_id": "convnext_base_l1_1_init0__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1_1_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -163,7 +163,7 @@
    "family": "convnext_base madry_l1",
    "label": "convnext_base_l1_1_init1 [best]",
    "model_id": "convnext_base_l1_1_init1__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1_1_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -176,7 +176,7 @@
    "family": "convnext_base madry_l1",
    "label": "convnext_base_l1_2_init0 [best]",
    "model_id": "convnext_base_l1_2_init0__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1_2_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -189,7 +189,7 @@
    "family": "convnext_base madry_l1",
    "label": "convnext_base_l1_2_init1 [last]",
    "model_id": "convnext_base_l1_2_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1_2_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9890625,
@@ -202,7 +202,7 @@
    "family": "convnext_base madry_l1",
    "label": "convnext_base_l1_4_init0 [advbest]",
    "model_id": "convnext_base_l1_4_init0__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1_4_init0/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -215,7 +215,7 @@
    "family": "convnext_base madry_l1",
    "label": "convnext_base_l1_4_init1 [last]",
    "model_id": "convnext_base_l1_4_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1_4_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -228,7 +228,7 @@
    "family": "convnext_base madry_l1",
    "label": "convnext_base_l1_cont4to6_init0 [last]",
    "model_id": "convnext_base_l1_cont4to6_lr1e4_pgd5_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1_cont4to6_lr1e4_pgd5_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -241,7 +241,7 @@
    "family": "convnext_base madry_l1",
    "label": "convnext_base_l1_cont4to6_init1 [last]",
    "model_id": "convnext_base_l1_cont4to6_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -254,7 +254,7 @@
    "family": "convnext_base madry_l1",
    "label": "convnext_base_l1_cont4to8_init0 [last]",
    "model_id": "convnext_base_l1_cont4to8_pgd5_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1_cont4to8_pgd5_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -267,7 +267,7 @@
    "family": "convnext_base madry_l1",
    "label": "convnext_base_l1_cont4to8_init1 [last]",
    "model_id": "convnext_base_l1_cont4to8_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1_cont4to8_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9890625,
@@ -280,7 +280,7 @@
    "family": "convnext_base madry_l2",
    "label": "convnext_base_l2_1_init0 [advbest]",
    "model_id": "convnext_base_l2_1_init0__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2_1_init0/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -293,7 +293,7 @@
    "family": "convnext_base madry_l2",
    "label": "convnext_base_l2_1_init1 [best]",
    "model_id": "convnext_base_l2_1_init1__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2_1_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -306,7 +306,7 @@
    "family": "convnext_base madry_l2",
    "label": "convnext_base_l2_2_init0 [advbest]",
    "model_id": "convnext_base_l2_2_init0__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2_2_init0/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9828125,
@@ -319,7 +319,7 @@
    "family": "convnext_base madry_l2",
    "label": "convnext_base_l2_2_init1 [best]",
    "model_id": "convnext_base_l2_2_init1__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2_2_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -332,7 +332,7 @@
    "family": "convnext_base madry_l2",
    "label": "convnext_base_l2_4_init0 [best]",
    "model_id": "convnext_base_l2_4_init0__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2_4_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9734375,
@@ -345,7 +345,7 @@
    "family": "convnext_base madry_l2",
    "label": "convnext_base_l2_4_init1 [last]",
    "model_id": "convnext_base_l2_4_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2_4_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9796875,
@@ -358,7 +358,7 @@
    "family": "convnext_base madry_l2",
    "label": "convnext_base_l2_cont4to6_init0 [last]",
    "model_id": "convnext_base_l2_cont4to6_lr1e4_pgd5_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2_cont4to6_lr1e4_pgd5_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.965625,
@@ -371,7 +371,7 @@
    "family": "convnext_base madry_l2",
    "label": "convnext_base_l2_cont4to6_init1 [last]",
    "model_id": "convnext_base_l2_cont4to6_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.96875,
@@ -384,7 +384,7 @@
    "family": "convnext_base madry_l2",
    "label": "convnext_base_l2_cont4to8_init0 [last]",
    "model_id": "convnext_base_l2_cont4to8_init0__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2_cont4to8_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.884375,
@@ -397,7 +397,7 @@
    "family": "convnext_base madry_l2",
    "label": "convnext_base_l2_cont4to8_init1 [last]",
    "model_id": "convnext_base_l2_cont4to8_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2_cont4to8_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.95,
@@ -407,10 +407,23 @@
   },
   {
    "x": 30,
+   "family": "convnext_base madry_l2",
+   "label": "convnext_base_l2_cont4to8_init2 [advbest]",
+   "model_id": "convnext_base_l2_cont4to8_init2__advbest",
+   "generator": false,
+   "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2_cont4to8_init2/model_best_adv.pth.tar",
+   "status": "done",
+   "ood_accuracy": 0.95,
+   "ood_accuracy_max": 0.9546875,
+   "error_consistency": 0.2988655242936228,
+   "n_scored_trials": 640
+  },
+  {
+   "x": 31,
    "family": "convnext_base madry_linf",
    "label": "convnext_base_linf_1_init0 [best]",
    "model_id": "convnext_base_linf_1_init0__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linf_1_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -419,11 +432,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 31,
+   "x": 32,
    "family": "convnext_base madry_linf",
    "label": "convnext_base_linf_1_init1 [best]",
    "model_id": "convnext_base_linf_1_init1__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linf_1_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -432,11 +445,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 32,
+   "x": 33,
    "family": "convnext_base madry_linf",
    "label": "convnext_base_linf_2_init0 [advbest]",
    "model_id": "convnext_base_linf_2_init0__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linf_2_init0/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -445,11 +458,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 33,
+   "x": 34,
    "family": "convnext_base madry_linf",
    "label": "convnext_base_linf_2_init1 [last]",
    "model_id": "convnext_base_linf_2_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linf_2_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -458,11 +471,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 34,
+   "x": 35,
    "family": "convnext_base madry_linf",
    "label": "convnext_base_linf_4_init0 [last]",
    "model_id": "convnext_base_linf_4_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linf_4_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -471,11 +484,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 35,
+   "x": 36,
    "family": "convnext_base madry_linf",
    "label": "convnext_base_linf_4_init1 [last]",
    "model_id": "convnext_base_linf_4_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linf_4_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9828125,
@@ -484,11 +497,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 36,
+   "x": 37,
    "family": "convnext_base madry_linf",
    "label": "convnext_base_linf_cont4to6_init0 [advbest]",
    "model_id": "convnext_base_linf_cont4to6_pgd5_init0__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linf_cont4to6_pgd5_init0/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.978125,
@@ -497,11 +510,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 37,
+   "x": 38,
    "family": "convnext_base madry_linf",
    "label": "convnext_base_linf_cont4to6_init1 [last]",
    "model_id": "convnext_base_linf_cont4to6_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linf_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9796875,
@@ -510,11 +523,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 38,
+   "x": 39,
    "family": "convnext_base madry_linf",
    "label": "convnext_base_linf_cont4to8_init0 [last]",
    "model_id": "convnext_base_linf_cont4to8_pgd5_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linf_cont4to8_pgd5_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.965625,
@@ -523,11 +536,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 39,
+   "x": 40,
    "family": "convnext_base madry_linf",
    "label": "convnext_base_linf_cont4to8_init1 [last]",
    "model_id": "convnext_base_linf_cont4to8_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linf_cont4to8_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.971875,
@@ -536,11 +549,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 40,
+   "x": 41,
    "family": "convnext_base trades_l1",
    "label": "convnext_base_l1trades_1_init0 [last]",
    "model_id": "convnext_base_l1trades_1_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1trades_1_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -549,11 +562,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 41,
+   "x": 42,
    "family": "convnext_base trades_l1",
    "label": "convnext_base_l1trades_1_init1 [advbest]",
    "model_id": "convnext_base_l1trades_1_init1__advbest",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1trades_1_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -562,11 +575,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 42,
+   "x": 43,
    "family": "convnext_base trades_l1",
    "label": "convnext_base_l1trades_2_init0 [last]",
    "model_id": "convnext_base_l1trades_2_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1trades_2_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -575,11 +588,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 43,
+   "x": 44,
    "family": "convnext_base trades_l1",
    "label": "convnext_base_l1trades_2_init1 [last]",
    "model_id": "convnext_base_l1trades_2_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1trades_2_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -588,11 +601,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 44,
+   "x": 45,
    "family": "convnext_base trades_l1",
    "label": "convnext_base_l1trades_4_init0 [best]",
    "model_id": "convnext_base_l1trades_4_init0__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1trades_4_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9953125,
@@ -601,11 +614,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 45,
+   "x": 46,
    "family": "convnext_base trades_l1",
    "label": "convnext_base_l1trades_4_init1 [last]",
    "model_id": "convnext_base_l1trades_4_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1trades_4_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -614,11 +627,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 46,
+   "x": 47,
    "family": "convnext_base trades_l1",
    "label": "convnext_base_l1trades_cont4to6_init0 [last]",
    "model_id": "convnext_base_l1trades_cont4to6_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1trades_cont4to6_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -627,11 +640,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 47,
+   "x": 48,
    "family": "convnext_base trades_l1",
    "label": "convnext_base_l1trades_cont4to6_init1 [last]",
    "model_id": "convnext_base_l1trades_cont4to6_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1trades_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9953125,
@@ -640,11 +653,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 48,
+   "x": 49,
    "family": "convnext_base trades_l1",
    "label": "convnext_base_l1trades_cont4to8_init0 [last]",
    "model_id": "convnext_base_l1trades_cont4to8_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1trades_cont4to8_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -653,11 +666,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 49,
+   "x": 50,
    "family": "convnext_base trades_l1",
    "label": "convnext_base_l1trades_cont4to8_init1 [last]",
    "model_id": "convnext_base_l1trades_cont4to8_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l1trades_cont4to8_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -666,11 +679,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 50,
+   "x": 51,
    "family": "convnext_base trades_l2",
    "label": "convnext_base_l2trades_1_init0 [advbest]",
    "model_id": "convnext_base_l2trades_1_init0__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2trades_1_init0/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -679,11 +692,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 51,
+   "x": 52,
    "family": "convnext_base trades_l2",
    "label": "convnext_base_l2trades_1_init1 [last]",
    "model_id": "convnext_base_l2trades_1_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2trades_1_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.996875,
@@ -692,11 +705,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 52,
+   "x": 53,
    "family": "convnext_base trades_l2",
    "label": "convnext_base_l2trades_2_init0 [advbest]",
    "model_id": "convnext_base_l2trades_2_init0__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2trades_2_init0/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -705,11 +718,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 53,
+   "x": 54,
    "family": "convnext_base trades_l2",
    "label": "convnext_base_l2trades_2_init1 [last]",
    "model_id": "convnext_base_l2trades_2_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2trades_2_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9953125,
@@ -718,11 +731,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 54,
+   "x": 55,
    "family": "convnext_base trades_l2",
    "label": "convnext_base_l2trades_4_init0 [last]",
    "model_id": "convnext_base_l2trades_4_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2trades_4_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -731,11 +744,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 55,
+   "x": 56,
    "family": "convnext_base trades_l2",
    "label": "convnext_base_l2trades_4_init1 [advbest]",
    "model_id": "convnext_base_l2trades_4_init1__advbest",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2trades_4_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -744,11 +757,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 56,
+   "x": 57,
    "family": "convnext_base trades_l2",
    "label": "convnext_base_l2trades_cont4to6_init0 [last]",
    "model_id": "convnext_base_l2trades_cont4to6_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2trades_cont4to6_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9859375,
@@ -757,11 +770,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 57,
+   "x": 58,
    "family": "convnext_base trades_l2",
    "label": "convnext_base_l2trades_cont4to6_init1 [last]",
    "model_id": "convnext_base_l2trades_cont4to6_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2trades_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9828125,
@@ -770,11 +783,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 58,
+   "x": 59,
    "family": "convnext_base trades_l2",
    "label": "convnext_base_l2trades_cont4to8_init0 [last]",
    "model_id": "convnext_base_l2trades_cont4to8_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2trades_cont4to8_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9859375,
@@ -783,11 +796,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 59,
+   "x": 60,
    "family": "convnext_base trades_l2",
    "label": "convnext_base_l2trades_cont4to8_init1 [best]",
    "model_id": "convnext_base_l2trades_cont4to8_init1__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_l2trades_cont4to8_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -796,11 +809,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 60,
+   "x": 61,
    "family": "convnext_base trades_linf",
    "label": "convnext_base_linftrades_1_init0 [last]",
    "model_id": "convnext_base_linftrades_1_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linftrades_1_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9953125,
@@ -809,11 +822,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 61,
+   "x": 62,
    "family": "convnext_base trades_linf",
    "label": "convnext_base_linftrades_1_init1 [last]",
    "model_id": "convnext_base_linftrades_1_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linftrades_1_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -822,11 +835,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 62,
+   "x": 63,
    "family": "convnext_base trades_linf",
    "label": "convnext_base_linftrades_2_init0 [last]",
    "model_id": "convnext_base_linftrades_2_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linftrades_2_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9953125,
@@ -835,11 +848,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 63,
+   "x": 64,
    "family": "convnext_base trades_linf",
    "label": "convnext_base_linftrades_2_init1 [last]",
    "model_id": "convnext_base_linftrades_2_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linftrades_2_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -848,11 +861,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 64,
+   "x": 65,
    "family": "convnext_base trades_linf",
    "label": "convnext_base_linftrades_4_init0 [advbest]",
    "model_id": "convnext_base_linftrades_4_init0__advbest",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linftrades_4_init0/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -861,11 +874,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 65,
+   "x": 66,
    "family": "convnext_base trades_linf",
    "label": "convnext_base_linftrades_4_init1 [last]",
    "model_id": "convnext_base_linftrades_4_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linftrades_4_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -874,11 +887,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 66,
+   "x": 67,
    "family": "convnext_base trades_linf",
    "label": "convnext_base_linftrades_cont4to6_init0 [last]",
    "model_id": "convnext_base_linftrades_cont4to6_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linftrades_cont4to6_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -887,11 +900,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 67,
+   "x": 68,
    "family": "convnext_base trades_linf",
    "label": "convnext_base_linftrades_cont4to6_init1 [last]",
    "model_id": "convnext_base_linftrades_cont4to6_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linftrades_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -900,11 +913,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 68,
+   "x": 69,
    "family": "convnext_base trades_linf",
    "label": "convnext_base_linftrades_cont4to8_init0 [last]",
    "model_id": "convnext_base_linftrades_cont4to8_init2__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linftrades_cont4to8_init2/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -913,11 +926,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 69,
+   "x": 70,
    "family": "convnext_base trades_linf",
    "label": "convnext_base_linftrades_cont4to8_init1 [last]",
    "model_id": "convnext_base_linftrades_cont4to8_init3__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_linftrades_cont4to8_init3/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -926,11 +939,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 70,
+   "x": 71,
    "family": "convnext_base dvdb_madry_l1",
    "label": "convnext_base_dvd_b_l1_1_init0 [best]",
    "model_id": "convnext_base_dvd_b_l1_1_init0__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1_1_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9828125,
@@ -939,11 +952,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 71,
+   "x": 72,
    "family": "convnext_base dvdb_madry_l1",
    "label": "convnext_base_dvd_b_l1_1_init1 [last]",
    "model_id": "convnext_base_dvd_b_l1_1_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1_1_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9671875,
@@ -952,11 +965,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 72,
+   "x": 73,
    "family": "convnext_base dvdb_madry_l1",
    "label": "convnext_base_dvd_b_l1_2_init0 [last]",
    "model_id": "convnext_base_dvd_b_l1_2_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1_2_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.984375,
@@ -965,11 +978,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 73,
+   "x": 74,
    "family": "convnext_base dvdb_madry_l1",
    "label": "convnext_base_dvd_b_l1_2_init1 [best]",
    "model_id": "convnext_base_dvd_b_l1_2_init1__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1_2_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.98125,
@@ -978,11 +991,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 74,
+   "x": 75,
    "family": "convnext_base dvdb_madry_l1",
    "label": "convnext_base_dvd_b_l1_4_init1 [advbest]",
    "model_id": "convnext_base_dvd_b_l1_4_init1__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1_4_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.984375,
@@ -991,11 +1004,24 @@
    "n_scored_trials": 640
   },
   {
-   "x": 75,
+   "x": 76,
+   "family": "convnext_base dvdb_madry_l1",
+   "label": "convnext_base_dvd_b_l1_4_init2 [last]",
+   "model_id": "convnext_base_dvd_b_l1_4_init2__last",
+   "generator": false,
+   "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1_4_init2/last.pth.tar",
+   "status": "done",
+   "ood_accuracy": 0.971875,
+   "ood_accuracy_max": 0.9671875,
+   "error_consistency": 0.1250012550562723,
+   "n_scored_trials": 640
+  },
+  {
+   "x": 77,
    "family": "convnext_base dvdb_madry_l1",
    "label": "convnext_base_dvd_b_l1_cont4to6_init0_contepoch [last]",
    "model_id": "convnext_base_dvd_b_l1_cont4to6_init0_contepoch__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1_cont4to6_init0_contepoch/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.971875,
@@ -1004,11 +1030,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 76,
+   "x": 78,
    "family": "convnext_base dvdb_madry_l1",
    "label": "convnext_base_dvd_b_l1_cont4to6_init1_contepoch [best]",
    "model_id": "convnext_base_dvd_b_l1_cont4to6_init1_contepoch__best",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1_cont4to6_init1_contepoch/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.984375,
@@ -1017,11 +1043,24 @@
    "n_scored_trials": 640
   },
   {
-   "x": 77,
+   "x": 79,
+   "family": "convnext_base dvdb_madry_l1",
+   "label": "convnext_base_dvd_b_l1_cont4to6_init2_contepoch [last]",
+   "model_id": "convnext_base_dvd_b_l1_cont4to6_init2_contepoch__last",
+   "generator": true,
+   "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1_cont4to6_init2_contepoch/last.pth.tar",
+   "status": "done",
+   "ood_accuracy": 0.9625,
+   "ood_accuracy_max": 0.953125,
+   "error_consistency": 0.1923434861708431,
+   "n_scored_trials": 640
+  },
+  {
+   "x": 80,
    "family": "convnext_base dvdb_madry_l1",
    "label": "convnext_base_dvd_b_l1_cont4to8_init0_contepoch [last]",
    "model_id": "convnext_base_dvd_b_l1_cont4to8_init0_contepoch__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1_cont4to8_init0_contepoch/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.971875,
@@ -1030,11 +1069,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 78,
+   "x": 81,
    "family": "convnext_base dvdb_madry_l1",
    "label": "convnext_base_dvd_b_l1_cont4to8_init1_contepoch [last]",
    "model_id": "convnext_base_dvd_b_l1_cont4to8_init1_contepoch__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1_cont4to8_init1_contepoch/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9859375,
@@ -1043,11 +1082,24 @@
    "n_scored_trials": 640
   },
   {
-   "x": 79,
+   "x": 82,
+   "family": "convnext_base dvdb_madry_l1",
+   "label": "convnext_base_dvd_b_l1_cont4to8_init2_contepoch [last]",
+   "model_id": "convnext_base_dvd_b_l1_cont4to8_init2_contepoch__last",
+   "generator": true,
+   "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1_cont4to8_init2_contepoch/last.pth.tar",
+   "status": "done",
+   "ood_accuracy": 0.9484375,
+   "ood_accuracy_max": 0.9359375,
+   "error_consistency": 0.2567196894474641,
+   "n_scored_trials": 640
+  },
+  {
+   "x": 83,
    "family": "convnext_base dvdb_madry_l2",
    "label": "convnext_base_dvd_b_l2_1_init0 [best]",
    "model_id": "convnext_base_dvd_b_l2_1_init0__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2_1_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9890625,
@@ -1056,11 +1108,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 80,
+   "x": 84,
    "family": "convnext_base dvdb_madry_l2",
    "label": "convnext_base_dvd_b_l2_1_init1 [advbest]",
    "model_id": "convnext_base_dvd_b_l2_1_init1__advbest",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2_1_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9828125,
@@ -1069,11 +1121,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 81,
+   "x": 85,
    "family": "convnext_base dvdb_madry_l2",
    "label": "convnext_base_dvd_b_l2_2_init1 [best]",
    "model_id": "convnext_base_dvd_b_l2_2_init1__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2_2_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9796875,
@@ -1082,11 +1134,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 82,
+   "x": 86,
    "family": "convnext_base dvdb_madry_l2",
    "label": "convnext_base_dvd_b_l2_4_init0 [last]",
    "model_id": "convnext_base_dvd_b_l2_4_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2_4_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.93125,
@@ -1095,11 +1147,24 @@
    "n_scored_trials": 640
   },
   {
-   "x": 83,
+   "x": 87,
+   "family": "convnext_base dvdb_madry_l2",
+   "label": "convnext_base_dvd_b_l2_4_init2 [best]",
+   "model_id": "convnext_base_dvd_b_l2_4_init2__best",
+   "generator": false,
+   "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2_4_init2/model_best.pth.tar",
+   "status": "done",
+   "ood_accuracy": 0.9546875,
+   "ood_accuracy_max": 0.9453125,
+   "error_consistency": 0.2157461606060642,
+   "n_scored_trials": 640
+  },
+  {
+   "x": 88,
    "family": "convnext_base dvdb_madry_l2",
    "label": "convnext_base_dvd_b_l2_cont4to6_init0_contepoch [best]",
    "model_id": "convnext_base_dvd_b_l2_cont4to6_init0_contepoch__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2_cont4to6_init0_contepoch/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.959375,
@@ -1108,11 +1173,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 84,
+   "x": 89,
    "family": "convnext_base dvdb_madry_l2",
    "label": "convnext_base_dvd_b_l2_cont4to8_init0_contepoch [best]",
    "model_id": "convnext_base_dvd_b_l2_cont4to8_init0_contepoch__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2_cont4to8_init0_contepoch/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.8640625,
@@ -1121,11 +1186,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 85,
+   "x": 90,
    "family": "convnext_base dvdb_madry_l2",
    "label": "convnext_base_dvd_b_l2_cont4to8_init1_contepoch [best]",
    "model_id": "convnext_base_dvd_b_l2_cont4to8_init1_contepoch__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2_cont4to8_init1_contepoch/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9390625,
@@ -1134,11 +1199,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 86,
+   "x": 91,
    "family": "convnext_base dvdb_madry_linf",
    "label": "convnext_base_dvd_b_linf_1_init0 [last]",
    "model_id": "convnext_base_dvd_b_linf_1_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linf_1_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -1147,11 +1212,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 87,
+   "x": 92,
    "family": "convnext_base dvdb_madry_linf",
    "label": "convnext_base_dvd_b_linf_1_init1 [last]",
    "model_id": "convnext_base_dvd_b_linf_1_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linf_1_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.978125,
@@ -1160,11 +1225,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 88,
+   "x": 93,
    "family": "convnext_base dvdb_madry_linf",
    "label": "convnext_base_dvd_b_linf_2_init1 [best]",
    "model_id": "convnext_base_dvd_b_linf_2_init1__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linf_2_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.978125,
@@ -1173,11 +1238,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 89,
+   "x": 94,
    "family": "convnext_base dvdb_madry_linf",
    "label": "convnext_base_dvd_b_linf_4_init0 [last]",
    "model_id": "convnext_base_dvd_b_linf_4_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linf_4_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.971875,
@@ -1186,11 +1251,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 90,
+   "x": 95,
    "family": "convnext_base dvdb_madry_linf",
    "label": "convnext_base_dvd_b_linf_4_init1 [last]",
    "model_id": "convnext_base_dvd_b_linf_4_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linf_4_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.959375,
@@ -1199,11 +1264,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 91,
+   "x": 96,
    "family": "convnext_base dvdb_madry_linf",
    "label": "convnext_base_dvd_b_linf_cont4to6_init0_contepoch [last]",
    "model_id": "convnext_base_dvd_b_linf_cont4to6_init0_contepoch__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linf_cont4to6_init0_contepoch/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9640625,
@@ -1212,11 +1277,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 92,
+   "x": 97,
    "family": "convnext_base dvdb_madry_linf",
    "label": "convnext_base_dvd_b_linf_cont4to6_init1_contepoch [last]",
    "model_id": "convnext_base_dvd_b_linf_cont4to6_init1_contepoch__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linf_cont4to6_init1_contepoch/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.953125,
@@ -1225,11 +1290,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 93,
+   "x": 98,
    "family": "convnext_base dvdb_madry_linf",
    "label": "convnext_base_dvd_b_linf_cont4to8_init0_contepoch [last]",
    "model_id": "convnext_base_dvd_b_linf_cont4to8_init0_contepoch__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linf_cont4to8_init0_contepoch/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.95625,
@@ -1238,11 +1303,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 94,
+   "x": 99,
    "family": "convnext_base dvdb_madry_linf",
    "label": "convnext_base_dvd_b_linf_cont4to8_init1_contepoch [last]",
    "model_id": "convnext_base_dvd_b_linf_cont4to8_init1_contepoch__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linf_cont4to8_init1_contepoch/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9296875,
@@ -1251,11 +1316,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 95,
+   "x": 100,
    "family": "convnext_base dvdb_trades_l1",
    "label": "convnext_base_dvd_b_l1trades_1_init0 [last]",
    "model_id": "convnext_base_dvd_b_l1trades_1_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1trades_1_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -1264,11 +1329,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 96,
+   "x": 101,
    "family": "convnext_base dvdb_trades_l1",
    "label": "convnext_base_dvd_b_l1trades_1_init1 [advbest]",
    "model_id": "convnext_base_dvd_b_l1trades_1_init1__advbest",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1trades_1_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -1277,11 +1342,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 97,
+   "x": 102,
    "family": "convnext_base dvdb_trades_l1",
    "label": "convnext_base_dvd_b_l1trades_2_init0 [best]",
    "model_id": "convnext_base_dvd_b_l1trades_2_init0__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1trades_2_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -1290,11 +1355,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 98,
+   "x": 103,
    "family": "convnext_base dvdb_trades_l1",
    "label": "convnext_base_dvd_b_l1trades_2_init1 [last]",
    "model_id": "convnext_base_dvd_b_l1trades_2_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1trades_2_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.984375,
@@ -1303,11 +1368,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 99,
+   "x": 104,
    "family": "convnext_base dvdb_trades_l1",
    "label": "convnext_base_dvd_b_l1trades_4_init0 [advbest]",
    "model_id": "convnext_base_dvd_b_l1trades_4_init0__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1trades_4_init0/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.984375,
@@ -1316,11 +1381,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 100,
+   "x": 105,
    "family": "convnext_base dvdb_trades_l1",
    "label": "convnext_base_dvd_b_l1trades_4_init1 [best]",
    "model_id": "convnext_base_dvd_b_l1trades_4_init1__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1trades_4_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -1329,11 +1394,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 101,
+   "x": 106,
    "family": "convnext_base dvdb_trades_l1",
    "label": "convnext_base_dvd_b_l1trades_cont4to6_init0_contepoch [last]",
    "model_id": "convnext_base_dvd_b_l1trades_cont4to6_init0_contepoch__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1trades_cont4to6_init0_contepoch/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9859375,
@@ -1342,11 +1407,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 102,
+   "x": 107,
    "family": "convnext_base dvdb_trades_l1",
    "label": "convnext_base_dvd_b_l1trades_cont4to6_init1_contepoch [advbest]",
    "model_id": "convnext_base_dvd_b_l1trades_cont4to6_init1_contepoch__advbest",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1trades_cont4to6_init1_contepoch/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -1355,11 +1420,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 103,
+   "x": 108,
    "family": "convnext_base dvdb_trades_l1",
    "label": "convnext_base_dvd_b_l1trades_cont4to8_init0_contepoch [last]",
    "model_id": "convnext_base_dvd_b_l1trades_cont4to8_init0_contepoch__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1trades_cont4to8_init0_contepoch/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9859375,
@@ -1368,11 +1433,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 104,
+   "x": 109,
    "family": "convnext_base dvdb_trades_l1",
    "label": "convnext_base_dvd_b_l1trades_cont4to8_init1_contepoch [advbest]",
    "model_id": "convnext_base_dvd_b_l1trades_cont4to8_init1_contepoch__advbest",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l1trades_cont4to8_init1_contepoch/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -1381,11 +1446,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 105,
+   "x": 110,
    "family": "convnext_base dvdb_trades_l2",
    "label": "convnext_base_dvd_b_l2trades_1_init0 [best]",
    "model_id": "convnext_base_dvd_b_l2trades_1_init0__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2trades_1_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9890625,
@@ -1394,11 +1459,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 106,
+   "x": 111,
    "family": "convnext_base dvdb_trades_l2",
    "label": "convnext_base_dvd_b_l2trades_1_init1 [best]",
    "model_id": "convnext_base_dvd_b_l2trades_1_init1__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2trades_1_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -1407,11 +1472,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 107,
+   "x": 112,
    "family": "convnext_base dvdb_trades_l2",
    "label": "convnext_base_dvd_b_l2trades_2_init0 [advbest]",
    "model_id": "convnext_base_dvd_b_l2trades_2_init0__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2trades_2_init0/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -1420,11 +1485,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 108,
+   "x": 113,
    "family": "convnext_base dvdb_trades_l2",
    "label": "convnext_base_dvd_b_l2trades_2_init1 [advbest]",
    "model_id": "convnext_base_dvd_b_l2trades_2_init1__advbest",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2trades_2_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -1433,11 +1498,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 109,
+   "x": 114,
    "family": "convnext_base dvdb_trades_l2",
    "label": "convnext_base_dvd_b_l2trades_4_init0 [advbest]",
    "model_id": "convnext_base_dvd_b_l2trades_4_init0__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2trades_4_init0/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -1446,11 +1511,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 110,
+   "x": 115,
    "family": "convnext_base dvdb_trades_l2",
    "label": "convnext_base_dvd_b_l2trades_4_init1 [advbest]",
    "model_id": "convnext_base_dvd_b_l2trades_4_init1__advbest",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2trades_4_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9828125,
@@ -1459,11 +1524,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 111,
+   "x": 116,
    "family": "convnext_base dvdb_trades_l2",
    "label": "convnext_base_dvd_b_l2trades_cont4to6_init0_contepoch [advbest]",
    "model_id": "convnext_base_dvd_b_l2trades_cont4to6_init0_contepoch__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2trades_cont4to6_init0_contepoch/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9828125,
@@ -1472,11 +1537,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 112,
+   "x": 117,
    "family": "convnext_base dvdb_trades_l2",
    "label": "convnext_base_dvd_b_l2trades_cont4to6_init1_contepoch [advbest]",
    "model_id": "convnext_base_dvd_b_l2trades_cont4to6_init1_contepoch__advbest",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2trades_cont4to6_init1_contepoch/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.978125,
@@ -1485,11 +1550,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 113,
+   "x": 118,
    "family": "convnext_base dvdb_trades_l2",
    "label": "convnext_base_dvd_b_l2trades_cont4to8_init0_contepoch [advbest]",
    "model_id": "convnext_base_dvd_b_l2trades_cont4to8_init0_contepoch__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2trades_cont4to8_init0_contepoch/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.98125,
@@ -1498,11 +1563,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 114,
+   "x": 119,
    "family": "convnext_base dvdb_trades_l2",
    "label": "convnext_base_dvd_b_l2trades_cont4to8_init1_contepoch [advbest]",
    "model_id": "convnext_base_dvd_b_l2trades_cont4to8_init1_contepoch__advbest",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_l2trades_cont4to8_init1_contepoch/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.975,
@@ -1511,11 +1576,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 115,
+   "x": 120,
    "family": "convnext_base dvdb_trades_linf",
    "label": "convnext_base_dvd_b_linftrades_1_init0 [best]",
    "model_id": "convnext_base_dvd_b_linftrades_1_init0__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linftrades_1_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9890625,
@@ -1524,11 +1589,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 116,
+   "x": 121,
    "family": "convnext_base dvdb_trades_linf",
    "label": "convnext_base_dvd_b_linftrades_1_init1 [advbest]",
    "model_id": "convnext_base_dvd_b_linftrades_1_init1__advbest",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linftrades_1_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -1537,11 +1602,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 117,
+   "x": 122,
    "family": "convnext_base dvdb_trades_linf",
    "label": "convnext_base_dvd_b_linftrades_2_init0 [best]",
    "model_id": "convnext_base_dvd_b_linftrades_2_init0__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linftrades_2_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.978125,
@@ -1550,11 +1615,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 118,
+   "x": 123,
    "family": "convnext_base dvdb_trades_linf",
    "label": "convnext_base_dvd_b_linftrades_2_init1 [best]",
    "model_id": "convnext_base_dvd_b_linftrades_2_init1__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linftrades_2_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -1563,11 +1628,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 119,
+   "x": 124,
    "family": "convnext_base dvdb_trades_linf",
    "label": "convnext_base_dvd_b_linftrades_4_init0 [best]",
    "model_id": "convnext_base_dvd_b_linftrades_4_init0__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linftrades_4_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9796875,
@@ -1576,11 +1641,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 120,
+   "x": 125,
    "family": "convnext_base dvdb_trades_linf",
    "label": "convnext_base_dvd_b_linftrades_4_init1 [best]",
    "model_id": "convnext_base_dvd_b_linftrades_4_init1__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linftrades_4_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -1589,11 +1654,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 121,
+   "x": 126,
    "family": "convnext_base dvdb_trades_linf",
    "label": "convnext_base_dvd_b_linftrades_cont4to6_init0_contepoch [last]",
    "model_id": "convnext_base_dvd_b_linftrades_cont4to6_init0_contepoch__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linftrades_cont4to6_init0_contepoch/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9859375,
@@ -1602,11 +1667,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 122,
+   "x": 127,
    "family": "convnext_base dvdb_trades_linf",
    "label": "convnext_base_dvd_b_linftrades_cont4to6_init1_contepoch [last]",
    "model_id": "convnext_base_dvd_b_linftrades_cont4to6_init1_contepoch__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linftrades_cont4to6_init1_contepoch/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -1615,11 +1680,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 123,
+   "x": 128,
    "family": "convnext_base dvdb_trades_linf",
    "label": "convnext_base_dvd_b_linftrades_cont4to8_init0_contepoch [last]",
    "model_id": "convnext_base_dvd_b_linftrades_cont4to8_init0_contepoch__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linftrades_cont4to8_init0_contepoch/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9796875,
@@ -1628,11 +1693,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 124,
+   "x": 129,
    "family": "convnext_base dvdb_trades_linf",
    "label": "convnext_base_dvd_b_linftrades_cont4to8_init1_contepoch [last]",
    "model_id": "convnext_base_dvd_b_linftrades_cont4to8_init1_contepoch__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_dvd_b_linftrades_cont4to8_init1_contepoch/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -1641,11 +1706,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 125,
+   "x": 130,
    "family": "convnext_base v1_madry_l2",
    "label": "convnext_base_v1_l2_1_init0 [advbest]",
    "model_id": "convnext_base_v1_l2_1_init0__advbest",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_v1_l2_1_init0/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -1654,11 +1719,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 126,
+   "x": 131,
    "family": "convnext_base v1_madry_l2",
    "label": "convnext_base_v1_l2_1_init1 [best]",
    "model_id": "convnext_base_v1_l2_1_init1__best",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_v1_l2_1_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9890625,
@@ -1667,11 +1732,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 127,
+   "x": 132,
    "family": "convnext_base v1_madry_l2",
    "label": "convnext_base_v1_l2_2_init0 [best]",
    "model_id": "convnext_base_v1_l2_2_init0__best",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_v1_l2_2_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -1680,11 +1745,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 128,
+   "x": 133,
    "family": "convnext_base v1_madry_l2",
    "label": "convnext_base_v1_l2_2_init1 [last]",
    "model_id": "convnext_base_v1_l2_2_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_v1_l2_2_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -1693,11 +1758,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 129,
+   "x": 134,
    "family": "convnext_base v1_madry_l2",
    "label": "convnext_base_v1_l2_4_init0 [last]",
    "model_id": "convnext_base_v1_l2_4_init0__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_v1_l2_4_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -1706,11 +1771,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 130,
+   "x": 135,
    "family": "convnext_base v1_madry_l2",
    "label": "convnext_base_v1_l2_4_init1 [last]",
    "model_id": "convnext_base_v1_l2_4_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_v1_l2_4_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.984375,
@@ -1719,11 +1784,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 131,
+   "x": 136,
    "family": "convnext_base v1_madry_l2",
    "label": "convnext_base_v1_l2_cont4to6_init0 [last]",
    "model_id": "convnext_base_v1_l2_cont4to6_init0__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_v1_l2_cont4to6_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -1732,11 +1797,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 132,
+   "x": 137,
    "family": "convnext_base v1_madry_l2",
    "label": "convnext_base_v1_l2_cont4to6_init1 [advbest]",
    "model_id": "convnext_base_v1_l2_cont4to6_init1__advbest",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_v1_l2_cont4to6_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9828125,
@@ -1745,11 +1810,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 133,
+   "x": 138,
    "family": "convnext_base v1_madry_l2",
    "label": "convnext_base_v1_l2_cont4to8_init0 [last]",
    "model_id": "convnext_base_v1_l2_cont4to8_init0__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_v1_l2_cont4to8_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.98125,
@@ -1758,11 +1823,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 134,
+   "x": 139,
    "family": "convnext_base v1_madry_l2",
    "label": "convnext_base_v1_l2_cont4to8_init1 [last]",
    "model_id": "convnext_base_v1_l2_cont4to8_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_v1_l2_cont4to8_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.98125,
@@ -1771,11 +1836,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 135,
+   "x": 140,
    "family": "convnext_base gradnorm_l1",
    "label": "convnext_base_gradnorm_l1_1_init0 [best]",
    "model_id": "convnext_base_gradnorm_l1_1_init0__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_gradnorm_l1_1_init0/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -1784,11 +1849,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 136,
+   "x": 141,
    "family": "convnext_base gradnorm_l1",
    "label": "convnext_base_gradnorm_l1_1_init1 [last]",
    "model_id": "convnext_base_gradnorm_l1_1_init1__last",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_gradnorm_l1_1_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -1797,11 +1862,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 137,
+   "x": 142,
    "family": "convnext_base gradnorm_l1",
    "label": "convnext_base_gradnorm_l1_2_init0 [last]",
    "model_id": "convnext_base_gradnorm_l1_2_init0__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_gradnorm_l1_2_init0/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -1810,11 +1875,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 138,
+   "x": 143,
    "family": "convnext_base gradnorm_l1",
    "label": "convnext_base_gradnorm_l1_2_init1 [advbest]",
    "model_id": "convnext_base_gradnorm_l1_2_init1__advbest",
-   "in_adv_json": false,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/convnext_base/convnext_base_gradnorm_l1_2_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -1823,11 +1888,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 139,
+   "x": 144,
    "family": "vit_b_cvst madry_l1",
    "label": "vit_b_cvst_l1_1_init1 [advbest]",
    "model_id": "vit_b_cvst_l1_1_init1__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l1_1_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -1836,11 +1901,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 140,
+   "x": 145,
    "family": "vit_b_cvst madry_l1",
    "label": "vit_b_cvst_l1_2_init1 [last]",
    "model_id": "vit_b_cvst_l1_2_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l1_2_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9890625,
@@ -1849,11 +1914,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 141,
+   "x": 146,
    "family": "vit_b_cvst madry_l1",
    "label": "vit_b_cvst_l1_4_init1 [last]",
    "model_id": "vit_b_cvst_l1_4_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l1_4_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -1862,11 +1927,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 142,
+   "x": 147,
    "family": "vit_b_cvst madry_l1",
    "label": "vit_b_cvst_l1_cont4to6_init1 [last]",
    "model_id": "vit_b_cvst_l1_cont4to6_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l1_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9890625,
@@ -1875,11 +1940,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 143,
+   "x": 148,
    "family": "vit_b_cvst madry_l1",
    "label": "vit_b_cvst_l1_cont4to8_init1 [last]",
    "model_id": "vit_b_cvst_l1_cont4to8_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l1_cont4to8_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -1888,11 +1953,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 144,
+   "x": 149,
    "family": "vit_b_cvst madry_l2",
    "label": "vit_b_cvst_l2_1_init1 [advbest]",
    "model_id": "vit_b_cvst_l2_1_init1__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l2_1_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -1901,11 +1966,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 145,
+   "x": 150,
    "family": "vit_b_cvst madry_l2",
    "label": "vit_b_cvst_l2_2_init1 [advbest]",
    "model_id": "vit_b_cvst_l2_2_init1__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l2_2_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9828125,
@@ -1914,11 +1979,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 146,
+   "x": 151,
    "family": "vit_b_cvst madry_l2",
    "label": "vit_b_cvst_l2_4_init1 [advbest]",
    "model_id": "vit_b_cvst_l2_4_init1__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l2_4_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9578125,
@@ -1927,11 +1992,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 147,
+   "x": 152,
    "family": "vit_b_cvst madry_l2",
    "label": "vit_b_cvst_l2_cont4to6_init1 [last]",
    "model_id": "vit_b_cvst_l2_cont4to6_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l2_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9609375,
@@ -1940,11 +2005,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 148,
+   "x": 153,
    "family": "vit_b_cvst madry_l2",
    "label": "vit_b_cvst_l2_cont4to8_init1 [last]",
    "model_id": "vit_b_cvst_l2_cont4to8_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l2_cont4to8_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9265625,
@@ -1953,11 +2018,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 149,
+   "x": 154,
    "family": "vit_b_cvst madry_linf",
    "label": "vit_b_cvst_linf_1_init1 [best]",
    "model_id": "vit_b_cvst_linf_1_init1__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_linf_1_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -1966,11 +2031,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 150,
+   "x": 155,
    "family": "vit_b_cvst madry_linf",
    "label": "vit_b_cvst_linf_2_init1 [best]",
    "model_id": "vit_b_cvst_linf_2_init1__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_linf_2_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.984375,
@@ -1979,11 +2044,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 151,
+   "x": 156,
    "family": "vit_b_cvst madry_linf",
    "label": "vit_b_cvst_linf_4_init1 [advbest]",
    "model_id": "vit_b_cvst_linf_4_init1__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_linf_4_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.96875,
@@ -1992,11 +2057,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 152,
+   "x": 157,
    "family": "vit_b_cvst madry_linf",
    "label": "vit_b_cvst_linf_cont4to6_init1 [last]",
    "model_id": "vit_b_cvst_linf_cont4to6_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_linf_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9734375,
@@ -2005,11 +2070,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 153,
+   "x": 158,
    "family": "vit_b_cvst madry_linf",
    "label": "vit_b_cvst_linf_cont4to8_init1 [advbest]",
    "model_id": "vit_b_cvst_linf_cont4to8_init1__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_linf_cont4to8_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9546875,
@@ -2018,11 +2083,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 154,
+   "x": 159,
    "family": "vit_b_cvst trades_l1",
    "label": "vit_b_cvst_l1trades_1_init1 [advbest]",
    "model_id": "vit_b_cvst_l1trades_1_init1__advbest",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l1trades_1_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9890625,
@@ -2031,11 +2096,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 155,
+   "x": 160,
    "family": "vit_b_cvst trades_l1",
    "label": "vit_b_cvst_l1trades_2_init1 [last]",
    "model_id": "vit_b_cvst_l1trades_2_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l1trades_2_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -2044,11 +2109,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 156,
+   "x": 161,
    "family": "vit_b_cvst trades_l1",
    "label": "vit_b_cvst_l1trades_4_init1 [last]",
    "model_id": "vit_b_cvst_l1trades_4_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l1trades_4_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9890625,
@@ -2057,11 +2122,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 157,
+   "x": 162,
    "family": "vit_b_cvst trades_l1",
    "label": "vit_b_cvst_l1trades_cont4to6_init1 [last]",
    "model_id": "vit_b_cvst_l1trades_cont4to6_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l1trades_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9890625,
@@ -2070,11 +2135,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 158,
+   "x": 163,
    "family": "vit_b_cvst trades_l1",
    "label": "vit_b_cvst_l1trades_cont4to8_init1 [last]",
    "model_id": "vit_b_cvst_l1trades_cont4to8_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l1trades_cont4to8_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9890625,
@@ -2083,11 +2148,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 159,
+   "x": 164,
    "family": "vit_b_cvst trades_l2",
    "label": "vit_b_cvst_l2trades_1_init1 [best]",
    "model_id": "vit_b_cvst_l2trades_1_init1__best",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l2trades_1_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -2096,11 +2161,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 160,
+   "x": 165,
    "family": "vit_b_cvst trades_l2",
    "label": "vit_b_cvst_l2trades_2_init1 [best]",
    "model_id": "vit_b_cvst_l2trades_2_init1__best",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l2trades_2_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -2109,24 +2174,24 @@
    "n_scored_trials": 640
   },
   {
-   "x": 161,
+   "x": 166,
    "family": "vit_b_cvst trades_l2",
-   "label": "vit_b_cvst_l2trades_4_init1 [best]",
-   "model_id": "vit_b_cvst_l2trades_4_init1__best",
-   "in_adv_json": true,
-   "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l2trades_4_init1/model_best.pth.tar",
+   "label": "vit_b_cvst_l2trades_4_init2 [best]",
+   "model_id": "vit_b_cvst_l2trades_4_init2__best",
+   "generator": false,
+   "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l2trades_4_init2/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
-   "ood_accuracy_max": 0.9921875,
-   "error_consistency": 0.1333034057990967,
+   "ood_accuracy_max": 0.98125,
+   "error_consistency": 0.1666566412159902,
    "n_scored_trials": 640
   },
   {
-   "x": 162,
+   "x": 167,
    "family": "vit_b_cvst trades_l2",
    "label": "vit_b_cvst_l2trades_cont4to6_init1 [last]",
    "model_id": "vit_b_cvst_l2trades_cont4to6_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l2trades_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9828125,
@@ -2135,11 +2200,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 163,
+   "x": 168,
    "family": "vit_b_cvst trades_l2",
    "label": "vit_b_cvst_l2trades_cont4to8_init1 [last]",
    "model_id": "vit_b_cvst_l2trades_cont4to8_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_l2trades_cont4to8_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.984375,
@@ -2148,11 +2213,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 164,
+   "x": 169,
    "family": "vit_b_cvst trades_linf",
    "label": "vit_b_cvst_linftrades_1_init1 [advbest]",
    "model_id": "vit_b_cvst_linftrades_1_init1__advbest",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_linftrades_1_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -2161,11 +2226,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 165,
+   "x": 170,
    "family": "vit_b_cvst trades_linf",
    "label": "vit_b_cvst_linftrades_2_init1 [best]",
    "model_id": "vit_b_cvst_linftrades_2_init1__best",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_linftrades_2_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -2174,24 +2239,24 @@
    "n_scored_trials": 640
   },
   {
-   "x": 166,
+   "x": 171,
    "family": "vit_b_cvst trades_linf",
-   "label": "vit_b_cvst_linftrades_4_init1 [advbest]",
-   "model_id": "vit_b_cvst_linftrades_4_init1__advbest",
-   "in_adv_json": true,
-   "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_linftrades_4_init1/model_best_adv.pth.tar",
+   "label": "vit_b_cvst_linftrades_4_init2 [best]",
+   "model_id": "vit_b_cvst_linftrades_4_init2__best",
+   "generator": false,
+   "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_linftrades_4_init2/model_best.pth.tar",
    "status": "done",
-   "ood_accuracy": 0.9953125,
-   "ood_accuracy_max": 0.99375,
-   "error_consistency": 0.018281543902252,
+   "ood_accuracy": 0.9875,
+   "ood_accuracy_max": 0.9890625,
+   "error_consistency": 0.1089119096595208,
    "n_scored_trials": 640
   },
   {
-   "x": 167,
+   "x": 172,
    "family": "vit_b_cvst trades_linf",
    "label": "vit_b_cvst_linftrades_cont4to6_init1 [last]",
    "model_id": "vit_b_cvst_linftrades_cont4to6_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_linftrades_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -2200,11 +2265,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 168,
+   "x": 173,
    "family": "vit_b_cvst trades_linf",
    "label": "vit_b_cvst_linftrades_cont4to8_init1 [last]",
    "model_id": "vit_b_cvst_linftrades_cont4to8_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/vit_b_cvst/vit_b_cvst_linftrades_cont4to8_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.984375,
@@ -2213,11 +2278,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 169,
+   "x": 174,
    "family": "swin_b madry_l1",
    "label": "swin_b_l1_1_init1 [advbest]",
    "model_id": "swin_b_l1_1_init1__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l1_1_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -2226,11 +2291,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 170,
+   "x": 175,
    "family": "swin_b madry_l1",
    "label": "swin_b_l1_2_init1 [last]",
    "model_id": "swin_b_l1_2_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l1_2_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.996875,
@@ -2239,11 +2304,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 171,
+   "x": 176,
    "family": "swin_b madry_l1",
    "label": "swin_b_l1_4_init1 [advbest]",
    "model_id": "swin_b_l1_4_init1__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l1_4_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9859375,
@@ -2252,11 +2317,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 172,
+   "x": 177,
    "family": "swin_b madry_l1",
    "label": "swin_b_l1_cont4to6_init1 [last]",
    "model_id": "swin_b_l1_cont4to6_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l1_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -2265,11 +2330,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 173,
+   "x": 178,
    "family": "swin_b madry_l1",
    "label": "swin_b_l1_cont4to8_init1 [last]",
    "model_id": "swin_b_l1_cont4to8_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l1_cont4to8_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -2278,11 +2343,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 174,
+   "x": 179,
    "family": "swin_b madry_l2",
    "label": "swin_b_l2_1_init1 [last]",
    "model_id": "swin_b_l2_1_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l2_1_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -2291,11 +2356,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 175,
+   "x": 180,
    "family": "swin_b madry_l2",
    "label": "swin_b_l2_2_init1 [advbest]",
    "model_id": "swin_b_l2_2_init1__advbest",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l2_2_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.984375,
@@ -2304,11 +2369,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 176,
+   "x": 181,
    "family": "swin_b madry_l2",
    "label": "swin_b_l2_4_init1 [last]",
    "model_id": "swin_b_l2_4_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l2_4_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.98125,
@@ -2317,11 +2382,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 177,
+   "x": 182,
    "family": "swin_b madry_l2",
    "label": "swin_b_l2_cont4to6_init1 [last]",
    "model_id": "swin_b_l2_cont4to6_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l2_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9625,
@@ -2330,11 +2395,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 178,
+   "x": 183,
    "family": "swin_b madry_l2",
    "label": "swin_b_l2_cont4to8_init1 [best]",
    "model_id": "swin_b_l2_cont4to8_init1__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l2_cont4to8_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.940625,
@@ -2343,11 +2408,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 179,
+   "x": 184,
    "family": "swin_b madry_linf",
    "label": "swin_b_linf_1_init1 [last]",
    "model_id": "swin_b_linf_1_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_linf_1_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.990625,
@@ -2356,11 +2421,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 180,
+   "x": 185,
    "family": "swin_b madry_linf",
    "label": "swin_b_linf_2_init1 [best]",
    "model_id": "swin_b_linf_2_init1__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_linf_2_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -2369,11 +2434,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 181,
+   "x": 186,
    "family": "swin_b madry_linf",
    "label": "swin_b_linf_4_init1 [best]",
    "model_id": "swin_b_linf_4_init1__best",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_linf_4_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.984375,
@@ -2382,11 +2447,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 182,
+   "x": 187,
    "family": "swin_b madry_linf",
    "label": "swin_b_linf_cont4to6_init1 [last]",
    "model_id": "swin_b_linf_cont4to6_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_linf_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.98125,
@@ -2395,11 +2460,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 183,
+   "x": 188,
    "family": "swin_b madry_linf",
    "label": "swin_b_linf_cont4to8_init1 [last]",
    "model_id": "swin_b_linf_cont4to8_init1__last",
-   "in_adv_json": true,
+   "generator": true,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_linf_cont4to8_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9671875,
@@ -2408,11 +2473,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 184,
+   "x": 189,
    "family": "swin_b trades_l1",
    "label": "swin_b_l1trades_1_init1 [last]",
    "model_id": "swin_b_l1trades_1_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l1trades_1_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -2421,11 +2486,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 185,
+   "x": 190,
    "family": "swin_b trades_l1",
    "label": "swin_b_l1trades_2_init1 [best]",
    "model_id": "swin_b_l1trades_2_init1__best",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l1trades_2_init1/model_best.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -2434,11 +2499,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 186,
+   "x": 191,
    "family": "swin_b trades_l1",
    "label": "swin_b_l1trades_4_init1 [last]",
    "model_id": "swin_b_l1trades_4_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l1trades_4_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -2447,11 +2512,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 187,
+   "x": 192,
    "family": "swin_b trades_l1",
    "label": "swin_b_l1trades_cont4to6_init1 [last]",
    "model_id": "swin_b_l1trades_cont4to6_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l1trades_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -2460,11 +2525,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 188,
+   "x": 193,
    "family": "swin_b trades_l1",
    "label": "swin_b_l1trades_cont4to8_init1 [last]",
    "model_id": "swin_b_l1trades_cont4to8_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l1trades_cont4to8_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -2473,11 +2538,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 189,
+   "x": 194,
    "family": "swin_b trades_l2",
    "label": "swin_b_l2trades_1_init1 [advbest]",
    "model_id": "swin_b_l2trades_1_init1__advbest",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l2trades_1_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9921875,
@@ -2486,11 +2551,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 190,
+   "x": 195,
    "family": "swin_b trades_l2",
    "label": "swin_b_l2trades_2_init1 [last]",
    "model_id": "swin_b_l2trades_2_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l2trades_2_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9953125,
@@ -2499,24 +2564,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 191,
-   "family": "swin_b trades_l2",
-   "label": "swin_b_l2trades_4_init1 [best]",
-   "model_id": "swin_b_l2trades_4_init1__best",
-   "in_adv_json": true,
-   "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l2trades_4_init1/model_best.pth.tar",
-   "status": "done",
-   "ood_accuracy": 0.9875,
-   "ood_accuracy_max": 0.984375,
-   "error_consistency": 0.1389261215708145,
-   "n_scored_trials": 640
-  },
-  {
-   "x": 192,
+   "x": 196,
    "family": "swin_b trades_l2",
    "label": "swin_b_l2trades_cont4to6_init1 [last]",
    "model_id": "swin_b_l2trades_cont4to6_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l2trades_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9859375,
@@ -2525,11 +2577,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 193,
+   "x": 197,
    "family": "swin_b trades_l2",
    "label": "swin_b_l2trades_cont4to8_init1 [last]",
    "model_id": "swin_b_l2trades_cont4to8_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_l2trades_cont4to8_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9859375,
@@ -2538,11 +2590,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 194,
+   "x": 198,
    "family": "swin_b trades_linf",
    "label": "swin_b_linftrades_1_init1 [advbest]",
    "model_id": "swin_b_linftrades_1_init1__advbest",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_linftrades_1_init1/model_best_adv.pth.tar",
    "status": "done",
    "ood_accuracy": 0.99375,
@@ -2551,37 +2603,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 195,
-   "family": "swin_b trades_linf",
-   "label": "swin_b_linftrades_2_init1 [best]",
-   "model_id": "swin_b_linftrades_2_init1__best",
-   "in_adv_json": true,
-   "checkpoint": "/mnt/data4t/models/swin_b/swin_b_linftrades_2_init1/model_best.pth.tar",
-   "status": "done",
-   "ood_accuracy": 0.99375,
-   "ood_accuracy_max": 0.99375,
-   "error_consistency": 0.0753004232289229,
-   "n_scored_trials": 640
-  },
-  {
-   "x": 196,
-   "family": "swin_b trades_linf",
-   "label": "swin_b_linftrades_4_init1 [best]",
-   "model_id": "swin_b_linftrades_4_init1__best",
-   "in_adv_json": true,
-   "checkpoint": "/mnt/data4t/models/swin_b/swin_b_linftrades_4_init1/model_best.pth.tar",
-   "status": "done",
-   "ood_accuracy": 0.9921875,
-   "ood_accuracy_max": 0.9890625,
-   "error_consistency": 0.0922602886859359,
-   "n_scored_trials": 640
-  },
-  {
-   "x": 197,
+   "x": 199,
    "family": "swin_b trades_linf",
    "label": "swin_b_linftrades_cont4to6_init1 [last]",
    "model_id": "swin_b_linftrades_cont4to6_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_linftrades_cont4to6_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.9875,
@@ -2590,11 +2616,11 @@
    "n_scored_trials": 640
   },
   {
-   "x": 198,
+   "x": 200,
    "family": "swin_b trades_linf",
    "label": "swin_b_linftrades_cont4to8_init1 [last]",
    "model_id": "swin_b_linftrades_cont4to8_init1__last",
-   "in_adv_json": true,
+   "generator": false,
    "checkpoint": "/mnt/data4t/models/swin_b/swin_b_linftrades_cont4to8_init1/last.pth.tar",
    "status": "done",
    "ood_accuracy": 0.984375,
