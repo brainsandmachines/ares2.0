@@ -1,0 +1,11 @@
+system,proto,models,total_gpu_h,wasted_gpu_h,waste_frac_of_total,overhead_vs_useful,models_with_discarded_run,relaunch_frac
+slurm,all,77,23680.4,4561.7,0.1926,0.2386,21,0.2727
+aircc,all,63,7441.0,410.7,0.0552,0.0584,7,0.1111
+combined,all,140,31121.4,4972.4,0.1598,0.1902,28,0.2
+slurm,madry,34,8011.2,844.1,0.1054,0.1178,10,0.2941
+slurm,trades,41,15441.3,3716.7,0.2407,0.317,11,0.2683
+slurm,clean,2,227.9,0.9,0.0037,0.0038,0,0.0
+aircc,madry,31,2548.5,244.0,0.0957,0.1059,5,0.1613
+aircc,trades,30,4757.6,166.0,0.0349,0.0362,2,0.0667
+aircc,clean,2,134.9,0.7,0.0052,0.0052,0,0.0
+combined,madry,65,10559.7,1088.1,0.103,0.1149,15,0.2308
