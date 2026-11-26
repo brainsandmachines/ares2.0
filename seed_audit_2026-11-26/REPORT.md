@@ -38,7 +38,9 @@ Files in this directory:
 - `log.txt` (append mode) has a `Using seed: N` line for every launch since 2026-04-12. This is the only complete history.
 - `runtime_config.yaml` is overwritten each launch. In 233/400 runs it differs from the first launch's seed.
 - `hydra_config.yaml` is captured before resolution, so it always says `seed: null`.
-- Checkpoints: `args.config` = full resolved config incl. the seed of the launch that saved it. Cross-check against the logs: so far every checkpoint's seed matches one of that model's logged launch seeds.
+- Checkpoints: `args.config` = full resolved config incl. the seed of the launch that saved it. Cross-check of all 1,205 keeper checkpoints in `/mnt/data4t/models` (`best_ckpt_seed` / `last_ckpt_seed` in `model_seeds.csv`): 387/389 models match a logged launch seed. The 2 exceptions are not seed problems. In each, the curated dir holds a **superseded run's higher-epoch checkpoints**, while its `log.txt` and `summary.csv` come from the newer run:
+  - `convnext_base_gradnorm_l1_6_init0`: `model_best` / `last` / `model_best_adv` (epochs 119/125/114, seed 4029292652) are from the **collapsed** AIRCC run `models_failed/…__collapsed_20260816`, at top1 ≈ 0.1 (chance). The real final run (epoch 101, top1 71.8, Sep 21) is on the cluster and in `/mnt/botero/slurm_archive/models/`. The paper's provenance already uses the cluster run, and the model has no `models_for_experiments` link. **Only the Botero curated copy is wrong.**
+  - `swin_b_linftrades_4_init2`: the checkpoints (epochs 97/149, seed 2599233464, PGD 3) are from the gradient-masked run that `model_store/hf_excludes.csv` already excludes. The PGD-5 retrain (seed 767893211) is `pending` at epoch 51.
 - Job DBs (`slurm_job_manager/jobs.sqlite`, frozen AIRCC DB): **no seed, no config, no command line.**
 - Job CSVs: **no `seed` column.** `init` is in `METADATA_COLUMNS` (`slurm_job_manager/csv_spec.py:31`), so it is never forwarded to training.
 - Nowhere: git commit, GPU model, torch/CUDA/cuDNN versions, determinism flags.
