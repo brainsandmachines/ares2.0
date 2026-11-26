@@ -17,6 +17,8 @@ from timm.utils import ModelEmaV2, distribute_bn, CheckpointSaver, update_summar
 
 # robust training functions
 from ares.utils.dist import distributed_init, random_seed
+from ares.utils import provenance
+from ares.utils.provenance import derive_epoch_seed
 from ares.utils.logger import setup_logger , _auto_experiment_name
 from ares.utils.model import build_model
 from ares.utils.loss import build_loss, resolve_amp, build_loss_scaler
@@ -92,10 +94,29 @@ def main(cfg: DictConfig):
     _logger.info(f"Experiment: {experiment_name}")
     _logger.info(f"Results directory: {cfg.output_dir}")
 
-    # fix the seed for reproducibility
+    # fix the seed for reproducibility.
+    # An explicit seed (CLI / sjm CSV `seed` column) makes the run reproducible across
+    # requeues: the same seed every launch, plus per-epoch reseeding in the loop below.
+    # seed=null keeps the legacy behaviour (a fresh random seed per launch); either way
+    # every launch is recorded in <run_dir>/seed_history.jsonl (ares/utils/provenance.py).
+    explicit_seed = cfg.seed is not None
+    prior_launches = []
+    if cfg.dist.rank == 0:
+        # Must run before this launch's "Using seed" line, which a first-time
+        # log.txt backfill would otherwise count twice.
+        try:
+            prior_launches = provenance.prior_launches(cfg.output_dir)
+        except Exception as exc:
+            _logger.warning(f"seed provenance: could not read prior launches: {exc!r}")
     if cfg.seed is None:
         cfg.seed = int(torch.randint(0, 2**32 - 1, ()).item())
+    with open_dict(cfg):
+        cfg.runtime.seed_source = "config" if explicit_seed else "drawn"
     _logger.info(f"Using seed: {cfg.seed}")
+    _logger.info(
+        f"Seed source: {cfg.runtime.seed_source} "
+        f"({'per-epoch reseed on' if explicit_seed else 'seed=null: fresh seed each launch'})"
+    )
     random_seed(cfg.seed, cfg.dist.rank)
     torch.backends.cudnn.deterministic=False
     torch.backends.cudnn.benchmark = True
@@ -215,8 +236,28 @@ def main(cfg: DictConfig):
             lr_scheduler.step_update(start_epoch * updates_per_epoch)
         else:
             lr_scheduler.step(start_epoch)
-    
-    # ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # /ares
+
+    seed_history = []
+    if cfg.dist.rank == 0:
+        try:
+            seed_history = provenance.record_launch(
+                cfg.output_dir,
+                prior=prior_launches,
+                seed=cfg.seed,
+                seed_source=cfg.runtime.seed_source,
+                start_epoch=start_epoch,
+                total_epochs=cfg.training.epochs,
+                epoch_reseed=explicit_seed,
+                device_id=cfg.dist.device_id,
+            )
+            _logger.info(
+                f"Seed history: {len(seed_history)} launch(es) recorded in "
+                f"{os.path.join(cfg.output_dir, provenance.SEED_HISTORY_FILE)}"
+            )
+        except Exception as exc:
+            _logger.warning(f"seed provenance: could not record this launch: {exc!r}")
+
+    # ROOT =os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # /ares
     # db_path = os.path.join(ROOT, "job_manager", "model_scheduler.db")
     # sch = Model_scheduler(db_path=db_path)
 
@@ -245,6 +286,9 @@ def main(cfg: DictConfig):
             {
                 "model": cfg.model.model,
                 "config": OmegaConf.to_container(cfg, resolve=True),
+                # every launch's seed / start epoch / commit / GPU, so the
+                # weights carry their full seed provenance (provenance.py).
+                "seed_history": provenance.checkpoint_seed_history(seed_history),
             }
         )
         saver = CheckpointSaver(
@@ -289,6 +333,11 @@ def main(cfg: DictConfig):
     already_canceled_mixup = False
     
     for epoch in range(start_epoch, cfg.training.epochs):
+        if explicit_seed:
+            # The epoch's RNG stream (shuffle, worker augmentation, mixup, TRADES
+            # random start, validation PGD) depends only on (seed, epoch), so a
+            # requeue resuming at epoch k replays what an uninterrupted run would.
+            random_seed(derive_epoch_seed(cfg.seed, epoch), cfg.dist.rank)
         if epsilon_schedule is not None:
             train_epsilon_user = epsilon_schedule.value_for_epoch(epoch)
             train_epsilon_internal = set_active_epsilon(cfg, train_epsilon_user)

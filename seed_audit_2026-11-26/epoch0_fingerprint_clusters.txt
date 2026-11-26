@@ -1,0 +1,16 @@
+models with an epoch-0 row: 346; distinct starts: 314; fingerprints shared by >1 model: 5 covering 37 models
+
+[convnext_small] train_loss=6.87527384 eval_loss=6.8947875  n=29
+   l1_16_init1, l1_16_init2, l1_16_init3, l1_16_init4, l1_8_init2, l1_8_init3, l1_8_init4, l2_16_init1, l2_16_init2, l2_16_init3, l2_1_init1, l2_1_init5, l2_2_init1, l2_4_init2, l2_8_init1, l2_8_init2, l2_8_init3, linf_16_init1, linf_16_init2, linf_16_init3, linf_1_init1, linf_2_init1, linf_2_init2, linf_4_init1, linf_4_init2, linf_4_init5, linf_8_init2, linf_8_init3, linf_8_init5
+
+[convnext_small] train_loss=6.87898770 eval_loss=6.81727  n=2
+   l2_4_init1, linf_1_init2
+
+[convnext_small] train_loss=6.87785342 eval_loss=6.8609925  n=2
+   linftrades_2_init1, linftrades_2_init2
+
+[convnext_small] train_loss=6.87898833 eval_loss=6.81729  n=2
+   l2_1_init2, l2_2_init2
+
+[convnext_small] train_loss=6.87911950 eval_loss=6.8594562  n=2
+   l2trades_8_init1, l2trades_8_init2

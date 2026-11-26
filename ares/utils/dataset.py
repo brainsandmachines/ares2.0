@@ -63,7 +63,11 @@ def build_dataset(cfg, num_aug_splits=0):
         if dataset.aug_repeats:
             sampler_train = RepeatAugSampler(dataset_train, num_repeats=dataset.aug_repeats)
         else:
-            sampler_train = torch.utils.data.distributed.DistributedSampler(dataset_train)
+            # An explicit seed also drives the DDP shuffle; seed=null keeps the
+            # legacy sampler seed 0 so in-flight runs are unchanged.
+            runtime = cfg.get("runtime") or {}
+            sampler_seed = int(cfg.seed) if runtime.get("seed_source") == "config" else 0
+            sampler_train = torch.utils.data.distributed.DistributedSampler(dataset_train, seed=sampler_seed)
     else:
         assert dataset.aug_repeats == 0, "RepeatAugment not currently supported in non-distributed or IterableDataset use"
     sampler_eval = OrderedDistributedSampler(dataset_eval)

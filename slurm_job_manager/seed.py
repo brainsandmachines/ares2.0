@@ -5,6 +5,10 @@ Two-step workflow to add or change a job:
   1. edit ``slurm_job_manager/csv/<arch>.csv`` (add a row / raise its epochs), then
   2. run this to make the DB aware of it.
 
+New rows should set the ``seed`` column (convention: ``seed = init``). Seeding
+refuses a CSV where sibling rows (same name apart from ``_init<N>``) share an
+explicit seed; see ``csv_spec.seed_collisions``.
+
 Idempotent: re-seeding never disturbs already-running / finished rows -- it only
 refreshes total_epochs / priority / is_test. ``--reconcile`` additionally re-opens
 finished rows whose CSV ``training.epochs`` now exceeds their recorded progress
@@ -18,9 +22,10 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 
-from .csv_spec import ARCHES, CSV_DIR, is_test_row, load_arch_rows
+from .csv_spec import ARCHES, CSV_DIR, is_test_row, load_arch_rows, seed_collisions
 from .db import JobDB
 
 
@@ -38,6 +43,14 @@ def main() -> None:
         ap.error("no DB path (set --db or $SJM_DB)")
 
     rows = load_arch_rows(args.arch, args.csv_dir)
+    # Checked on the whole CSV, before the --init filter: a collision is between
+    # init groups, so a single-init seeding must still see the other inits.
+    problems = seed_collisions(rows)
+    if problems:
+        for p in problems:
+            print(f"[seed] ERROR {p}", file=sys.stderr)
+        sys.exit(f"[seed] refusing to seed {args.arch}: {len(problems)} seed problem(s) in the CSV "
+                 f"(give each init its own `seed`; convention seed = init)")
     if args.init is not None:
         inits = set(args.init)
         rows = [r for r in rows if int(r["init"]) in inits]

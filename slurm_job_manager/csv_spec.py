@@ -16,11 +16,21 @@ entrypoint, same override columns) with two Botero differences: an extra
 (Botero uses the config-default dataset dirs). ``training.batch_size`` holds the
 full 96 GB (rtx_pro_6000) batch; the per-partition ``SJM_BATCH_DIVISOR`` env
 halves it on rtx6000 (see ``lifecycle._apply_batch_divisor``).
+
+**Seeds.** ``init`` is metadata only and is never forwarded. The ``seed`` override
+column is what reaches training (``seed=<n>``). Empty means the legacy ``seed=null``:
+a fresh random seed every launch. New rows should set it; the convention is
+``seed = init``. ``seed_collisions`` (enforced by ``seed.py``) rejects sibling
+rows, i.e. the same model name apart from ``_init<N>`` with a different init,
+that share an explicit seed. Before 2026-04-12 every run used seed 0, which is
+how init1/init2 convnext_small pairs ended up near-identical (see
+``seed_audit_2026-11-26/REPORT.md``).
 """
 
 from __future__ import annotations
 
 import csv as _csv
+import re
 from pathlib import Path
 from typing import Iterable
 
@@ -36,6 +46,7 @@ METADATA_COLUMNS = [
 
 # Columns whose header is the Hydra key; emitted as key=value when non-empty.
 OVERRIDE_COLUMNS = [
+    "seed",
     "model",
     "model.experiment_name",
     "model.experiment_num",
@@ -91,6 +102,42 @@ def build_overrides(row: dict, skip: Iterable[str] | None = None) -> list[str]:
         if val != "":
             out.append(f"{col}={val}")
     return out
+
+
+_INIT_TOKEN = re.compile(r"_init\d+")
+
+
+def sibling_key(model_name: str) -> str:
+    """Model name with its ``_init<N>`` token masked: rows sharing it differ only by init."""
+    return _INIT_TOKEN.sub("_init*", model_name)
+
+
+def seed_collisions(rows: Iterable[dict]) -> list[str]:
+    """Problems with explicit seeds: sibling rows sharing a seed, or a non-integer seed.
+
+    Rows with an empty ``seed`` cell (every pre-2026-11 row) are ignored; they draw a
+    fresh random seed per launch.
+    """
+    problems: list[str] = []
+    by_group: dict[tuple[str, int], list[str]] = {}
+    for r in rows:
+        raw = str(r.get("seed", "")).strip()
+        if raw == "":
+            continue
+        name = r["model_name"]
+        try:
+            seed = int(raw)
+        except ValueError:
+            problems.append(f"{name}: seed {raw!r} is not an integer")
+            continue
+        if not 0 <= seed < 2**32 - 1024:
+            problems.append(f"{name}: seed {seed} outside [0, 2**32-1024)")
+            continue
+        by_group.setdefault((sibling_key(name), seed), []).append(name)
+    for (group, seed), names in sorted(by_group.items()):
+        if len(names) > 1:
+            problems.append(f"seed {seed} shared by sibling rows {sorted(names)} ({group})")
+    return problems
 
 
 def is_test_row(row: dict) -> bool:

@@ -71,6 +71,17 @@ python -m slurm_job_manager.seed --db $SJM_DB --arch convnext_small --reconcile
 
 A **test job** is just a row with `is_test=1` (claimed ahead of production).
 
+**Seeds.** `init` is a label and is never passed to training. Give new rows a `seed`
+column (convention: `seed = init`). It is forwarded as `seed=<n>`. The run then uses
+that seed on every launch and reseeds per epoch, so a requeue replays exactly what an
+uninterrupted run would (bitwise on the same GPU type; verified on the 4090). An empty
+or absent `seed` keeps the legacy behaviour: a fresh random seed per launch. `seed.py`
+refuses a CSV where two inits of the same model name share a seed. Either way, every
+launch appends its seed, start epoch, git commit, Slurm ids and GPU to
+`<run_dir>/seed_history.jsonl`, and the history is embedded in each checkpoint's
+`args.seed_history` (see `ares/utils/provenance.py` and
+`seed_audit_2026-11-26/REPORT.md`).
+
 ## Run
 
 ```bash
